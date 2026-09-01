@@ -84,7 +84,18 @@ unitScale: function (u) { return u === 'm' ? 100 : 1; }
 
 合計判定にすると `1m87cm` と `187` の両方が正解になる。
 
-## 5. 練習で範囲を絞れるようにする（任意）
+## 5. 誤答を単位つきで表示する（任意）
+
+答えが複数欄にまたがる単元（km/m のような）は、`fieldsByType` を定義すると
+weak_class の「よくある誤答」と mistakes シートで単位つきに表示される。
+
+```js
+fieldsByType: { A: ['km', 'm'], C: ['m'] }
+```
+
+省略すると値をそのまま（スペース区切りで）表示する。答えが単一値の単元（九九など）は不要。
+
+## 6. 練習で範囲を絞れるようにする（任意）
 
 九九の「段を選ぶ」のように練習で範囲を絞りたい場合は、
 `practiceNarrow` と `genNarrow` を足す。
@@ -98,7 +109,7 @@ gen: function (rand, mode) { return this.genNarrow(rand, mode, 0); }
 **範囲を絞った練習はハイスコアを記録しない。**
 ランダム出題どうしでないと比較にならないため。
 
-## 6. 設置する
+## 7. 設置する
 
 1. 新しいスプレッドシートを作る
 2. `拡張機能 > Apps Script` に4ファイルを貼る
@@ -115,7 +126,7 @@ gen: function (rand, mode) { return this.genNarrow(rand, mode, 0); }
 5. `roster` の A1 に `=IMPORTRANGE("ハブのURL","roster!A:E")`
 6. ハブの教師画面でリンクを追加する
 
-## 7. 確認すること
+## 8. 確認すること
 
 - 名簿に自分だけ入れて、担任アカウントで1回通す
 - 教師画面で `weak_child` が意図した列になっているか

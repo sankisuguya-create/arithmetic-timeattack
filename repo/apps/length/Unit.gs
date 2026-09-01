@@ -43,6 +43,12 @@ var UNIT = {
   byTotal: function (item) { return item.t === 'G' || item.t === 'H'; },
   unitScale: function (u) { return u === 'm' ? 100 : 1; },   // 合計判定は cm 換算
 
+  /** weak_class / mistakes で「1/200」を「1km200m」のように表示するための単位マップ */
+  fieldsByType: {
+    C: ['m'], D: ['km'], A: ['km', 'm'], B: ['m'],
+    E: ['km', 'm'], F: ['km', 'm'], G: ['cm'], H: ['m', 'cm']
+  },
+
   gen: function (rand, mode) {
     var pool;
     if (mode === 1) pool = ['C', 'D'];

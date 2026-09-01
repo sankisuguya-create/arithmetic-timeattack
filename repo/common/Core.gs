@@ -24,7 +24,7 @@ var BASE_DEFAULTS = {
 
 var TTL = { config: 60, roster: 300, session: 21600 };
 var QN = 200;                              // 1セッションの出題数
-var SCHEMA_VERSION = 2;                    // 2 = summary に kind / best_count を持つ
+var SCHEMA_VERSION = 3;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
 var GUEST_DOMAIN = '@edu.nishi.or.jp';     // 名簿になくても試用できる（記録なし）
 
@@ -171,6 +171,9 @@ function modeDef_(id) {
 }
 
 function modeIds_() { return UNIT.modes.map(function (m) { return m.id; }); }
+
+/** シート上で mode 番号の意味が分かるように、名前も並べて記録する */
+function modeName_(m) { var d = modeDef_(m); return d ? d.name : ('mode' + m); }
 
 /* ============================================================
  *  出題 — 生成はサーバーだけが行う
@@ -341,6 +344,7 @@ function submitSession(token, items) {
     attempts += hist.length;
 
     var byTotal = UNIT.byTotal ? !!UNIT.byTotal(qq) : false;
+    var want = qq.f.map(function (u) { return qq.ans[u]; });
     var last = hist.length ? hist[hist.length - 1] : null;
     var hit = !!last && match_(last, qq, byTotal);
     var firstTry = hist.length === 1 && hit;
@@ -348,9 +352,10 @@ function submitSession(token, items) {
     if (hit) correct++;
     if (!hit || hist.length > 1) {
       miss.push(qq.t + ':' + qq.tag);
+      // 誤答明細シート用に、正しい答えと最初に間違えた値をセットで残す
       for (var w = 0; w < hist.length; w++) {
         if (!match_(hist[w], qq, byTotal)) {
-          wrong.push(qq.t + '|' + qq.tag + '|' + hist[w].join('/'));
+          wrong.push(qq.t + '|' + qq.tag + '|' + want.join('/') + '|' + hist[w].join('/'));
           break;
         }
       }
@@ -377,7 +382,7 @@ function submitSession(token, items) {
       // 本番だけ log に残す。練習を混ぜると分析が濁る
       sh_(SHEETS.LOG).appendRow([
         new Date(), mail, c.grade, c.cls, c.no, c.name,
-        s.mode, limSec, correct, attempts,
+        s.mode, modeName_(s.mode), limSec, correct, attempts,
         miss.join(','), slow.join(','), statStr, wrong.join(',')
       ]);
     }
@@ -424,7 +429,7 @@ function match_(a, qq, byTotal) {
  *   kind … 'r' 本番 / 'p' 練習（時間制限あり・ランダムのみ）
  *   best_count … 自己ベストを塗り替えた回数。個人内評価の★になる
  */
-var SUM = { MAIL:0, MODE:1, LIM:2, KIND:3, TRIES:4, TC:5, TA:6, BEST:7, COUNT:8 };
+var SUM = { MAIL:0, MODE:1, NAME:2, LIM:3, KIND:4, TRIES:5, TC:6, TA:7, BEST:8, COUNT:9 };
 
 function bests_(mail, limitSec) {
   var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
@@ -472,7 +477,7 @@ function updateSummary_(mail, mode, limitSec, kind, correct, attempts) {
     }
   }
   var first = (kind === 'r') ? 1 : 0;      // 初回の記録も「自己ベスト更新」と数える
-  sh.appendRow([mail, mode, Number(limitSec), kind, 1, correct, attempts, correct, first]);
+  sh.appendRow([mail, mode, modeName_(mode), Number(limitSec), kind, 1, correct, attempts, correct, first]);
   return { best: correct, star: first, updated: true };
 }
 
@@ -481,8 +486,8 @@ function rankOf_(rows, ck, mode, limitSec, mail) {
   var td = today_(), pool = [];
   for (var i = 1; i < rows.length; i++) {
     if (dstr_(rows[i][0]) === td && String(rows[i][1]) === ck &&
-        Number(rows[i][2]) === mode && Number(rows[i][3]) === Number(limitSec)) {
-      pool.push({ mail: String(rows[i][4]).toLowerCase(), s: Number(rows[i][5]), t: Number(rows[i][6]) });
+        Number(rows[i][2]) === mode && Number(rows[i][4]) === Number(limitSec)) {
+      pool.push({ mail: String(rows[i][5]).toLowerCase(), s: Number(rows[i][6]), t: Number(rows[i][7]) });
     }
   }
   pool.sort(function (a, b) { return b.s - a.s || a.t - b.t; });
@@ -499,16 +504,16 @@ function updateDaily_(ck, mode, limitSec, mail, score) {
   var row = -1;
   for (var i = 1; i < v.length; i++) {
     if (dstr_(v[i][0]) === td && String(v[i][1]) === ck &&
-        Number(v[i][2]) === mode && Number(v[i][3]) === limitSec &&
-        String(v[i][4]).toLowerCase() === mail) { row = i; break; }
+        Number(v[i][2]) === mode && Number(v[i][4]) === limitSec &&
+        String(v[i][5]).toLowerCase() === mail) { row = i; break; }
   }
-  var now = Date.now();
+  var now = new Date();   // 内部の並び替え用。Date型にすると daily を開いたときも読める
   if (row < 0) {
-    var line = [td, ck, mode, limitSec, mail, score, now];
+    var line = [td, ck, mode, modeName_(mode), limitSec, mail, score, now];
     sh.appendRow(line); v.push(line);
-  } else if (score > Number(v[row][5])) {
-    sh.getRange(row + 1, 6, 1, 2).setValues([[score, now]]);
-    v[row][5] = score; v[row][6] = now;
+  } else if (score > Number(v[row][6])) {
+    sh.getRange(row + 1, 7, 1, 2).setValues([[score, now]]);
+    v[row][6] = score; v[row][7] = now;
   }
   return rankOf_(v, ck, mode, limitSec, mail);
 }
@@ -531,7 +536,7 @@ function resetDaily() {
   var td = today_(), keep = [v[0]];
   for (var i = 1; i < v.length; i++) if (dstr_(v[i][0]) === td) keep.push(v[i]);
   sh.clearContents();
-  sh.getRange(1, 1, keep.length, 7).setValues(keep);
+  sh.getRange(1, 1, keep.length, 8).setValues(keep);
   sh.getRange('A:A').setNumberFormat('@');
 }
 
@@ -630,7 +635,7 @@ function aggregateCore_() {
     if (!mail) continue;
     var row = v[i];
 
-    String(row[12] || '').split(',').forEach(function (t) {
+    String(row[13] || '').split(',').forEach(function (t) {
       if (!t) return;
       var p = t.split(':');
       if (p.length < 3) return;
@@ -639,7 +644,7 @@ function aggregateCore_() {
       c.t[p[0]][0] += Number(p[1]); c.t[p[0]][1] += Number(p[2]);
     });
 
-    String(row[10] || '').split(',').forEach(function (t) {
+    String(row[11] || '').split(',').forEach(function (t) {
       if (!t) return;
       var ty = t.split(':')[0];
       if (!ty) return;
@@ -647,7 +652,7 @@ function aggregateCore_() {
       slot(mail, row).miss++;
     });
 
-    String(row[13] || '').split(',').forEach(function (t) {
+    String(row[14] || '').split(',').forEach(function (t) {
       if (!t || t.indexOf('|') < 0) return;
       wrongCnt[t] = (wrongCnt[t] || 0) + 1;
     });
@@ -655,6 +660,7 @@ function aggregateCore_() {
 
   writeWeakChild_(child, cfg);
   writeWeakClass_(typeMiss, wrongCnt);
+  writeMistakes_(v);
 
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
   try {
@@ -664,6 +670,59 @@ function aggregateCore_() {
   return '集計しました（' + (v.length - 1) + ' 試行 / ' + stamp + '）';
 }
 
+/**
+ * "1/200" と問題型から "1km200m" のような単位つき表示を作る。
+ * UNIT.fieldsByType が無い単元（九九など、答えが単一値でよい単元）では素の値を返す。
+ */
+function fmtByType_(type, joined) {
+  var fields = UNIT.fieldsByType && UNIT.fieldsByType[type];
+  var vals = String(joined).split('/');
+  if (!fields || fields.length !== vals.length) return vals.join(' ');
+  return vals.map(function (v, i) { return v + fields[i]; }).join('');
+}
+
+/**
+ * 誰が・どの問題を・何と間違えたかを1行1件で並べる。
+ * log の wrong_items を展開する。新しい記録ほど上に来る。直近2000件まで。
+ * 旧形式（型｜出題｜誤答 の3分割）にも後方互換で対応する（正答欄は空欄になる）。
+ */
+function writeMistakes_(logRows) {
+  var sh = ss_().getSheetByName('mistakes') || ss_().insertSheet('mistakes');
+  sh.clear(); sh.setConditionalFormatRules([]);
+
+  var head = ['日時', '学年', '組', '番号', '氏名', 'モード', '問題型', 'もんだい', '正しい答え', 'こたえた値'];
+  var body = [];
+
+  for (var i = 1; i < logRows.length; i++) {
+    var row = logRows[i];
+    var wrongStr = String(row[14] || '');
+    if (!wrongStr) continue;
+    wrongStr.split(',').forEach(function (entry) {
+      var p = entry.split('|');
+      if (p.length < 3) return;
+      var type = p[0], tag = p[1], correct, wrong;
+      if (p.length >= 4) { correct = fmtByType_(type, p[2]); wrong = fmtByType_(type, p[3]); }
+      else { correct = ''; wrong = fmtByType_(type, p[2]); }   // 旧形式
+      body.push([row[0], row[2], row[3], row[4], row[5], row[7], type, tag, correct, wrong]);
+    });
+  }
+  body.reverse();
+  if (body.length > 2000) body = body.slice(0, 2000);
+
+  var out = [head].concat(body);
+  sh.getRange(1, 1, out.length, head.length).setValues(out);
+  sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  if (body.length) sh.getRange(2, 1, body.length, 1).setNumberFormat('yyyy/mm/dd hh:mm');
+  else sh.getRange(2, 1).setValue('まだ誤答のデータがありません（この機能を入れる前の記録は対象外です）。');
+
+  sh.getRange('A1').setNote(
+    '誰が・どの問題を・何と間違えたかを1行1件で並べたものです。新しい記録ほど上にあります。\n' +
+    '個別に声をかけるときの参考にしてください。全体の傾向を見るなら weak_class を見てください。'
+  );
+  sh.setTabColor('#93C47D');
+}
+
 function writeWeakChild_(child, cfg) {
   var sh = sh_(SHEETS.WCHILD);
   sh.clear(); sh.setConditionalFormatRules([]);
@@ -671,7 +730,7 @@ function writeWeakChild_(child, cfg) {
 
   var head = ['学年', '組', '番号', '氏名'];
   order.forEach(function (t) { head.push(UNIT.types[t]); });
-  head.push('誤答計');
+  head.push('誤答数');
 
   var rows = [head];
   Object.keys(child).sort(function (a, b) {
@@ -681,7 +740,8 @@ function writeWeakChild_(child, cfg) {
     var c = child[k], r = [c.grade, c.cls, c.no, c.name];
     order.forEach(function (t) {
       var x = c.t[t];
-      r.push(x && x[0] ? Math.round(x[1] / x[0]) : '');
+      // 表示は秒（読みやすさのため）。下の閾値判定も同じ単位で比べる
+      r.push(x && x[0] ? Math.round((x[1] / x[0]) / 100) / 10 : '');
     });
     r.push(c.miss);
     rows.push(r);
@@ -692,12 +752,20 @@ function writeWeakChild_(child, cfg) {
   sh.setFrozenRows(1); sh.setFrozenColumns(4);
 
   if (rows.length > 1) {
+    sh.getRange(2, 5, rows.length - 1, order.length).setNumberFormat('0.0"秒"');
+    sh.getRange(2, 5 + order.length, rows.length - 1, 1).setNumberFormat('0"回"');
     sh.setConditionalFormatRules([
       SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberGreaterThan(cfg.slow_ms).setBackground('#F8C9C9')
+        .whenNumberGreaterThan(cfg.slow_ms / 1000).setBackground('#F8C9C9')
         .setRanges([sh.getRange(2, 5, rows.length - 1, order.length)]).build()
     ]);
   }
+  sh.getRange('A1').setNote(
+    (UNIT.tips ? UNIT.tips.replace(/<[^>]+>/g, '') + '\n\n' : '') +
+    '色つきのセルは ' + (cfg.slow_ms / 1000).toFixed(1) + ' 秒を超えています。' +
+    '誤答数は、その型で間違えた回数の合計です。'
+  );
+  sh.setTabColor('#93C47D');
 }
 
 function writeWeakClass_(typeMiss, wrongCnt) {
@@ -711,17 +779,27 @@ function writeWeakClass_(typeMiss, wrongCnt) {
 
   var start = rows.length + 2;
   sh.getRange(start, 1).setValue('よくある誤答（多い順）').setFontWeight('bold');
-  sh.getRange(start + 1, 1, 1, 4)
-    .setValues([['問題型', '出題', '児童の答え', '回数']]).setFontWeight('bold');
+  sh.getRange(start + 1, 1, 1, 5)
+    .setValues([['問題型', '出題', '正しい答え', 'こたえた値', '回数']]).setFontWeight('bold');
 
   var list = Object.keys(wrongCnt).map(function (k) {
     var p = k.split('|');
-    return [p[0], p[1], String(p[2]).replace(/\//g, ' '), wrongCnt[k]];
-  }).sort(function (a, b) { return b[3] - a[3]; }).slice(0, 40);
+    var type = p[0], tag = p[1], correct, wrong;
+    if (p.length >= 4) { correct = fmtByType_(type, p[2]); wrong = fmtByType_(type, p[3]); }
+    else { correct = ''; wrong = fmtByType_(type, p[2]); }   // 旧形式（正答が無い）
+    return [type, tag, correct, wrong, wrongCnt[k]];
+  }).sort(function (a, b) { return b[4] - a[4]; }).slice(0, 40);
 
-  if (list.length) sh.getRange(start + 2, 1, list.length, 4).setValues(list);
+  if (list.length) sh.getRange(start + 2, 1, list.length, 5).setValues(list);
   else sh.getRange(start + 2, 1).setValue('データなし');
-  sh.setColumnWidth(2, 160); sh.setColumnWidth(3, 150);
+  sh.setColumnWidth(2, 150); sh.setColumnWidth(3, 130); sh.setColumnWidth(4, 130);
+
+  sh.getRange('A1').setNote(
+    '学級全体で、どの型の問題がよく間違えられているかの一覧です。\n' +
+    '下の「よくある誤答」は、正しい答えと実際の誤答を並べたものです。\n' +
+    '一斉指導でどの型を扱うか決めるときに使ってください。'
+  );
+  sh.setTabColor('#93C47D');
 }
 
 /* ============================================================
@@ -752,6 +830,7 @@ function ensureSchema_() {
     lock.waitLock(30000);
     if (Number(props.getProperty('schema_version')) < SCHEMA_VERSION) {
       migrateSummaryV2_();
+      migrateModeNameAndWrong_();
       props.setProperty('schema_version', String(SCHEMA_VERSION));
     }
   } finally {
@@ -776,15 +855,75 @@ function migrateSummaryV2_() {
   if (n > 0) sh.getRange(2, last, n, 1).setValue(1);      // 少なくとも1回は達成している
 }
 
+/**
+ * log / summary / daily に「モード名」列を追加する。
+ * 既存データの「モード名」は、その行の mode 番号から逆引きして埋める。
+ * 各シートの見た目（タブ色・A1の注記）もここで整える。冪等。
+ */
+function migrateModeNameAndWrong_() {
+  function insertModeName(sh, modeCol) {
+    if (!sh || sh.getLastRow() === 0) return;
+    var head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+    if (head.indexOf('モード名') >= 0) return;               // 済み
+    sh.insertColumnAfter(modeCol);
+    sh.getRange(1, modeCol + 1).setValue('モード名').setFontWeight('bold');
+    var n = sh.getLastRow() - 1;
+    if (n > 0) {
+      var modes = sh.getRange(2, modeCol, n, 1).getValues();
+      var names = modes.map(function (r) { return [modeName_(Number(r[0])) || '']; });
+      sh.getRange(2, modeCol + 1, n, 1).setValues(names);
+    }
+  }
+
+  insertModeName(ss_().getSheetByName(SHEETS.LOG), 7);
+  insertModeName(ss_().getSheetByName(SHEETS.SUMMARY), 2);
+  insertModeName(ss_().getSheetByName(SHEETS.DAILY), 3);
+
+  applyFriendlyStyling_();
+}
+
+/**
+ * どのシートを見ればよいか一目で分かるよう、タブに色をつけ、
+ * 直接編集しないほうがよいシートには A1 に注記を入れる。冪等。
+ */
+function applyFriendlyStyling_() {
+  var ss = ss_();
+  var technical = { config: '#B7B7B7', class_config: '#B7B7B7', roster: '#4A86E8',
+                     log: '#B7B7B7', daily: '#B7B7B7' };
+  var friendly = { summary: '#93C47D', weak_child: '#93C47D', weak_class: '#93C47D' };
+
+  Object.keys(technical).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (sh) sh.setTabColor(technical[name]);
+  });
+  Object.keys(friendly).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (sh) sh.setTabColor(friendly[name]);
+  });
+
+  var notes = {
+    roster: 'ここに児童を登録します（email／学年／組／番号／氏名）。\n学年・組の表記はそろえてください（「2」に統一。「2組」などを混ぜない）。',
+    config: '各種設定です。通常は教師用ページ（?page=teacher）から変更してください。\n直接編集すると、反映まで最大5分かかります。',
+    class_config: 'クラスごとにモードの解禁を上書きする設定です。通常は教師用ページから操作してください。',
+    log: '1回のプレイ（1試行）を1行で記録した内部データです。直接は読まなくてよいシートです。\n個々の誤答を読みたいときは mistakes シートを、傾向を見たいときは weak_child / weak_class を見てください。',
+    daily: '当日の学級内ランキングを計算するための内部データです。直接は見なくてよいシートです。',
+    summary: '児童ごと・モードごと・制限時間ごとの累計成績とハイスコアです。kind列は r=本番／p=練習です。'
+  };
+  Object.keys(notes).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (sh) sh.getRange('A1').setNote(notes[name]);
+  });
+}
+
 function ensureSheets_() {
   var ss = ss_(), defs = {};
   defs[SHEETS.CONFIG] = ['key', 'value'];
   defs[SHEETS.ROSTER] = ['email', '学年', '組', '番号', '氏名'];
   defs[SHEETS.CLASS] = ['class'].concat((UNIT.flags || []).map(function (f) { return 'allow_' + f.key; }));
-  defs[SHEETS.LOG] = ['ts', 'email', '学年', '組', '番号', '氏名', 'mode', 'limit_sec',
+  defs[SHEETS.LOG] = ['ts', 'email', '学年', '組', '番号', '氏名', 'mode', 'モード名', 'limit_sec',
                       'correct', 'attempts', 'miss_items', 'slow_items', 'type_stats', 'wrong_items'];
-  defs[SHEETS.DAILY] = ['date', 'class', 'mode', 'limit_sec', 'email', 'best', 'ts'];
-  defs[SHEETS.SUMMARY] = ['email', 'mode', 'limit_sec', 'kind',
+  defs[SHEETS.DAILY] = ['date', 'class', 'mode', 'モード名', 'limit_sec', 'email', 'best', 'ts'];
+  defs[SHEETS.SUMMARY] = ['email', 'mode', 'モード名', 'limit_sec', 'kind',
                           'tries', 'total_correct', 'total_attempts', 'best', 'best_count'];
   defs[SHEETS.WCHILD] = [];
   defs[SHEETS.WCLASS] = [];
@@ -807,7 +946,10 @@ function ensureSheets_() {
     cf.getRange(2, 1, rows.length, 2).setValues(rows);
     made = true;
   }
-  if (made) { cache_().remove('config'); cache_().remove('classcfg'); }
+  if (made) {
+    cache_().remove('config'); cache_().remove('classcfg');
+    applyFriendlyStyling_();
+  }
   return made;
 }
 
