@@ -292,7 +292,7 @@ var BEST = {}, MEDAL = {}, STARS = {}, PBEST = {};
 var scr='none', mode=1, queue=[], qi=0;
 var typed = {}, fi = 0;                    // 2欄入力の状態
 var correct=0, attempts=0, miss=0, startT=0, raf=0, locked=false, ready=false;
-var items=[], curAns=[], shownAt=0, token='';
+var items=[], curAns=[], shownAt=0, firstKeyAt=0, token='';
 var practice=false, pMode=1, pTimed=false, pRecorded=false;
 
 var $ = function(id){ return document.getElementById(id); };
@@ -481,6 +481,7 @@ function draw(){
   }
 
   shownAt = performance.now();
+  firstKeyAt = 0;            // 初打鍵はまだ。最初の数字キーで一度だけ立てる
   curAns = [];
 }
 
@@ -560,7 +561,12 @@ function isRight(){
   return true;
 }
 function pushItem(){
-  items.push({i:qi, a:curAns.slice(), ms:Math.round(performance.now()-shownAt)});
+  items.push({
+    i:  qi,
+    a:  curAns.slice(),
+    ms: Math.round(performance.now()-shownAt),          // 提示→送信（打鍵・欄移動を含む）
+    tk: firstKeyAt ? Math.round(firstKeyAt-shownAt) : 0  // 提示→初打鍵（0＝取れなかった）
+  });
   curAns = [];
 }
 function nextQuestion(){
@@ -631,6 +637,10 @@ function handleInput(k){
   var curMode = practice ? pMode : mode;        // beginPractice は mode を更新しないため
 
   if(k>='0' && k<='9'){
+    // 提示から最初の数字キーまで＝想起（＋手続きの組み立て）にかかった時間。
+    // 送信までの時間には打鍵と欄移動が乗るので、型ごとに答えの桁数が違うと
+    // 型間の比較ができない。分離しておくのはそのため。
+    if(!firstKeyAt) firstKeyAt = performance.now();
     if(typed[unit].length < 4){ typed[unit] += k; paintSlots(); }
     // 全欄が正解と一致したら即座に通す（空欄は0扱い）
     if(isRight()){ submit(); return; }

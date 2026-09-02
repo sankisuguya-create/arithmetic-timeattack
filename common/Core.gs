@@ -17,9 +17,27 @@ var SHEETS = {
 var BASE_DEFAULTS = {
   limit_sec: 60,      // 制限時間（秒）
   miss_limit: 3,      // 何回誤答したら正答を提示して次へ
-  slow_ms: 3000,      // これを超えたら「未習熟」とみなす
+  slow_ms: 3000,      // 送信までの時間の閾値（log の slow_items 用）
   key_gap: 8,         // 画面キーの横間隔(px)
-  teachers: ''        // 教師のメールアドレス（カンマ区切り）
+  teachers: '',       // 教師のメールアドレス（カンマ区切り）
+
+  // weak_child は「初打鍵まで（想起）」で見る。閾値は slow_ms とは別物で、
+  // 打鍵ぶんだけ小さい。0 なら slow_ms の 0.7 倍を使う。
+  // この 0.7 は暫定値で、実測ではない。log の type_stats から
+  // 型ごとの平均msを答えの桁数に回帰すれば1打鍵あたりのコストが出るので、
+  // 1〜2週ぶん貯まったらこの値を実測で置き換えること。
+  slow_tk_ms: 0,
+
+  // 想起時間のばらつきの閾値（%）。標準偏差 ÷ 平均。
+  // 秒ではなく比にするのは、閾値が単元の速さに依存しないようにするため
+  // （九九と単位換算では平均が倍ちがうので、秒で決めるとどちらかで必ず外れる）。
+  // 想起が自動化していれば 20〜30%程度。想起と計数が混ざると 50%を超える。
+  wobble_pct: 40,
+
+  // weak_child / weak_class の集計に使う期間（日）。0 なら全期間。
+  // 全期間平均にすると、年間数百試行に対して直近の変化が1%程度に薄まり、
+  // 伸びも落ちも見えなくなる。
+  window_days: 30
 };
 
 var TTL = { config: 60, roster: 300, session: 21600 };
@@ -57,6 +75,13 @@ function email_() {
 
 function today_() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+/** log の ts を数値時刻にする。読めなければ 0（＝期間窓で捨てない側に倒す） */
+function rowTime_(x) {
+  if (x instanceof Date) return x.getTime();
+  var d = new Date(x);
+  return isNaN(d.getTime()) ? 0 : d.getTime();
 }
 
 /** シートが日付を Date に変換していても文字列比較できるようにする */
@@ -394,14 +419,20 @@ function submitSession(token, items) {
       }
     }
     if (firstTry) {
-      if (!stat[qq.t]) stat[qq.t] = [0, 0];
+      // [試行数, Σ送信まで, 初打鍵が取れた数, Σ初打鍵まで, Σ(初打鍵まで)^2]
+      // 二乗和まで持つのは、平均だけでは「毎回同じ速さで遅い子」と
+      // 「想起と計数を行き来していて時々速い子」が区別できないため。
+      // 前者は手続きの短縮、後者は想起そのものの練習が要る。
+      if (!stat[qq.t]) stat[qq.t] = [0, 0, 0, 0, 0];
+      var tk = Number(it.tk) || 0;
       stat[qq.t][0]++; stat[qq.t][1] += Number(it.ms) || 0;
+      if (tk > 0) { stat[qq.t][2]++; stat[qq.t][3] += tk; stat[qq.t][4] += tk * tk; }
       if (Number(it.ms) > cfg.slow_ms) slow.push(qq.t + ':' + qq.tag + ':' + Math.round(it.ms));
     }
   }
 
   var statStr = Object.keys(stat).map(function (k) {
-    return k + ':' + stat[k][0] + ':' + stat[k][1];
+    return k + ':' + stat[k].join(':');
   }).join(',');
 
   var isPractice = !!s.p;
@@ -664,18 +695,35 @@ function aggregateCore_() {
     return child[mail];
   }
 
+  // 期間窓。全期間平均にすると直近の変化が薄まって伸びが見えなくなる。
+  var days = Number(cfg.window_days) || 0;
+  var cutoff = days > 0 ? (Date.now() - days * 86400000) : 0;
+  var used = 0;
+
   for (var i = 1; i < v.length; i++) {
     var mail = String(v[i][1]).toLowerCase();
     if (!mail) continue;
     var row = v[i];
+
+    if (cutoff) {
+      var ts = rowTime_(row[0]);
+      if (ts && ts < cutoff) continue;    // 読めない ts は残す（見落としを避ける）
+    }
+    used++;
 
     String(row[13] || '').split(',').forEach(function (t) {
       if (!t) return;
       var p = t.split(':');
       if (p.length < 3) return;
       var c = slot(mail, row);
-      if (!c.t[p[0]]) c.t[p[0]] = [0, 0];
-      c.t[p[0]][0] += Number(p[1]); c.t[p[0]][1] += Number(p[2]);
+      if (!c.t[p[0]]) c.t[p[0]] = [0, 0, 0, 0, 0];
+      c.t[p[0]][0] += Number(p[1]) || 0;
+      c.t[p[0]][1] += Number(p[2]) || 0;
+      if (p.length >= 6) {                // 初打鍵を記録するようになってからの行
+        c.t[p[0]][2] += Number(p[3]) || 0;
+        c.t[p[0]][3] += Number(p[4]) || 0;
+        c.t[p[0]][4] += Number(p[5]) || 0;
+      }
     });
 
     String(row[11] || '').split(',').forEach(function (t) {
@@ -697,11 +745,12 @@ function aggregateCore_() {
   writeMistakes_(v);
 
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
+  var span = days > 0 ? ('直近' + days + '日') : '全期間';
   try {
-    sh_(SHEETS.WCHILD).getRange(1, typeOrder_().length + 7)
-      .setValue('最終集計: ' + stamp).setFontColor('#888888');
+    sh_(SHEETS.WCHILD).getRange(1, typeOrder_().length + 9)
+      .setValue('最終集計: ' + stamp + '（' + span + '）').setFontColor('#888888');
   } catch (e) {}
-  return '集計しました（' + (v.length - 1) + ' 試行 / ' + stamp + '）';
+  return '集計しました（' + span + ' ' + used + ' 試行 / 全 ' + (v.length - 1) + ' 試行 / ' + stamp + '）';
 }
 
 /**
@@ -762,9 +811,14 @@ function writeWeakChild_(child, cfg) {
   sh.clear(); sh.setConditionalFormatRules([]);
   var order = typeOrder_();
 
+  // 想起（初打鍵まで）の閾値は、送信までの閾値より打鍵ぶん小さい。
+  // 0.7 は暫定。log から1打鍵あたりのコストを実測して置き換えること
+  var slowTk = Number(cfg.slow_tk_ms) || Math.round(Number(cfg.slow_ms) * 0.7);
+  var wobble = Number(cfg.wobble_pct) || 40;
+
   var head = ['学年', '組', '番号', '氏名'];
   order.forEach(function (t) { head.push(UNIT.types[t]); });
-  head.push('誤答数');
+  head.push('ゆらぎ', 'ゆらぎの型', '誤答数');
 
   var rows = [head];
   Object.keys(child).sort(function (a, b) {
@@ -772,12 +826,21 @@ function writeWeakChild_(child, cfg) {
     return x.grade - y.grade || (x.cls < y.cls ? -1 : x.cls > y.cls ? 1 : 0) || x.no - y.no;
   }).forEach(function (k) {
     var c = child[k], r = [c.grade, c.cls, c.no, c.name];
+    var wMax = 0, wType = '';
     order.forEach(function (t) {
       var x = c.t[t];
-      // 表示は秒（読みやすさのため）。下の閾値判定も同じ単位で比べる
-      r.push(x && x[0] ? Math.round((x[1] / x[0]) / 100) / 10 : '');
+      if (!x || !x[2]) { r.push(''); return; }   // 初打鍵のデータが無い型は空欄
+      var n = x[2], mean = x[3] / n;
+      r.push(Math.round(mean / 100) / 10);       // 表示は秒。下の閾値判定も同じ単位
+
+      // ばらつきは 標準偏差÷平均（%）。試行が少ないと不安定なので5回以上の型だけ候補にする
+      if (n >= 5 && mean > 0) {
+        var vr = x[4] / n - mean * mean;
+        var cv = Math.round((vr > 0 ? Math.sqrt(vr) : 0) / mean * 100);
+        if (cv > wMax) { wMax = cv; wType = UNIT.types[t]; }
+      }
     });
-    r.push(c.miss);
+    r.push(wMax || '', wType, c.miss);
     rows.push(r);
   });
 
@@ -786,18 +849,30 @@ function writeWeakChild_(child, cfg) {
   sh.setFrozenRows(1); sh.setFrozenColumns(4);
 
   if (rows.length > 1) {
-    sh.getRange(2, 5, rows.length - 1, order.length).setNumberFormat('0.0"秒"');
-    sh.getRange(2, 5 + order.length, rows.length - 1, 1).setNumberFormat('0"回"');
+    var n = rows.length - 1, wob = 5 + order.length;   // ゆらぎ列 / その右が型名 / さらに右が誤答数
+    sh.getRange(2, 5, n, order.length).setNumberFormat('0.0"秒"');
+    sh.getRange(2, wob, n, 1).setNumberFormat('0"%"');
+    sh.getRange(2, wob + 2, n, 1).setNumberFormat('0"回"');
     sh.setConditionalFormatRules([
       SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberGreaterThan(cfg.slow_ms / 1000).setBackground('#F8C9C9')
-        .setRanges([sh.getRange(2, 5, rows.length - 1, order.length)]).build()
+        .whenNumberGreaterThan(slowTk / 1000).setBackground('#F8C9C9')
+        .setRanges([sh.getRange(2, 5, n, order.length)]).build(),
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(wobble).setBackground('#FDE4B8')
+        .setRanges([sh.getRange(2, wob, n, 1)]).build()
     ]);
   }
   sh.getRange('A1').setNote(
     (UNIT.tips ? UNIT.tips.replace(/<[^>]+>/g, '') + '\n\n' : '') +
-    '色つきのセルは ' + (cfg.slow_ms / 1000).toFixed(1) + ' 秒を超えています。' +
-    '誤答数は、その型で間違えた回数の合計です。'
+    '各型の数字は「問題が出てから最初のキーを押すまで」の平均です（想起にかかった時間）。\n' +
+    '打鍵にかかる時間を含まないので、答えの桁数が違う型どうしを比べられます。\n' +
+    '赤いセルは ' + (slowTk / 1000).toFixed(1) + ' 秒を超えています。\n\n' +
+    '「ゆらぎ」は、その子がいちばん不安定だった型の ばらつき（標準偏差÷平均）です（' + wobble + '%超で色）。\n' +
+    '平均が基準内でもここが大きい子は、想起できる時と数えている時が混ざっています。\n' +
+    '平均だけを見ていると、この子は「基準内」に見えて素通りします。\n' +
+    '平均が遅い子は手続きの短縮、ゆらぎが大きい子は想起そのものの練習が要ります。\n\n' +
+    '空欄は、この期間にその型のデータが無いという意味です。\n' +
+    '（初打鍵の記録は途中から始めたため、それ以前の記録しかない子は空欄になります）'
   );
   sh.setTabColor('#93C47D');
 }
