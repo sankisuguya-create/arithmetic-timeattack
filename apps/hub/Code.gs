@@ -10,14 +10,17 @@ var DEFAULTS = { title: '算数タイムアタック', teachers: '' };
 var TTL = { links: 60, roster: 300 };
 var GUEST_DOMAIN = '@edu.nishi.or.jp';
 
-/* 各リンクの色。児童が見分けやすいよう6色から選ぶ */
+/* 各リンクの色。児童が見分けやすいよう6色から選ぶ。
+ * fg は bg に対して 36px 太字（WCAG の大きい文字 3:1）を満たす値を選んである。
+ * キー名を変えると links シートの color 列が総崩れになるので、増やすことはあっても
+ * 既存キーの名前は変えないこと。 */
 var COLORS = {
-  mint:   { bg: '#35D0A5', fg: '#0B2A22' },
-  blue:   { bg: '#4A82D8', fg: '#F2F7FF' },
-  amber:  { bg: '#FFC53D', fg: '#3A2A00' },
-  red:    { bg: '#FF7A7A', fg: '#3A0D0D' },
-  purple: { bg: '#A97BE0', fg: '#2A1240' },
-  gray:   { bg: '#8C93AC', fg: '#12161F' }
+  mint:   { bg: '#12C48B', fg: '#052A1F' },
+  blue:   { bg: '#2B4CF2', fg: '#F0F3FF' },
+  amber:  { bg: '#FFC400', fg: '#2E2200' },
+  red:    { bg: '#FF5C38', fg: '#2C0A02' },
+  purple: { bg: '#6D4AE0', fg: '#F3EEFF' },
+  gray:   { bg: '#4A5568', fg: '#EEF1F6' }
 };
 
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
@@ -191,6 +194,27 @@ function saveLinks(rows) {
   sh.setColumnWidth(4, 320);
   cache_().remove('links');
   return '保存しました（' + (out.length - 1) + ' 件）';
+}
+
+/**
+ * 公開／非公開の1クリック切替。
+ * saveLinks はシート全体を書き直すが、こちらは該当行の visible 列だけを触る。
+ * 教師が他の欄を編集している最中でも、その未保存の入力を巻き込まない。
+ */
+function setVisible(id, visible) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+
+  var sh = sh_(SHEETS.LINKS);
+  var v = sh.getDataRange().getValues();
+
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][0]).trim() === String(id)) {
+      sh.getRange(i + 1, 7).setValue(visible ? true : false);   // 7 = visible 列
+      cache_().remove('links');
+      return visible ? '公開にしました' : '非公開にしました';
+    }
+  }
+  throw new Error('この行が見つかりません。ページを開き直してください。');
 }
 
 function saveHubConfig(obj) {
