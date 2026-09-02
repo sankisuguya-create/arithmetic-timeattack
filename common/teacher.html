@@ -64,6 +64,7 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
       <input id="teachers" class="wide" type="text">
     </div>
     <div id="flagRows"></div>
+    <div id="settingRows"></div>
     <div class="bar">
       <button id="save">設定を保存</button>
       <span class="stat" id="saveStat"></span>
@@ -111,6 +112,7 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 var BASE_KEYS = ['limit_sec','miss_limit','slow_ms','key_gap','teachers'];
 var KEYS = BASE_KEYS.slice();
 var FLAGS = [];
+var SETTINGS = [];
 
 google.script.run.withSuccessHandler(function(r){
   var c = r.config, u = r.unit;
@@ -126,6 +128,22 @@ google.script.run.withSuccessHandler(function(r){
       '<input id="'+f.gradeKey+'" type="number" min="1" max="6"></div>';
   }).join('');
   KEYS = BASE_KEYS.concat(FLAGS.map(function(f){ return f.gradeKey; }));
+
+  // 単元が宣言した設定欄。Core も teacher.html もキーの意味を知らない。
+  // 単元が持たなければ何も描かない（九九の画面に長さの欄は出ない）。
+  SETTINGS = u.settings || [];
+  document.getElementById('settingRows').innerHTML = SETTINGS.map(function(s){
+    var attr = (s.type === 'text')
+      ? 'type="text" class="wide"'
+      : 'type="number"' +
+        (s.min  !== undefined ? ' min="'+s.min+'"'   : '') +
+        (s.max  !== undefined ? ' max="'+s.max+'"'   : '') +
+        (s.step !== undefined ? ' step="'+s.step+'"' : '');
+    return '<div class="row"><label>'+s.label+
+      (s.note ? '<span class="note">'+s.note+'</span>' : '')+
+      '</label><input id="'+s.key+'" '+attr+'></div>';
+  }).join('');
+  KEYS = KEYS.concat(SETTINGS.map(function(s){ return s.key; }));
 
   // クラス表の見出し
   var head = document.getElementById('clsHead');
@@ -147,9 +165,12 @@ document.getElementById('save').onclick = function(){
   var btn = this; btn.disabled = true;
   document.getElementById('saveStat').textContent = '保存中…';
   var obj = {};
+  var textKeys = { teachers: 1 };
+  SETTINGS.forEach(function(s){ if(s.type === 'text') textKeys[s.key] = 1; });
   KEYS.forEach(function(k){
-    var v = document.getElementById(k).value;
-    obj[k] = (k === 'teachers') ? v : Number(v);
+    var el = document.getElementById(k);
+    if(!el) return;
+    obj[k] = textKeys[k] ? el.value : Number(el.value);
   });
   google.script.run.withSuccessHandler(function(){
     btn.disabled = false;

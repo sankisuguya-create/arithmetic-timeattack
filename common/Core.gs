@@ -245,10 +245,19 @@ function boot() {
   var cfg = config_();
   var c = child_(mail);
 
+  // 単元が UNIT.settings で宣言した設定だけを児童画面に渡す。
+  // Core はキーの意味を知らない（何に使うかは単元と ui.html の描画側の取り決め）。
+  var uset = {};
+  (UNIT.settings || []).forEach(function (s) {
+    var v = cfg[s.key];
+    uset[s.key] = (s.type === 'text') ? v : Number(v);
+  });
+
   var base = {
     ok: true,
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
             units: UNIT.units || {} },
+    settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
 
@@ -569,6 +578,7 @@ function getConfigForUI() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   return { config: config_(), unit: { id: UNIT.id, title: UNIT.title,
            modes: UNIT.modes, flags: UNIT.flags || [], types: UNIT.types,
+           settings: UNIT.settings || [],
            tips: UNIT.tips || '' } };
 }
 
