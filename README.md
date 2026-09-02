@@ -21,6 +21,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 | `apps/hub` | 各アプリへの入口。学年で出し分ける | 全学年 |
 | `apps/kuku` | 九九・わり算（9×9 / 9×16） | 2〜4年 |
 | `apps/length` | km と m の換算・加減計算、まきじゃくの読み取り | 3年 |
+| `apps/weight` | g と kg の換算・加減計算 | 3年 |
 
 ## 構成
 
