@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>プレビュー — 算数タイムアタック</title>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,"Noto Sans JP",sans-serif;background:#1b1f2a}
+  #bar{display:flex;align-items:center;gap:.6rem;padding:.6rem .9rem;background:#101420;color:#eee}
+  #bar a{color:#9fd8c2;text-decoration:none;font-weight:700;padding:.25rem .6rem;border-radius:6px}
+  #bar a.on{background:#2b5}
+  #bar a.on{color:#04150d}
+  #bar .lbl{opacity:.6;font-size:.8rem;margin-left:auto}
+  #frame{width:100%;height:calc(100% - 46px);border:0;background:#101420}
+  #msg{color:#f3b3b3;font-family:monospace;white-space:pre-wrap;padding:1rem}
+</style>
+</head>
+<body>
+<div id="bar">
+  <span style="font-weight:800">プレビュー</span>
+</div>
+<iframe id="frame"></iframe>
+<script>
+/**
+ * apps/<unit>/Unit.gs を、Google Apps Script にデプロイせずブラウザだけで見るための開発ツール。
+ * common/ui.html は改変しない（このファイルが fetch した内容をその場で加工するだけ）。
+ *
+ * 使い方: このファイルを静的サーバーで配信し、
+ *   .../tools/preview/preview.html?unit=weight のように unit= で単元idを指定して開く。
+ * 例:
+ *   Windows        : powershell -File tools/preview/serve.ps1  (→ http://127.0.0.1:8791/)
+ *   Mac/Linux/クラウド: python3 -m http.server 8791 --directory <リポジトリのルート>
+ *   どちらもリポジトリのルートを配信すること（相対パスで common/ と apps/ を読みに行くため）。
+ *
+ * 何をしているか:
+ *   1. common/Core.gs から ri_ / pick_（Unit.gs が使う補助関数。docs/ADD_UNIT.md 参照）を取り出す
+ *   2. apps/<unit>/Unit.gs をそのまま実行して UNIT を得る（出題ロジックは一切書き直さない）
+ *   3. common/ui.html を取得し、GAS の外で動かすための2箇所だけを汎用の実装に差し替える
+ *      - previewItem()  … ダミーの代わりに UNIT.gen(Math.random, mode) を呼ぶ
+ *      - 起動時の else 分岐 … MODES / UNITS / CFG.flags を UNIT.modes / UNIT.units / UNIT.flags から組み立てる
+ *   4. 1〜3を1つの HTML として iframe に流し込む
+ *
+ * 単元を追加してもこのファイルは変更不要（UNIT.gen / UNIT.modes / UNIT.units を読むだけの汎用実装のため）。
+ *
+ * 注意: このツールは apps/<unit>/Unit.gs を評価する際に `UNIT` をブラウザの
+ * グローバル変数として公開する。実際にデプロイされた common/ui.html には
+ * UNIT が渡らず digitCap_() が参照に失敗する既知の不具合があるため、
+ * このプレビューでの「桁数での自動確定」の挙動は実機と一致しない（プレビューの方が動く）。
+ */
+
+var KNOWN_UNITS = ['kuku', 'length', 'weight'];
+
+function q(name) {
+  return new URLSearchParams(location.search).get(name);
+}
+
+function buildBar(current) {
+  var bar = document.getElementById('bar');
+  KNOWN_UNITS.forEach(function (id) {
+    var a = document.createElement('a');
+    a.href = '?unit=' + id;
+    a.textContent = id;
+    if (id === current) a.className = 'on';
+    bar.appendChild(a);
+  });
+  var lbl = document.createElement('span');
+  lbl.className = 'lbl';
+  lbl.textContent = 'apps/' + current + '/Unit.gs のプレビュー（GAS未デプロイ）';
+  bar.appendChild(lbl);
+}
+
+function fail(msg) {
+  document.getElementById('frame').replaceWith(
+    Object.assign(document.createElement('pre'), { id: 'msg', textContent: msg })
+  );
+}
+
+async function main() {
+  var unit = q('unit') || 'length';
+  buildBar(unit);
+
+  var base = '../../';
+  var results = await Promise.allSettled([
+    fetch(base + 'common/Core.gs').then(function (r) { if (!r.ok) throw new Error('Core.gs: ' + r.status); return r.text(); }),
+    fetch(base + 'apps/' + unit + '/Unit.gs').then(function (r) { if (!r.ok) throw new Error('apps/' + unit + '/Unit.gs: ' + r.status); return r.text(); }),
+    fetch(base + 'common/ui.html').then(function (r) { if (!r.ok) throw new Error('ui.html: ' + r.status); return r.text(); })
+  ]);
+
+  var errs = results.filter(function (r) { return r.status === 'rejected'; }).map(function (r) { return r.reason.message; });
+  if (errs.length) {
+    fail('読み込みに失敗しました。静的サーバーがリポジトリのルートを配信しているか確認してください。\n\n' + errs.join('\n'));
+    return;
+  }
+  var coreText = results[0].value, unitText = results[1].value, uiText = results[2].value;
+
+  var riMatch = coreText.match(/function ri_\([^)]*\)\s*\{[^}]*\}/);
+  var pickMatch = coreText.match(/function pick_\([^)]*\)\s*\{[^}]*\}/);
+  if (!riMatch || !pickMatch) { fail('common/Core.gs から ri_ / pick_ を抽出できませんでした（実装が変わった可能性があります）。'); return; }
+
+  var previewItemRe = /function\s+previewItem\s*\(\)\s*\{[\s\S]*?\n\}/;
+  // ".boot();" は起動シーケンスに1箇所しか出てこないので、それを目印に
+  // 直後の "}else{ ... }" だけを狙う（ファイル中には他にも "}else{" があるため）。
+  var elseBlockRe = /(?<=\.boot\(\);\s{0,20})\}else\{[\s\S]*?renderMenu\(\);\s*show\('start'\);\s*\}/;
+  if (!previewItemRe.test(uiText) || !elseBlockRe.test(uiText)) {
+    fail('common/ui.html の想定していた箇所（previewItem / 起動時の else 分岐）が見つかりませんでした。ui.html の構造が変わった可能性があります。');
+    return;
+  }
+
+  var newPreviewItem =
+    "function previewItem(){\n" +
+    "  var it = UNIT.gen(Math.random, mode);\n" +
+    "  return {q:it.q, f:it.f, ans:it.ans, ruler:it.ruler||null, t:it.t||null};\n" +
+    "}";
+
+  var newElseBlock =
+    "}else{\n" +
+    "  MODES = {}; MODES_ALL = [];\n" +
+    "  (UNIT.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });\n" +
+    "  UNITS = UNIT.units || {};\n" +
+    "  CFG.flags = {};\n" +
+    "  (UNIT.flags||[]).forEach(function(f){ CFG.flags[f.key] = true; });\n" +
+    "  CFG.settings = {};\n" +
+    "  var __defs = (UNIT.defaults||{});\n" +
+    "  for (var __k in __defs) CFG.settings[__k] = __defs[__k];\n" +
+    "  setAppTitle(UNIT.title + '（プレビュー）');\n" +
+    "  BEST={}; MEDAL={}; STARS={}; PBEST={};\n" +
+    "  MODES_ALL.forEach(function(m){ BEST[m]=0; MEDAL[m]=''; STARS[m]=0; PBEST[m]=0; });\n" +
+    "  renderMenu(); show('start');\n" +
+    "}";
+
+  var patchedUi = uiText.replace(previewItemRe, newPreviewItem).replace(elseBlockRe, newElseBlock);
+
+  var helperScript =
+    '<script>\n' +
+    riMatch[0] + '\n' +
+    pickMatch[0] + '\n' +
+    unitText + '\n' +
+    '<' + '/script>\n';
+
+  var finalHtml = patchedUi.replace('<script>', helperScript + '<script>');
+
+  document.getElementById('frame').srcdoc = finalHtml;
+}
+
+main().catch(function (e) { fail(String(e && e.stack || e)); });
+</script>
+</body>
+</html>

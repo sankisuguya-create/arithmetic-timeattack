@@ -33,11 +33,14 @@ common/
 apps/
   kuku/Unit.gs   九九の出題定義
   length/Unit.gs 長さの出題定義
+  weight/Unit.gs おもさの出題定義
   hub/           ハブ（Code.gs / index.html / teacher.html）
 docs/
   ARCHITECTURE.md  設計の考え方
   SETUP.md         設置手順
   ADD_UNIT.md      新しい単元の作り方
+tools/
+  preview/       スプレッドシート無しで Unit.gs をブラウザ確認する開発ツール（tools/preview/README.md）
 ```
 
 **単元を足すときに書くのは `Unit.gs` 1枚だけ。**
