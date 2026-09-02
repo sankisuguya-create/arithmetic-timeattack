@@ -91,7 +91,9 @@ var UNIT = {
 
   /** めもりは合計で判定する（1m87cm も 187 も正解にする） */
   byTotal: function (item) { return item.t === 'G' || item.t === 'H'; },
-  unitScale: function (u) { return u === 'm' ? 100 : 1; },   // 合計判定は cm 換算
+  /** 合計判定に使う換算率（cm 換算）。関数ではなく宣言にしてあるのは、
+   *  同じ値を児童画面にも渡して、ui.html が単位名を決め打ちしないで済むようにするため */
+  scale: { m: 100, cm: 1 },
 
   /** weak_class / mistakes で「1/200」を「1km200m」のように表示するための単位マップ */
   fieldsByType: {

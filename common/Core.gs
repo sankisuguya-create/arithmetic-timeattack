@@ -256,10 +256,11 @@ function genQueue_(seed, mode, n) {
   return out;
 }
 
-/** 送信用に切り詰める: [出題トークン, 欄, 答え, 目盛り] */
+/** 送信用に切り詰める: [出題トークン, 欄, 答え, まきじゃく, 問題型, はかりの文字盤] */
 function packQueue_(q) {
   return q.map(function (x) {
-    return [x.q, x.f, x.f.map(function (k) { return x.ans[k]; }), x.ruler || null, x.t];
+    return [x.q, x.f, x.f.map(function (k) { return x.ans[k]; }),
+            x.ruler || null, x.t, x.dial || null];
   });
 }
 
@@ -313,7 +314,9 @@ function boot() {
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
-            types: UNIT.types || {}, typesByMode: typesByMode_() },
+            types: UNIT.types || {}, typesByMode: typesByMode_(),
+            // 合計で判定するときの換算率。ui.html が単位名を決め打ちしないために渡す
+            scale: UNIT.scale || {} },
     settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
@@ -367,7 +370,7 @@ function nextPracticeItem(mode, type) {
   return {
     ok: true, q: it.q, f: it.f,
     ans: it.f.map(function (k) { return it.ans[k]; }),
-    ruler: it.ruler || null, t: it.t || null
+    ruler: it.ruler || null, t: it.t || null, dial: it.dial || null
   };
 }
 
@@ -513,7 +516,8 @@ function match_(a, qq, byTotal) {
     var v = (a[i] === '' || a[i] === null || a[i] === undefined) ? 0 : Number(a[i]);
     if (isNaN(v)) return false;
     if (byTotal) {
-      var k = UNIT.unitScale ? UNIT.unitScale(u) : 1;
+      // 宣言（UNIT.scale）を正とする。unitScale(関数) は旧単元との互換のため残す
+      var k = (UNIT.scale && UNIT.scale[u]) || (UNIT.unitScale ? UNIT.unitScale(u) : 1);
       got += v * k; want += Number(qq.ans[u]) * k;
     } else {
       if (v !== Number(qq.ans[u])) return false;

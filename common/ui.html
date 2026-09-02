@@ -115,6 +115,14 @@ body{
   position:absolute;margin-left:8px}
 #play.ruler-mode .cntbox .n{font-size:clamp(1.8rem,3.6vw,2.6rem)}
 #play.ruler-mode .cntbox .l{font-size:.6rem;margin-top:.15rem}
+/* はかりの文字盤。.eq は既定では内容の幅までしか広がらないので、ここだけ広げる。
+   文字盤は正方形で、詰まるのは横ではなく縦なので、大きさは高さで決める。
+   まきじゃく側のレイアウトには触れない（すでに教室で使われているため）。 */
+#play.dial-mode .eq{width:100%}
+#play.dial-mode .ruler{width:100%}
+#play.dial-mode .ruler svg{width:auto;height:100%;margin:0 auto}
+/* 文字盤の上端（0の目盛り）と正答数がぶつかるので、こちらは左端に寄せる */
+#play.dial-mode .cntbox{left:8px;right:auto;margin-left:0}
 .eq .op{color:#5C6480;margin:0 .22em}
 .eq .slot{color:var(--chalk);border-bottom:.08em solid #3A4260;min-width:2.2ch;
   display:inline-block;text-align:center;cursor:pointer}
@@ -292,6 +300,8 @@ var UNITS = {};
    クライアントに在るかのように見えると、出題ロジックを呼びたくなるため。
    この画面が持ってよいのは宣言された桁数だけ。 */
 var DIGITCAP = {};
+/* 欄キー → 合計で判定するときの換算率。Unit.gs が決める（例 {km:1000, m:100, cm:1}） */
+var SCALE = {};
 /* 演算子トークン → 表示記号。四則は全単元共通なのでここに置く */
 var OPS = {'+':'+', '-':'−', '×':'×', '÷':'÷', '=':'='};
 
@@ -470,6 +480,55 @@ function rulerSVG(r){
   return '<svg viewBox="0 '+minY+' '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'+s.join('')+'</svg>';
 }
 
+/**
+ * まるい文字盤（はかり）を SVG で描く。単元が宣言した刻みだけを見る。
+ *   dial = { max:一周ぶんの値, step:1目もりの値, label:数字を書く間隔, at:針の位置,
+ *            unit:数字につける単位, big/bigUnit:大きい単位（任意） }
+ * 「g」「kg」をここに書かないこと。まきじゃくが cm を決め打ちしているのと
+ * 同じ誤りをもう一度作ることになる。単位名は宣言から受け取る。
+ */
+function dialSVG(d){
+  var W = 520, cx = 260, cy = 260, R = 222;
+  var step  = Math.max(1, Number(d.step) || 1);
+  var max   = Math.max(step, Number(d.max) || 1000);
+  var label = Math.max(step, Number(d.label) || max);
+  var at    = Number(d.at) || 0;
+  var s = [];
+
+  s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+(R+16)+'" fill="#EDEFF5" stroke="#3A4260" stroke-width="8"/>');
+  s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+(R-2)+'" fill="#FBF7E8"/>');
+
+  function pt(v, rad){
+    var th = (v / max) * Math.PI * 2 - Math.PI / 2;   // 0 は真上、時計回り
+    return [cx + rad * Math.cos(th), cy + rad * Math.sin(th)];
+  }
+  function fmt(v){
+    if(v === 0) return '0';
+    if(d.big && v % d.big === 0) return (v / d.big) + (d.bigUnit || '');
+    return v + (d.unit || '');
+  }
+
+  for(var v = 0; v < max; v += step){
+    var isBig = (v % label === 0), isMid = (v % (label / 2) === 0);
+    var a = pt(v, R), b = pt(v, R - (isBig ? 26 : (isMid ? 17 : 10)));
+    s.push('<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+
+           '" y2="'+b[1].toFixed(1)+'" stroke="#5A4A2A" stroke-width="'+(isBig?4:2)+'"/>');
+    if(isBig){
+      var tp = pt(v, R - 54);
+      s.push('<text x="'+tp[0].toFixed(1)+'" y="'+(tp[1]+11).toFixed(1)+'" text-anchor="middle" '+
+             'font-size="30" font-weight="800" fill="#5A4A2A">'+fmt(v)+'</text>');
+    }
+  }
+
+  // 針。反対側に短い尾を出すのは実物と同じで、回転の中心が見えるほうが読みやすいため
+  var np = pt(at, R - 76), tp2 = pt(at + max / 2, 36);
+  s.push('<line x1="'+tp2[0].toFixed(1)+'" y1="'+tp2[1].toFixed(1)+'" x2="'+np[0].toFixed(1)+
+         '" y2="'+np[1].toFixed(1)+'" stroke="#E5484D" stroke-width="7" stroke-linecap="round"/>');
+  s.push('<circle cx="'+cx+'" cy="'+cy+'" r="15" fill="#3A4260"/>');
+
+  return '<svg viewBox="0 10 '+W+' 500" xmlns="http://www.w3.org/2000/svg">'+s.join('')+'</svg>';
+}
+
 function unitSpan(u){
   var c = UNITS[u];
   return '<span class="u"'+(c ? ' style="color:'+c+'"' : '')+'>'+u+'</span>';
@@ -484,15 +543,19 @@ function draw(){
            (typed[unit] || '&nbsp;')+'</span>' + unitSpan(unit);
   });
 
-  $('play').classList.toggle('ruler-mode', !!q.ruler);
-  if(q.ruler){
-    // まきじゃく：目盛りの下に答えの欄
+  // 図（まきじゃく／はかり）を出す問題は、図の下に答えの欄を置く
+  var fig = q.ruler ? rulerSVG(q.ruler) : (q.dial ? dialSVG(q.dial) : '');
+  $('play').classList.toggle('ruler-mode', !!fig);
+  $('play').classList.toggle('dial-mode', !!q.dial);
+  if(fig){
     eqEl.className = 'eq';
-    var rw = uset_('ruler_width', 100);      // 画面幅に対する横幅(%)
+    // まきじゃくは横幅(%)で、はかりは高さ(vh)で大きさを決める（正方形なので縦が先に詰まる）
+    var style = q.ruler
+      ? 'width:'  + Math.max(30, Math.min(100, uset_('ruler_width', 100))) + '%'
+      : 'height:' + Math.max(20, Math.min(70,  uset_('dial_size', 44)))    + 'vh';
     eqEl.innerHTML =
       '<div class="rulerwrap">'+
-        '<div class="ruler" style="width:'+Math.max(30, Math.min(100, rw))+'%">'+
-          rulerSVG(q.ruler)+'</div>'+
+        '<div class="ruler" style="'+style+'">'+ fig +'</div>'+
         '<span class="line ans">'+rhs+'</span>'+
       '</div>';
   }else{
@@ -575,11 +638,12 @@ function isRight(){
   for(var i=0;i<q.f.length;i++) if(typed[q.f[i]] !== '') anyTyped = true;
   if(!anyTyped) return false;                       // 全部空は判定しない
 
-  if(q.ruler){
-    // めもりは合計 cm で見る。1m32cm も 132cm も正解にする
+  if(q.ruler || q.dial){
+    // めもりは合計で見る。1m32cm も 132cm も、1kg500g も 1500g も正解にする。
+    // 換算率は単元が SCALE で宣言したものを使う（ここに単位名を書かない）
     var got=0, want=0;
     q.f.forEach(function(u){
-      var k = (u==='m') ? 100 : 1;
+      var k = SCALE[u] || 1;
       got  += valOf(u) * k;
       want += q.ans[u] * k;
     });
@@ -679,7 +743,7 @@ function handleInput(k){
     if(fi < q.f.length - 1){
       // 前の欄 → 次の欄 への移動。正解と一致したら移る。
       // 一致しなくても、その欄の上限桁まで打てば移る。
-      var lead = declared || (q.ruler ? 1 : 2); // めもりの m は1桁、km は最大2桁
+      var lead = declared || ((q.ruler || q.dial) ? 1 : 2); // めもりの上位欄は1桁、他は最大2桁
       if(parseInt(typed[unit],10) === q.ans[unit] || typed[unit].length >= lead){
         fi++; paintSlots();
       }
@@ -689,7 +753,7 @@ function handleInput(k){
       // 宣言が無い単元は既存の既定動作のまま（正解の桁数 or 欄の上限で確定）。
       if(declared){
         if(typed[unit].length >= declared) submit();
-      }else if(q.ruler){
+      }else if(q.ruler || q.dial){
         var capR = (q.f.length === 1) ? 2 : 3;
         if(typed[unit].length >= capR) submit();
       }else{
@@ -835,7 +899,7 @@ function pFetch(){
       pFail = 0;
       var a = {};
       r.f.forEach(function(u, i){ a[u] = r.ans[i]; });
-      pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null};
+      pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null};
     }else{ pFail++; }
   }).withFailureHandler(function(){ pFetching = false; pFail++; })
     .nextPracticeItem(pMode, pType);
@@ -884,7 +948,7 @@ function beginPractice(timed){
       queue = r.qs.map(function(x){
         var a = {};
         x[1].forEach(function(u, i){ a[u] = x[2][i]; });
-        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null};
+        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null};
       });
       qi = 0; clearTyped(); ready = true;
     }).withFailureHandler(function(){ fatal('つうしんに しっぱいしました。'); })
@@ -965,7 +1029,7 @@ function begin(m){
       queue = r.qs.map(function(x){
         var a = {};
         x[1].forEach(function(u, i){ a[u] = x[2][i]; });
-        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null};
+        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null};
       });
       ready = true; clearTyped();
     }).withFailureHandler(function(){ fatal('つうしんに しっぱいしました。'); })
@@ -1192,6 +1256,7 @@ function applyBoot(r){
   (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });
   UNITS = r.unit.units || {};
   DIGITCAP = r.unit.digitCap || {};    // 古い localStorage の控えには無いので {} に落とす
+  SCALE = r.unit.scale || {};
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);
