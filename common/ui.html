@@ -278,6 +278,11 @@ var SRV = (typeof google !== 'undefined' && google.script && google.script.run);
 var MODES = {}, MODES_ALL = [];
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
+/* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
+   ここに UNIT という名前を使わないのは、単元オブジェクトそのものが
+   クライアントに在るかのように見えると、出題ロジックを呼びたくなるため。
+   この画面が持ってよいのは宣言された桁数だけ。 */
+var DIGITCAP = {};
 /* 演算子トークン → 表示記号。四則は全単元共通なのでここに置く */
 var OPS = {'+':'+', '-':'−', '×':'×', '÷':'÷', '=':'='};
 
@@ -507,15 +512,24 @@ function showMiss(){
  *  判定
  * ============================================================ */
 /**
- * 自動確定（Enterなし）に使う桁数を Unit に問い合わせる。
- * UNIT.digitCap = { モードid: { 欄キー: 桁数 } } という「宣言」だけを見る。
+ * 自動確定（Enterなし）に使う桁数の「宣言」を引く。
+ * DIGITCAP = { 問題型 or モードid: { 欄キー: 桁数 } }。問題型を先に見る。
+ *
  * 現在の問題の答え（q.ans）は一切参照しない — 参照すると、桁数の大小が
  * 「もうすぐ確定する／しない」という形でヒントに変わるため（docs/ARCHITECTURE.md 参照）。
+ *
+ * 問題型キーを許すのは、1つのモードに桁幅の違う型が同居するときにモードキーでは
+ * 書けないため（例：「1200g=□kg□g」の g は下位で3桁、「1kg500g=□g」の g は合計で4桁。
+ * どちらも欄キーは g）。型は問題文として画面に出ているので、型ごとに確定タイミングが
+ * 違っても新たな情報漏れにはならない。漏れるとまずいのは答えの大きさであって型ではない。
+ *
  * 宣言が無ければ null を返し、呼び出し側が単元非依存の既定値にフォールバックする。
  */
-function digitCap_(m, unit){
-  var dc = UNIT.digitCap && UNIT.digitCap[m];
-  return (dc && dc[unit]) || null;
+function digitCap_(m, t, unit){
+  var byType = t && DIGITCAP[t];
+  if(byType && byType[unit]) return byType[unit];
+  var byMode = DIGITCAP[m];
+  return (byMode && byMode[unit]) || null;
 }
 
 /* 空欄は 0 とみなす。400m を「0km400m」でも「km欄は空のまま400」でも正解にする */
@@ -621,7 +635,7 @@ function handleInput(k){
     // 全欄が正解と一致したら即座に通す（空欄は0扱い）
     if(isRight()){ submit(); return; }
 
-    var declared = digitCap_(curMode, unit);    // Unit が桁数を宣言していれば最優先
+    var declared = digitCap_(curMode, q.t, unit);   // Unit が桁数を宣言していれば最優先
     if(fi < q.f.length - 1){
       // 前の欄 → 次の欄 への移動。正解と一致したら移る。
       // 一致しなくても、その欄の上限桁まで打てば移る。
@@ -1117,6 +1131,7 @@ function applyBoot(r){
   MODES = {}; MODES_ALL = [];
   (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });
   UNITS = r.unit.units || {};
+  DIGITCAP = r.unit.digitCap || {};    // 古い localStorage の控えには無いので {} に落とす
   setAppTitle(r.unit.title);
   BEST=r.best; MEDAL=r.medals;
   STARS = r.stars || {}; PBEST = r.practiceBest || {};

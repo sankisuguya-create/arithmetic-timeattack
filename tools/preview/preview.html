@@ -41,10 +41,8 @@
  *
  * 単元を追加してもこのファイルは変更不要（UNIT.gen / UNIT.modes / UNIT.units を読むだけの汎用実装のため）。
  *
- * 注意: このツールは apps/<unit>/Unit.gs を評価する際に `UNIT` をブラウザの
- * グローバル変数として公開する。実際にデプロイされた common/ui.html には
- * UNIT が渡らず digitCap_() が参照に失敗する既知の不具合があるため、
- * このプレビューでの「桁数での自動確定」の挙動は実機と一致しない（プレビューの方が動く）。
+ * 自動確定の桁数は、実機の boot() と同じく DIGITCAP に入れて ui.html に渡す。
+ * ui.html 側の経路を実機と共有しているので、digitCap の宣言ミスはここで再現する。
  */
 
 var KNOWN_UNITS = ['kuku', 'length', 'weight'];
@@ -116,6 +114,7 @@ async function main() {
     "  MODES = {}; MODES_ALL = [];\n" +
     "  (UNIT.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });\n" +
     "  UNITS = UNIT.units || {};\n" +
+    "  DIGITCAP = UNIT.digitCap || {};\n" +   // 実機の boot() と同じものを同じ変数に入れる
     "  CFG.flags = {};\n" +
     "  (UNIT.flags||[]).forEach(function(f){ CFG.flags[f.key] = true; });\n" +
     "  CFG.settings = {};\n" +

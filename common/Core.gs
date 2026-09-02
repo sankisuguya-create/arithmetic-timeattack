@@ -255,8 +255,11 @@ function boot() {
 
   var base = {
     ok: true,
+    // digitCap は「宣言」なので、そのままクライアントへ渡してよい（答えは含まない）。
+    // 渡さないと ui.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
+    // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
-            units: UNIT.units || {} },
+            units: UNIT.units || {}, digitCap: UNIT.digitCap || {} },
     settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
