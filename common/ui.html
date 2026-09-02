@@ -227,6 +227,15 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   <div class="hint tap" data-back="1">Esc でもどる</div>
 </section>
 
+<!-- 型を絞った練習。むせいげん（記録しない）のときだけ通る。
+     記録する経路に入れると、同じ型ばかりのブロック練習が log を偏らせ、
+     weak_child の平均がその型だけ短く出て、診断そのものが壊れる。 -->
+<section id="ptype" class="screen pick">
+  <div class="picktitle">どれを れんしゅう する？</div>
+  <div class="opgrid" id="ptypeGrid" style="grid-template-columns:1fr;width:min(460px,92vw)"></div>
+  <div class="hint tap" data-back="1">Esc でもどる</div>
+</section>
+
 <section id="play" class="screen">
   <div id="bar"></div>
   <div class="hud">
@@ -294,6 +303,10 @@ var typed = {}, fi = 0;                    // 2欄入力の状態
 var correct=0, attempts=0, miss=0, startT=0, raf=0, locked=false, ready=false;
 var items=[], curAns=[], shownAt=0, firstKeyAt=0, token='';
 var practice=false, pMode=1, pTimed=false, pRecorded=false;
+/* 絞って練習する問題型。'' なら絞らない（＝いろいろ混ぜる） */
+var pType='';
+/* 問題型のラベルと、モードごとに出る型。Unit.gs が決め、boot() が運んでくる */
+var TYPES={}, TYPES_BY_MODE={};
 
 var $ = function(id){ return document.getElementById(id); };
 var eqEl=$('eq'), barEl=$('bar'), countEl=$('count');
@@ -329,7 +342,7 @@ function previewItem(){
  *  画面
  * ============================================================ */
 function show(id){
-  ['start','keyset','popt','ptime','play','result'].forEach(function(s){ $(s).classList.remove('on'); });
+  ['start','keyset','popt','ptime','ptype','play','result'].forEach(function(s){ $(s).classList.remove('on'); });
   $(id).classList.add('on'); scr = id;
 }
 function fatal(t){ $('msg').textContent = t; $('msg').classList.add('on'); }
@@ -368,6 +381,23 @@ function openPractice(){
   show('popt');
 }
 function toTimeSelect(){ $('ptimeLimitLabel').textContent = CFG.limitSec + 'びょう'; show('ptime'); }
+
+/**
+ * 型を絞る画面。むせいげん（記録しない）を選んだときだけ出る。
+ * 「この子は◯◯が弱い」という診断は画面に出さない。児童が自分で選ぶだけにする
+ * （名指しは、遅さを隠す行動を誘発する。README の weak_child の項を参照）。
+ */
+function openTypeSelect(){
+  var list = (TYPES_BY_MODE[pMode] || []).slice(0, 8);
+  var cards = ['<div class="card" data-ptype=""><div class="k">1</div>' +
+               '<div><div class="t">ぜんぶ</div><div class="s">いろいろ まざる</div></div></div>'];
+  list.forEach(function(t, i){
+    cards.push('<div class="card" data-ptype="'+t+'"><div class="k">'+(i+2)+'</div>' +
+               '<div><div class="t">'+(TYPES[t] || t)+'</div></div></div>');
+  });
+  $('ptypeGrid').innerHTML = cards.join('');
+  show('ptype');
+}
 
 /* ============================================================
  *  出題の描画（2欄対応）
@@ -808,7 +838,7 @@ function pFetch(){
       pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null};
     }else{ pFail++; }
   }).withFailureHandler(function(){ pFetching = false; pFail++; })
-    .nextPracticeItem(pMode);
+    .nextPracticeItem(pMode, pType);
 }
 
 /** 先読みが間に合っていればすぐ描く。間に合わなければ届き次第 描く */
@@ -831,13 +861,17 @@ function pServe(){
 
 function beginPractice(timed){
   practice = true; pTimed = !!timed;
+  // 記録する経路では型を絞らない。同じ型ばかりの記録が入ると
+  // weak_child の平均がその型だけ短く出て、診断が壊れる
+  if(timed) pType = '';
   pRecorded = practiceRecorded(timed);
   correct=0; attempts=0; miss=0; locked=false; items=[]; curAns=[]; token='';
   ready = !pRecorded;                       // 記録するときは問題列の到着を待つ
   countEl.textContent='0';
   $('playMedal').textContent='';
   $('playLabel').textContent = MODES[pMode].name +
-    (pTimed ? (pRecorded ? '（きろく あり）' : '') : ' ／ むせいげん');
+    (pTimed ? (pRecorded ? '（きろく あり）' : '')
+            : ' ／ むせいげん' + (pType ? '（' + (TYPES[pType] || pType) + '）' : ''));
   $('footnote').textContent='';
   applyLayout();
 
@@ -1018,12 +1052,13 @@ function goBack(){
   if(scr === 'keyset') show('start');
   else if(scr === 'popt') show('start');
   else if(scr === 'ptime') show('popt');
+  else if(scr === 'ptype') show('ptime');
   else if(scr === 'result'){
     document.body.classList.remove('practice-result');
-    show(practice ? 'ptime' : 'start');
+    show(practice ? (pTimed ? 'ptime' : 'ptype') : 'start');
   }else if(scr === 'play'){
     cancelAnimationFrame(raf);
-    show(practice ? 'ptime' : 'start');
+    show(practice ? (pTimed ? 'ptime' : 'ptype') : 'start');
   }
 }
 
@@ -1058,8 +1093,17 @@ document.addEventListener('keydown', function(e){
   }
   if(scr === 'ptime'){
     if(k === '1'){ e.preventDefault(); beginPractice(true); }
-    else if(k === '2'){ e.preventDefault(); beginPractice(false); }
+    else if(k === '2'){ e.preventDefault(); openTypeSelect(); }
     else if(k === 'Escape'){ e.preventDefault(); goBack(); }
+    return;
+  }
+  if(scr === 'ptype'){
+    if(k>='1' && k<='9'){
+      e.preventDefault();
+      var tl = (TYPES_BY_MODE[pMode] || []).slice(0, 8);
+      if(+k === 1){ pType = ''; beginPractice(false); }
+      else if(+k - 2 < tl.length){ pType = tl[+k-2]; beginPractice(false); }
+    }else if(k === 'Escape'){ e.preventDefault(); goBack(); }
     return;
   }
   if(scr === 'result'){
@@ -1108,7 +1152,13 @@ document.addEventListener('click', function(e){
     if(pc){ pMode = +pc.dataset.pmode; toTimeSelect(); }
   }else if(scr === 'ptime'){
     var tc = t.closest('.timecard');
-    if(tc) beginPractice(tc.dataset.time === 'limit');
+    if(tc){
+      if(tc.dataset.time === 'limit') beginPractice(true);
+      else openTypeSelect();                    // むせいげんのときだけ型を選ばせる
+    }
+  }else if(scr === 'ptype'){
+    var yc = t.closest('[data-ptype]');
+    if(yc){ pType = yc.dataset.ptype || ''; beginPractice(false); }
   }else if(scr === 'play'){
     var slot = t.closest('.slot');
     if(slot){ setField(+slot.dataset.fi); return; }   // 解答欄をタップして移動
@@ -1142,6 +1192,8 @@ function applyBoot(r){
   (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });
   UNITS = r.unit.units || {};
   DIGITCAP = r.unit.digitCap || {};    // 古い localStorage の控えには無いので {} に落とす
+  TYPES = r.unit.types || {};
+  TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);
   BEST=r.best; MEDAL=r.medals;
   STARS = r.stars || {}; PBEST = r.practiceBest || {};

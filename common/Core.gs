@@ -215,6 +215,33 @@ function rng_(seed) {
 function ri_(rand, lo, hi) { return lo + Math.floor(rand() * (hi - lo + 1)); }
 function pick_(rand, arr) { return arr[Math.floor(rand() * arr.length)]; }
 
+/**
+ * そのモードに出る問題型を、gen を実際に回して求める。
+ * Unit.gs に pool を別途宣言させると gen と二重管理になり、
+ * 片方だけ直したときに「練習の選択肢」と「実際に出る問題」がずれる。
+ * 出題の正本は gen ひとつだけ、を保つために derive する。
+ *
+ * 300回引く。プールが4型なら取りこぼす確率は事実上ゼロ。
+ * 極端に出現率の低い型（1%未満）を作った単元では取りこぼしうる。
+ */
+function typesInMode_(mode) {
+  var rand = rng_(20260903), seen = {}, out = [];
+  for (var i = 0; i < 300; i++) {
+    var t = UNIT.gen(rand, Number(mode)).t;
+    if (t && !seen[t]) { seen[t] = true; out.push(t); }
+  }
+  return out;
+}
+
+function typesByMode_() {
+  var hit = cache_().get('typesbymode');
+  if (hit) return JSON.parse(hit);
+  var out = {};
+  modeIds_().forEach(function (m) { out[m] = typesInMode_(m); });
+  cache_().put('typesbymode', JSON.stringify(out), 3600);
+  return out;
+}
+
 /** 直前3問と同じ問題を避けながら n 問作る */
 function genQueue_(seed, mode, n) {
   var rand = rng_(seed);
@@ -284,7 +311,9 @@ function boot() {
     // 渡さないと ui.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
-            units: UNIT.units || {}, digitCap: UNIT.digitCap || {} },
+            units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
+            // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
+            types: UNIT.types || {}, typesByMode: typesByMode_() },
     settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
@@ -316,7 +345,7 @@ function boot() {
  * 記録しない練習（むせいげん）の1問。クライアントに出題ロジックを持たせないため、
  * ここで1問ずつ作って返す。記録しないので token もシードも要らない。
  */
-function nextPracticeItem(mode) {
+function nextPracticeItem(mode, type) {
   var mail = email_();
   var c = child_(mail);
   if (!c && !isGuest_(mail)) return { ok: false };
@@ -326,6 +355,15 @@ function nextPracticeItem(mode) {
 
   var rand = rng_(Math.floor(Math.random() * 2147483647));
   var it = UNIT.gen(rand, mode);
+
+  // 型を絞った練習。gen を引き直して当たりを待つ（棄却法）。
+  // 型ごとの生成関数を Unit.gs に足させると gen と二重管理になるので、
+  // 出題の正本は gen のままにしておく。プールが4型なら平均4回で当たる。
+  // 60回引いても当たらなければ、そのまま返す（画面が止まるよりはよい）。
+  if (type) {
+    for (var i = 0; i < 60 && it.t !== type; i++) it = UNIT.gen(rand, mode);
+  }
+
   return {
     ok: true, q: it.q, f: it.f,
     ans: it.f.map(function (k) { return it.ans[k]; }),

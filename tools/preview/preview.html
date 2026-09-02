@@ -105,7 +105,9 @@ async function main() {
 
   var newPreviewItem =
     "function previewItem(){\n" +
-    "  var it = UNIT.gen(Math.random, mode);\n" +
+    "  var m = practice ? pMode : mode;\n" +           // 練習は pMode。mode は本番用で更新されない
+    "  var it = UNIT.gen(Math.random, m);\n" +
+    "  if(pType){ for(var i=0;i<60 && it.t!==pType;i++) it = UNIT.gen(Math.random, m); }\n" +
     "  return {q:it.q, f:it.f, ans:it.ans, ruler:it.ruler||null, t:it.t||null};\n" +
     "}";
 
@@ -115,6 +117,12 @@ async function main() {
     "  (UNIT.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });\n" +
     "  UNITS = UNIT.units || {};\n" +
     "  DIGITCAP = UNIT.digitCap || {};\n" +   // 実機の boot() と同じものを同じ変数に入れる
+    "  TYPES = UNIT.types || {};\n" +
+    // 型の一覧は Core.gs と同じく gen を回して導出する
+    "  TYPES_BY_MODE = {};\n" +
+    "  MODES_ALL.forEach(function(m){ var seen={}, list=[];\n" +
+    "    for(var i=0;i<300;i++){ var t=UNIT.gen(Math.random,m).t; if(t&&!seen[t]){seen[t]=true;list.push(t);} }\n" +
+    "    TYPES_BY_MODE[m]=list; });\n" +
     "  CFG.flags = {};\n" +
     "  (UNIT.flags||[]).forEach(function(f){ CFG.flags[f.key] = true; });\n" +
     "  CFG.settings = {};\n" +
