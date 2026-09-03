@@ -183,11 +183,46 @@ function flagsFor_(grade, cls) {
   return out;
 }
 
-function modeAllowed_(mode, flags) {
+function modeAllowed_(mode, flags, tries) {
   var m = modeDef_(mode);
   if (!m) return false;
-  if (!m.flag) return true;
-  return !!flags[m.flag];
+  if (m.flag && !flags[m.flag]) return false;
+  return needsMet_(m, flags, tries);
+}
+
+/**
+ * 順次開放。前のモードを規定回数やるまで、次のモードを開けない。
+ *
+ *   modes: [{ id: 2, needs: { mode: 1, tries: 3, bypass: 'open_all' } }]
+ *
+ * 条件を「回数」にしてあるのは、成績（正答数）にすると閾値の適正値が学級ごとに違い、
+ * 下位層が最後のモードに永久に到達しないため。README が到達バッジを却下したのと
+ * 同型の欠陥で、それを個人内評価ではなく解禁の顔をして持ち込むことになる。
+ * 回数なら遅い子でも必ず到達し、順序だけが担保される。
+ *
+ * bypass に flags のキーを書くと、教師がクラス単位で一括解除できる
+ * （授業で全員に同じモードをやらせる場面のため）。
+ *
+ * tries が無いとき（名簿にない試用者）は開けておく。記録が無いので条件を判定できず、
+ * 閉じる側に倒すと試用そのものができなくなる。
+ */
+function needsMet_(m, flags, tries) {
+  var nd = m.needs;
+  if (!nd) return true;
+  if (!tries) return true;
+  if (nd.bypass && flags && flags[nd.bypass]) return true;
+  return (Number(tries[nd.mode]) || 0) >= Number(nd.tries);
+}
+
+/** まだ開いていないモードに、開け方の案内文を付ける。{ モードid: 文言 } */
+function lockNotes_(flags, tries) {
+  var out = {};
+  UNIT.modes.forEach(function (m) {
+    if (needsMet_(m, flags, tries)) return;
+    out[m.id] = '「' + modeName_(m.needs.mode) + '」を ' +
+                m.needs.tries + 'かい やると あきます';
+  });
+  return out;
 }
 
 function modeDef_(id) {
@@ -329,6 +364,7 @@ function boot() {
     (UNIT.flags || []).forEach(function (f) { allOn[f.key] = true; });
     base.guest = true; base.name = ''; base.grade = 0;
     base.flags = allOn;
+    base.locked = {};                 // 記録が無いので順次開放は判定できない。開けておく
     base.best = {}; base.practiceBest = {}; base.stars = {}; base.medals = {};
     modeIds_().forEach(function (m) {
       base.best[m] = 0; base.practiceBest[m] = 0; base.stars[m] = 0; base.medals[m] = '';
@@ -340,6 +376,7 @@ function boot() {
   base.flags = flagsFor_(c.grade, c.cls);
   var b = bests_(mail, cfg.limit_sec);
   base.best = b.best; base.practiceBest = b.practiceBest; base.stars = b.stars;
+  base.locked = lockNotes_(base.flags, b.tries);
   base.medals = medals_(classKey_(c), mail, cfg.limit_sec);
   return base;
 }
@@ -354,7 +391,7 @@ function nextPracticeItem(mode, type) {
   if (!c && !isGuest_(mail)) return { ok: false };
   mode = Number(mode);
   if (modeIds_().indexOf(mode) < 0) return { ok: false };
-  if (c && !modeAllowed_(mode, flagsFor_(c.grade, c.cls))) return { ok: false };
+  if (c && !modeAllowed_(mode, flagsFor_(c.grade, c.cls), triesByMode_(mail))) return { ok: false };
 
   var rand = rng_(Math.floor(Math.random() * 2147483647));
   var it = UNIT.gen(rand, mode);
@@ -390,8 +427,8 @@ function startSession(mode, practice) {
     };
   }
 
-  if (!modeAllowed_(mode, flagsFor_(c.grade, c.cls))) {
-    return { ok: false, msg: 'このモードはまだ使えません。' };
+  if (!modeAllowed_(mode, flagsFor_(c.grade, c.cls), triesByMode_(mail))) {
+    return { ok: false, msg: 'このモードは まだ つかえません。' };
   }
 
   var seed = Math.floor(Math.random() * 2147483647);
@@ -539,11 +576,15 @@ var SUM = { MAIL:0, MODE:1, NAME:2, LIM:3, KIND:4, TRIES:5, TC:6, TA:7, BEST:8, 
 
 function bests_(mail, limitSec) {
   var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
-  var real = {}, prac = {}, stars = {};
-  modeIds_().forEach(function (m) { real[m] = 0; prac[m] = 0; stars[m] = 0; });
+  var real = {}, prac = {}, stars = {}, tries = {};
+  modeIds_().forEach(function (m) { real[m] = 0; prac[m] = 0; stars[m] = 0; tries[m] = 0; });
 
   for (var i = 1; i < v.length; i++) {
     if (String(v[i][SUM.MAIL]).toLowerCase() !== mail) continue;
+    var mt = Number(v[i][SUM.MODE]);
+    // 順次開放に使う試行回数だけは、制限時間も本番／練習も問わずに合算する。
+    // 「何回やったか」の条件なので、条件を満たす道を制限時間の設定で塞がない。
+    if (tries[mt] !== undefined) tries[mt] += Number(v[i][SUM.TRIES]) || 0;
     if (Number(v[i][SUM.LIM]) !== Number(limitSec)) continue;
     var m = Number(v[i][SUM.MODE]);
     if (String(v[i][SUM.KIND]) === 'p') {
@@ -553,7 +594,20 @@ function bests_(mail, limitSec) {
       stars[m] = Math.min(Number(v[i][SUM.COUNT]) || 0, STAR_MAX);
     }
   }
-  return { best: real, practiceBest: prac, stars: stars };
+  return { best: real, practiceBest: prac, stars: stars, tries: tries };
+}
+
+/** 順次開放の判定だけに使う。boot は bests_ が返す tries を使い、ここは通らない */
+function triesByMode_(mail) {
+  var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
+  var out = {};
+  modeIds_().forEach(function (m) { out[m] = 0; });
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][SUM.MAIL]).toLowerCase() !== mail) continue;
+    var m = Number(v[i][SUM.MODE]);
+    if (out[m] !== undefined) out[m] += Number(v[i][SUM.TRIES]) || 0;
+  }
+  return out;
 }
 
 /**

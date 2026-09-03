@@ -25,7 +25,7 @@ body{
 #start{align-items:center;justify-content:center;gap:1.4rem;padding:1.3rem}
 .apptitle{font-size:clamp(1.3rem,4.5vw,1.9rem);font-weight:800;letter-spacing:.02em}
 .timelede{font-size:clamp(1.5rem,5.5vw,2.3rem);font-weight:800;color:var(--mint);margin-top:-.6rem}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;width:min(620px,94vw)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;width:min(760px,96vw)}
 .card{background:#fff;border:1.5px solid var(--line);border-radius:14px;
   padding:1rem 1.1rem;display:flex;align-items:center;gap:.85rem;
   transition:border-color .12s;cursor:pointer}
@@ -46,6 +46,10 @@ body{
 .card .hs{font-size:1.8rem;font-weight:800}
 .card .hs.none{color:var(--line)}
 .card .hslbl{font-size:.58rem;color:var(--mute);letter-spacing:.1em;font-weight:700;margin-top:.2rem}
+/* まだ開いていないモード。消さずに薄く出す（順序が見えないと「順番にやる」が伝わらない） */
+.card.locked{opacity:.5;background:#F7F8FA;cursor:default}
+.card.locked .k{background:var(--line)}
+.card .lock{font-size:.72rem;color:var(--mute);font-weight:700;margin-top:.3rem;line-height:1.25}
 .hint{font-size:.88rem;color:var(--mute);font-weight:600}
 .tap{cursor:pointer;padding:.35rem .6rem;border-radius:8px;display:inline-block}
 .tap:hover{background:#EDEDE8;color:var(--ink)}
@@ -292,7 +296,7 @@ body.practice-result .stats,body.practice-result .rank{display:none}
 var SRV = (typeof google !== 'undefined' && google.script && google.script.run);
 
 /* モードはサーバー（Unit.gs）から受け取る。この画面は単元を知らない */
-var MODES = {}, MODES_ALL = [];
+var MODES = {}, MODES_ALL = [], LOCKED = {};
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -363,13 +367,22 @@ function visibleModes(){
     return !f || !!CFG.flags[f];
   });
 }
+function isLocked(m){ return !!LOCKED[m]; }
+
 function renderMenu(){
   var vis = visibleModes();
   $('modeGrid').innerHTML = vis.map(function(m, idx){
     var hs = BEST[m];
-    return '<div class="card" data-mode="'+m+'">'+
+    if(isLocked(m)){
+      return '<div class="card locked" data-mode="'+m+'">'+
+        '<div class="k">'+(idx+1)+'</div>'+
+        '<div><div class="t">'+MODES[m].name+'</div><div class="s">'+MODES[m].desc+'</div>'+
+        '<div class="lock">'+LOCKED[m]+'</div></div></div>';
+    }
+    var head = '<div class="card" data-mode="'+m+'">'+
       '<div class="k">'+(idx+1)+'</div>'+
-      '<div><div class="t">'+MODES[m].name+'</div><div class="s">'+MODES[m].desc+'</div></div>'+
+      '<div><div class="t">'+MODES[m].name+'</div><div class="s">'+MODES[m].desc+'</div></div>';
+    return head +
       '<div class="rt"><div class="badges">'+
         '<div class="medal">'+(MEDAL[m]||'')+'</div>'+
         (STARS[m] ? '<div class="star">★'+STARS[m]+'</div>' : '')+
@@ -377,18 +390,33 @@ function renderMenu(){
       '<div class="hsbox"><div class="hs'+(hs?'':' none')+'">'+(hs||'—')+'</div>'+
       '<div class="hslbl">'+CFG.limitSec+'びょう ベスト</div></div></div></div>';
   }).join('');
-  $('startHint').textContent = vis.length
-    ? ('1〜' + vis.length + ' のキーで はじまります')
-    : 'よみこみ中…';
+  // 押せる番号だけを案内する。順次開放で閉じているモードの番号を混ぜると、
+  // 押しても始まらないキーを児童に教えることになる。
+  // 1から連続して開いているうちは「1〜3」と範囲で言う（列挙より短い）
+  var open = vis.map(function(m, i){ return isLocked(m) ? 0 : i+1; })
+                .filter(function(n){ return n; });
+  var seq = open.length && open[open.length-1] === open.length;
+  $('startHint').textContent = !vis.length ? 'よみこみ中…'
+    : !open.length ? ''
+    : open.length === 1 ? (open[0] + ' のキーで はじまります')
+    : seq ? ('1〜' + open.length + ' のキーで はじまります')
+    : (open.join('・') + ' のキーで はじまります');
 }
 function openPractice(){
   var vis = visibleModes();
   $('poptGrid').innerHTML = vis.map(function(m, idx){
-    return '<div class="card" data-pmode="'+m+'">'+
+    return '<div class="card'+(isLocked(m)?' locked':'')+'" data-pmode="'+m+'">'+
       '<div class="k">'+(idx+1)+'</div>'+
-      '<div><div class="t">'+MODES[m].name+'</div><div class="s">'+MODES[m].desc+'</div></div></div>';
+      '<div><div class="t">'+MODES[m].name+'</div><div class="s">'+MODES[m].desc+'</div>'+
+      (isLocked(m) ? '<div class="lock">'+LOCKED[m]+'</div>' : '')+'</div></div>';
   }).join('');
   show('popt');
+}
+
+/* 練習も本番と同じ解禁条件で扱う。ここだけ開いていると順序が意味を失う */
+function pickPractice(m){
+  if(isLocked(m)) return;
+  pMode = m; toTimeSelect();
 }
 function toTimeSelect(){ $('ptimeLimitLabel').textContent = CFG.limitSec + 'びょう'; show('ptime'); }
 
@@ -565,12 +593,23 @@ function draw(){
       else if(OPS.hasOwnProperty(tok)) lhs += '<span class="op">'+OPS[tok]+'</span>';
       else lhs += tok;
     });
-    // 式が長いときは「＝」以下を2段目に落とす（トークン数だけで決める）
+    // 式が長いときは「＝」以下を2段目に落とす。
+    var oneHtml = '<span class="line">'+lhs+'<span class="op">=</span>'+rhs+'</span>';
+    var twoHtml = '<span class="line">'+lhs+'</span>'+
+                  '<span class="line ans"><span class="op">=</span>'+rhs+'</span>';
     var two = (q.q.length > 4);
     eqEl.className = 'eq' + (two ? '' : ' oneline');
-    eqEl.innerHTML = two
-      ? '<span class="line">'+lhs+'</span><span class="line ans"><span class="op">=</span>'+rhs+'</span>'
-      : '<span class="line">'+lhs+'<span class="op">=</span>'+rhs+'</span>';
+    eqEl.innerHTML = two ? twoHtml : oneHtml;
+
+    // トークン数では幅を測れない。日本語の語（「9のだん　35まで」）や、
+    // 単位ラベル付きの2欄（「□あまり□」）があると、同じトークン数でも幅が倍ちがう。
+    // .stage は鍵盤のぶん画面より狭いので、はみ出すと式の頭と答えの欄が画面の外へ出る。
+    // 実際に描いてから幅を見て、収まらなければ2段に落とす。単元の内容には依存しない。
+    var box = eqEl.parentNode;
+    if(!two && box.clientWidth > 0 && eqEl.getBoundingClientRect().width > box.clientWidth){
+      eqEl.className = 'eq';
+      eqEl.innerHTML = twoHtml;
+    }
   }
 
   shownAt = performance.now();
@@ -1014,6 +1053,7 @@ function finishPractice(){
 
 function begin(m){
   if(MODES[m].flag && !CFG.flags[MODES[m].flag]) return;
+  if(isLocked(m)) return;
   practice=false; pTimed=false; pRecorded=false;
   document.body.classList.remove('practice-result');
   mode=m; token=''; ready=false;
@@ -1151,7 +1191,7 @@ document.addEventListener('keydown', function(e){
     if(k>='1' && k<='6'){
       e.preventDefault();
       var v2 = visibleModes();
-      if(+k <= v2.length){ pMode = v2[+k-1]; toTimeSelect(); }
+      if(+k <= v2.length) pickPractice(v2[+k-1]);
     }else if(k === 'Escape'){ e.preventDefault(); goBack(); }
     return;
   }
@@ -1213,7 +1253,7 @@ document.addEventListener('click', function(e){
     if(sz){ setSize(sz.dataset.size); renderKeyset(); }
   }else if(scr === 'popt'){
     var pc = t.closest('[data-pmode]');
-    if(pc){ pMode = +pc.dataset.pmode; toTimeSelect(); }
+    if(pc) pickPractice(+pc.dataset.pmode);
   }else if(scr === 'ptime'){
     var tc = t.closest('.timecard');
     if(tc){
@@ -1252,6 +1292,7 @@ function applyBoot(r){
   CFG.limitSec=r.limitSec; CFG.missLimit=r.missLimit;
   CFG.flags = r.flags || {}; CFG.guest = !!r.guest;
   CFG.settings = r.settings || {};
+  LOCKED = r.locked || {};             // 古い控えには無いので {}（＝全部開いて見える）に落とす
   MODES = {}; MODES_ALL = [];
   (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });
   UNITS = r.unit.units || {};
