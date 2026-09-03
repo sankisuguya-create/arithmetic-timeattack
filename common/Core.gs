@@ -51,7 +51,6 @@ function defaults_() {
   for (var k in BASE_DEFAULTS) d[k] = BASE_DEFAULTS[k];
   var u = UNIT.defaults || {};
   for (var k2 in u) d[k2] = u[k2];
-  (UNIT.flags || []).forEach(function (f) { d[f.gradeKey] = f.defaultGrade; });
   return d;
 }
 
@@ -148,6 +147,14 @@ function classKey_(c) { return c.grade + '-' + c.cls; }
 
 /* ---- モードの解禁フラグ（学年既定 + クラスごとの上書き） ---- */
 
+/**
+ * クラスごとの公開設定。{ '3-1': { modes: {1:true,2:false,...}, seqOff: false } }
+ *
+ * 公開はモード単位で持つ。以前は「フラグ」（かけ算の拡張・計算モードなど）を単元が
+ * 宣言し、複数のモードが1つのフラグを共有していた。その形では
+ * 「わり算9×16 だけ閉じる」ができず、`flag: null` のモードは閉じる手段が無かった。
+ * 20モードのうち単独で閉じられるものが1つも無い状態だったので、モード単位にした。
+ */
 function classConfig_() {
   var hit = cache_().get('classcfg');
   if (hit) return JSON.parse(hit);
@@ -159,35 +166,90 @@ function classConfig_() {
     for (var i = 1; i < v.length; i++) {
       var ck = String(v[i][0]).trim();
       if (!ck) continue;
-      var o = {};
-      (UNIT.flags || []).forEach(function (f) {
-        var col = head.indexOf('allow_' + f.key);
-        if (col >= 0) o[f.key] = toBool_(v[i][col]);
+      var row = { modes: {}, seqOff: false };
+      modeIds_().forEach(function (id) {
+        var col = head.indexOf('mode_' + id);
+        if (col >= 0) row.modes[id] = toBool_(v[i][col]);
       });
-      map[ck] = o;
+      var sc = head.indexOf('seq_off');
+      if (sc >= 0) row.seqOff = toBool_(v[i][sc]);
+      map[ck] = row;
     }
   }
   cache_().put('classcfg', JSON.stringify(map), TTL.config);
   return map;
 }
 
-/** 返り値: { flagKey: true/false, ... } */
-function flagsFor_(grade, cls) {
-  var cfg = config_();
-  var out = {}, over = classConfig_()[grade + '-' + cls];
-  (UNIT.flags || []).forEach(function (f) {
-    out[f.key] = (over && over[f.key] !== undefined)
-      ? over[f.key]
-      : (Number(grade) >= Number(cfg[f.gradeKey]));
+/**
+ * そのクラスで公開されているモード。{ modeId: true/false }
+ *
+ * 学年による既定は持たない。教師が class_config で明示したものだけを開ける。
+ * 「学年が3以上なら自動で開く」は、担任が触っていないのに開いている状態を作る。
+ * どのモードを出すかは進度の判断なので、既定で開けない側に倒す。
+ */
+function openFor_(grade, cls) {
+  var over = classConfig_()[grade + '-' + cls];
+  var out = {};
+  modeIds_().forEach(function (id) { out[id] = !!(over && over.modes[id]); });
+  return out;
+}
+
+/** そのクラスが順次開放を外しているか */
+function seqOffFor_(grade, cls) {
+  var over = classConfig_()[grade + '-' + cls];
+  return !!(over && over.seqOff);
+}
+
+function modeAllowed_(mode, open, seqOff, tries) {
+  var m = modeDef_(mode);
+  if (!m) return false;
+  if (!open[m.id]) return false;
+  return needsMet_(m, seqOff, tries);
+}
+
+/**
+ * 順次開放。前のモードを規定回数やるまで、次のモードを開けない。
+ *
+ *   modes: [{ id: 2, needs: { mode: 1, tries: 3 } }]
+ *
+ * 条件を「回数」にしてあるのは、成績（正答数）にすると閾値の適正値が学級ごとに違い、
+ * 下位層が最後のモードに永久に到達しないため。README が到達バッジを却下したのと
+ * 同型の欠陥で、それを個人内評価ではなく解禁の顔をして持ち込むことになる。
+ * 回数なら遅い子でも必ず到達し、順序だけが担保される。
+ *
+ * class_config の seq_off にチェックを入れると、そのクラスだけ順序を外せる
+ * （授業で全員に同じモードをやらせる場面のため）。
+ *
+ * tries が無いとき（名簿にない試用者）は開けておく。記録が無いので条件を判定できず、
+ * 閉じる側に倒すと試用そのものができなくなる。
+ */
+function needsMet_(m, seqOff, tries) {
+  var nd = m.needs;
+  if (!nd) return true;
+  if (!tries) return true;
+  if (seqOff) return true;
+  return (Number(tries[nd.mode]) || 0) >= Number(nd.tries);
+}
+
+/**
+ * まだ開いていないモードに、開け方の案内文を付ける。{ モードid: 文言 }
+ * 教師が非公開にしたモードはここに入れない（画面から消えるので案内する相手がいない）。
+ */
+function lockNotes_(open, seqOff, tries) {
+  var out = {};
+  UNIT.modes.forEach(function (m) {
+    if (!open[m.id]) return;
+    if (needsMet_(m, seqOff, tries)) return;
+    out[m.id] = '「' + modeName_(m.needs.mode) + '」を ' +
+                m.needs.tries + 'かい やると あきます';
   });
   return out;
 }
 
-function modeAllowed_(mode, flags) {
-  var m = modeDef_(mode);
-  if (!m) return false;
-  if (!m.flag) return true;
-  return !!flags[m.flag];
+/** 順次開放を使う単元か。教師画面に「じゅんばん解除」の列を出すかの判定に使う */
+function hasNeeds_() {
+  for (var i = 0; i < UNIT.modes.length; i++) if (UNIT.modes[i].needs) return true;
+  return false;
 }
 
 function modeDef_(id) {
@@ -196,6 +258,13 @@ function modeDef_(id) {
 }
 
 function modeIds_() { return UNIT.modes.map(function (m) { return m.id; }); }
+
+/** class_config の見出し。class | mode_1 … mode_n | seq_off（順次開放を使う単元だけ） */
+function classHead_() {
+  var head = ['class'].concat(modeIds_().map(function (id) { return 'mode_' + id; }));
+  if (hasNeeds_()) head.push('seq_off');
+  return head;
+}
 
 /** シート上で mode 番号の意味が分かるように、名前も並べて記録する */
 function modeName_(m) { var d = modeDef_(m); return d ? d.name : ('mode' + m); }
@@ -326,9 +395,10 @@ function boot() {
       return { ok: false, msg: '名簿に登録がありません。担任の先生に伝えてください。' };
     }
     var allOn = {};
-    (UNIT.flags || []).forEach(function (f) { allOn[f.key] = true; });
+    modeIds_().forEach(function (m) { allOn[m] = true; });
     base.guest = true; base.name = ''; base.grade = 0;
-    base.flags = allOn;
+    base.open = allOn;                // 名簿外の試用者。記録されないので全モード出す
+    base.locked = {};                 // 記録が無いので順次開放は判定できない。開けておく
     base.best = {}; base.practiceBest = {}; base.stars = {}; base.medals = {};
     modeIds_().forEach(function (m) {
       base.best[m] = 0; base.practiceBest[m] = 0; base.stars[m] = 0; base.medals[m] = '';
@@ -337,9 +407,10 @@ function boot() {
   }
 
   base.guest = false; base.name = c.name; base.grade = c.grade;
-  base.flags = flagsFor_(c.grade, c.cls);
+  base.open = openFor_(c.grade, c.cls);
   var b = bests_(mail, cfg.limit_sec);
   base.best = b.best; base.practiceBest = b.practiceBest; base.stars = b.stars;
+  base.locked = lockNotes_(base.open, seqOffFor_(c.grade, c.cls), b.tries);
   base.medals = medals_(classKey_(c), mail, cfg.limit_sec);
   return base;
 }
@@ -354,7 +425,8 @@ function nextPracticeItem(mode, type) {
   if (!c && !isGuest_(mail)) return { ok: false };
   mode = Number(mode);
   if (modeIds_().indexOf(mode) < 0) return { ok: false };
-  if (c && !modeAllowed_(mode, flagsFor_(c.grade, c.cls))) return { ok: false };
+  if (c && !modeAllowed_(mode, openFor_(c.grade, c.cls),
+                         seqOffFor_(c.grade, c.cls), triesByMode_(mail))) return { ok: false };
 
   var rand = rng_(Math.floor(Math.random() * 2147483647));
   var it = UNIT.gen(rand, mode);
@@ -390,8 +462,9 @@ function startSession(mode, practice) {
     };
   }
 
-  if (!modeAllowed_(mode, flagsFor_(c.grade, c.cls))) {
-    return { ok: false, msg: 'このモードはまだ使えません。' };
+  if (!modeAllowed_(mode, openFor_(c.grade, c.cls),
+                    seqOffFor_(c.grade, c.cls), triesByMode_(mail))) {
+    return { ok: false, msg: 'このモードは まだ つかえません。' };
   }
 
   var seed = Math.floor(Math.random() * 2147483647);
@@ -539,11 +612,15 @@ var SUM = { MAIL:0, MODE:1, NAME:2, LIM:3, KIND:4, TRIES:5, TC:6, TA:7, BEST:8, 
 
 function bests_(mail, limitSec) {
   var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
-  var real = {}, prac = {}, stars = {};
-  modeIds_().forEach(function (m) { real[m] = 0; prac[m] = 0; stars[m] = 0; });
+  var real = {}, prac = {}, stars = {}, tries = {};
+  modeIds_().forEach(function (m) { real[m] = 0; prac[m] = 0; stars[m] = 0; tries[m] = 0; });
 
   for (var i = 1; i < v.length; i++) {
     if (String(v[i][SUM.MAIL]).toLowerCase() !== mail) continue;
+    var mt = Number(v[i][SUM.MODE]);
+    // 順次開放に使う試行回数だけは、制限時間も本番／練習も問わずに合算する。
+    // 「何回やったか」の条件なので、条件を満たす道を制限時間の設定で塞がない。
+    if (tries[mt] !== undefined) tries[mt] += Number(v[i][SUM.TRIES]) || 0;
     if (Number(v[i][SUM.LIM]) !== Number(limitSec)) continue;
     var m = Number(v[i][SUM.MODE]);
     if (String(v[i][SUM.KIND]) === 'p') {
@@ -553,7 +630,20 @@ function bests_(mail, limitSec) {
       stars[m] = Math.min(Number(v[i][SUM.COUNT]) || 0, STAR_MAX);
     }
   }
-  return { best: real, practiceBest: prac, stars: stars };
+  return { best: real, practiceBest: prac, stars: stars, tries: tries };
+}
+
+/** 順次開放の判定だけに使う。boot は bests_ が返す tries を使い、ここは通らない */
+function triesByMode_(mail) {
+  var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
+  var out = {};
+  modeIds_().forEach(function (m) { out[m] = 0; });
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][SUM.MAIL]).toLowerCase() !== mail) continue;
+    var m = Number(v[i][SUM.MODE]);
+    if (out[m] !== undefined) out[m] += Number(v[i][SUM.TRIES]) || 0;
+  }
+  return out;
 }
 
 /**
@@ -653,7 +743,7 @@ function resetDaily() {
 function getConfigForUI() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   return { config: config_(), unit: { id: UNIT.id, title: UNIT.title,
-           modes: UNIT.modes, flags: UNIT.flags || [], types: UNIT.types,
+           modes: UNIT.modes, types: UNIT.types,
            settings: UNIT.settings || [],
            tips: UNIT.tips || '' } };
 }
@@ -675,7 +765,7 @@ function saveConfig(obj) {
 
 function listClasses() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  var cfg = config_(), over = classConfig_();
+  var over = classConfig_();
   var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
 
   var seen = {}, out = [];
@@ -684,26 +774,27 @@ function listClasses() {
     if (!grade || !cls) continue;
     var ck = grade + '-' + cls;
     if (seen[ck]) { seen[ck].n++; continue; }
-    var o = over[ck], row = { cls: ck, grade: grade, room: cls, n: 1, flags: {} };
-    (UNIT.flags || []).forEach(function (f) {
-      row.flags[f.key] = (o && o[f.key] !== undefined) ? o[f.key]
-                       : (grade >= Number(cfg[f.gradeKey]));
-    });
+    var o = over[ck];
+    var row = { cls: ck, grade: grade, room: cls, n: 1,
+                modes: {}, seqOff: !!(o && o.seqOff) };
+    modeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
     seen[ck] = row; out.push(row);
   }
   out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
-  return { classes: out, flags: UNIT.flags || [] };   // flags に defaultGrade が入っている
+  return { classes: out, modes: UNIT.modes, hasNeeds: hasNeeds_() };
 }
 
 function saveClassConfig(rows) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var sh = ss_().getSheetByName(SHEETS.CLASS) || ss_().insertSheet(SHEETS.CLASS);
   sh.clear();
-  var keys = (UNIT.flags || []).map(function (f) { return f.key; });
-  var head = ['class'].concat(keys.map(function (k) { return 'allow_' + k; }));
+  var head = classHead_();
+  var ids = modeIds_();
   var out = [head];
   (rows || []).forEach(function (r) {
-    out.push([String(r.cls)].concat(keys.map(function (k) { return !!(r.flags && r.flags[k]); })));
+    var line = [String(r.cls)].concat(ids.map(function (id) { return !!(r.modes && r.modes[id]); }));
+    if (hasNeeds_()) line.push(!!r.seqOff);
+    out.push(line);
   });
   sh.getRange(1, 1, out.length, head.length).setValues(out);
   sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
@@ -1055,7 +1146,7 @@ function applyFriendlyStyling_() {
   var notes = {
     roster: 'ここに児童を登録します（email／学年／組／番号／氏名）。\n学年・組の表記はそろえてください（「2」に統一。「2組」などを混ぜない）。',
     config: '各種設定です。通常は教師用ページ（?page=teacher）から変更してください。\n直接編集すると、反映まで最大5分かかります。',
-    class_config: 'クラスごとにモードの解禁を上書きする設定です。通常は教師用ページから操作してください。',
+    class_config: 'クラスごとに、どのモードを児童に見せるかの設定です。チェックの無いモードは表示されません。\n通常は教師用ページ（?page=teacher）から操作してください。',
     log: '1回のプレイ（1試行）を1行で記録した内部データです。直接は読まなくてよいシートです。\n個々の誤答を読みたいときは mistakes シートを、傾向を見たいときは weak_child / weak_class を見てください。',
     daily: '当日の学級内ランキングを計算するための内部データです。直接は見なくてよいシートです。',
     summary: '児童ごと・モードごと・制限時間ごとの累計成績とハイスコアです。kind列は r=本番／p=練習です。'
@@ -1070,7 +1161,7 @@ function ensureSheets_() {
   var ss = ss_(), defs = {};
   defs[SHEETS.CONFIG] = ['key', 'value'];
   defs[SHEETS.ROSTER] = ['email', '学年', '組', '番号', '氏名'];
-  defs[SHEETS.CLASS] = ['class'].concat((UNIT.flags || []).map(function (f) { return 'allow_' + f.key; }));
+  defs[SHEETS.CLASS] = classHead_();
   defs[SHEETS.LOG] = ['ts', 'email', '学年', '組', '番号', '氏名', 'mode', 'モード名', 'limit_sec',
                       'correct', 'attempts', 'miss_items', 'slow_items', 'type_stats', 'wrong_items'];
   defs[SHEETS.DAILY] = ['date', 'class', 'mode', 'モード名', 'limit_sec', 'email', 'best', 'ts'];
@@ -1078,6 +1169,16 @@ function ensureSheets_() {
                           'tries', 'total_correct', 'total_attempts', 'best', 'best_count'];
   defs[SHEETS.WCHILD] = [];
   defs[SHEETS.WCLASS] = [];
+
+  // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
+  // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。
+  // モード単位に変えた時点で中身は読めないので、残しても意味がない。
+  var cls = ss.getSheetByName(SHEETS.CLASS);
+  if (cls && cls.getLastRow() > 0) {
+    var h0 = cls.getRange(1, 1, 1, cls.getLastColumn()).getValues()[0].map(String);
+    var hasMode = h0.some(function (x) { return x.indexOf('mode_') === 0; });
+    if (!hasMode) cls.clear();
+  }
 
   var made = false;
   for (var name in defs) {

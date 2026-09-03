@@ -30,6 +30,9 @@ button:disabled{opacity:.45;cursor:default}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:.76rem;color:var(--mute);padding:.4rem .3rem;font-weight:700}
 td{padding:.55rem .3rem;border-top:1.5px solid var(--line)}
+.legend{font-size:.8rem;line-height:1.7;color:var(--mute);margin-bottom:.4rem}
+.legend b{color:var(--ink);font-weight:700}
+.legend .n{display:inline-block;width:1.2rem;font-weight:800;color:var(--ink)}
 .tips{font-size:.84rem;line-height:1.9}
 .tips b{color:var(--ink)}
 code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
@@ -63,7 +66,6 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
         <span class="note">メールアドレスをカンマ区切りで。所有者は常に開けます</span></label>
       <input id="teachers" class="wide" type="text">
     </div>
-    <div id="flagRows"></div>
     <div id="settingRows"></div>
     <div class="bar">
       <button id="save">設定を保存</button>
@@ -74,19 +76,21 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
   <div class="box">
     <h2>クラスごとの もーど</h2>
     <p style="font-size:.88rem;margin-bottom:.4rem">
-      チェックを入れたクラスだけ、そのモードが児童に表示されます。
-      初期値は上の「学年」設定から自動で入ります。
+      <b>チェックを入れたモードだけが、そのクラスの児童に表示されます。</b>
+      初期状態はすべてオフです。学年による自動の解禁はありません。
     </p>
-    <div style="margin:1rem 0">
+    <div style="margin:1rem 0;overflow-x:auto">
       <div class="stat" id="clsLoading">読み込み中…</div>
       <table id="clsTable" style="display:none">
         <thead><tr id="clsHead"><th>クラス</th><th>人数</th></tr></thead>
         <tbody id="clsBody"></tbody>
       </table>
     </div>
+    <div class="legend" id="clsLegend"></div>
     <div class="bar">
       <button id="clsSave">クラス設定を保存</button>
-      <button id="clsReset" class="ghost">学年の既定に戻す</button>
+      <button id="clsAll" class="ghost">ぜんぶオン</button>
+      <button id="clsNone" class="ghost">ぜんぶオフ</button>
       <span class="stat" id="clsStat"></span>
     </div>
   </div>
@@ -111,23 +115,13 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 <script>
 var BASE_KEYS = ['limit_sec','miss_limit','slow_ms','key_gap','teachers'];
 var KEYS = BASE_KEYS.slice();
-var FLAGS = [];
 var SETTINGS = [];
 
 google.script.run.withSuccessHandler(function(r){
   var c = r.config, u = r.unit;
-  FLAGS = u.flags || [];
   document.getElementById('h1').textContent = u.teacherTitle || u.title || '設定・分析';
   document.getElementById('sub').textContent = '設定と分析';
   document.getElementById('tips').innerHTML = u.tips || '';
-
-  // 単元ごとの「解禁学年」欄を作る
-  document.getElementById('flagRows').innerHTML = FLAGS.map(function(f){
-    return '<div class="row"><label>'+f.label+'を許可する学年'+
-      '<span class="note">クラスごとに上書きできます</span></label>'+
-      '<input id="'+f.gradeKey+'" type="number" min="1" max="6"></div>';
-  }).join('');
-  KEYS = BASE_KEYS.concat(FLAGS.map(function(f){ return f.gradeKey; }));
 
   // 単元が宣言した設定欄。Core も teacher.html もキーの意味を知らない。
   // 単元が持たなければ何も描かない（九九の画面に長さの欄は出ない）。
@@ -144,14 +138,6 @@ google.script.run.withSuccessHandler(function(r){
       '</label><input id="'+s.key+'" '+attr+'></div>';
   }).join('');
   KEYS = KEYS.concat(SETTINGS.map(function(s){ return s.key; }));
-
-  // クラス表の見出し
-  var head = document.getElementById('clsHead');
-  FLAGS.forEach(function(f){
-    var th = document.createElement('th');
-    th.style.textAlign = 'center'; th.textContent = f.label;
-    head.appendChild(th);
-  });
 
   KEYS.forEach(function(k){
     var el = document.getElementById(k);
@@ -193,18 +179,53 @@ document.getElementById('agg').onclick = function(){
   }).aggregate();
 };
 
-/* ===== クラスごとの設定 ===== */
-var CLS = { classes: [], flags: [] };
+/* ===== クラスごとの公開モード =====
+ * 列見出しはモード番号にして、名前と例は表の下の凡例に置く。
+ * モード名（「かんさん きほん」など）をそのまま6列並べると表が横に伸びて読めない。 */
+var CLS = { classes: [], modes: [], hasNeeds: false };
 
 function renderClasses(){
+  var head = document.getElementById('clsHead');
+  head.innerHTML = '<th>クラス</th><th>人数</th>' +
+    CLS.modes.map(function(m, i){
+      return '<th style="text-align:center">'+(i+1)+'</th>';
+    }).join('') +
+    (CLS.hasNeeds ? '<th style="text-align:center">じゅん<br>ばん解除</th>' : '');
+
   document.getElementById('clsBody').innerHTML = CLS.classes.map(function(c){
-    var cells = FLAGS.map(function(f){
+    var cells = CLS.modes.map(function(m){
       return '<td style="text-align:center"><input type="checkbox" data-cls="'+c.cls+
-             '" data-k="'+f.key+'"'+(c.flags[f.key]?' checked':'')+'></td>';
+             '" data-m="'+m.id+'"'+(c.modes[m.id]?' checked':'')+'></td>';
     }).join('');
+    if(CLS.hasNeeds){
+      cells += '<td style="text-align:center"><input type="checkbox" data-cls="'+c.cls+
+               '" data-seq="1"'+(c.seqOff?' checked':'')+'></td>';
+    }
     return '<tr><td style="font-weight:800">'+c.grade+'年 '+c.room+'組</td>'+
       '<td style="color:var(--mute)">'+c.n+'</td>'+cells+'</tr>';
   }).join('');
+
+  document.getElementById('clsLegend').innerHTML =
+    CLS.modes.map(function(m, i){
+      return '<div><span class="n">'+(i+1)+'</span><b>'+m.name+'</b>'+
+             (m.desc ? '　'+m.desc : '')+'</div>';
+    }).join('') +
+    (CLS.hasNeeds
+      ? '<div style="margin-top:.4rem">「じゅんばん解除」を入れると、前のモードの回数に関係なく'+
+        'すべて使えるようになります。</div>'
+      : '');
+}
+
+/* 画面のチェックを CLS に取り込む。表を描き直す前に必ず呼ぶ（未保存の操作を失わない） */
+function collectClasses(){
+  var map = {};
+  CLS.classes.forEach(function(c){ map[c.cls] = c; });
+  document.querySelectorAll('#clsBody input[type=checkbox]').forEach(function(cb){
+    var c = map[cb.dataset.cls];
+    if(!c) return;
+    if(cb.dataset.seq) c.seqOff = cb.checked;
+    else c.modes[cb.dataset.m] = cb.checked;
+  });
 }
 
 google.script.run.withSuccessHandler(function(r){
@@ -219,29 +240,27 @@ google.script.run.withSuccessHandler(function(r){
 document.getElementById('clsSave').onclick = function(){
   var btn = this; btn.disabled = true;
   document.getElementById('clsStat').textContent = '保存中…';
-  var map = {};
-  CLS.classes.forEach(function(c){ map[c.cls] = { cls:c.cls, flags:{} }; });
-  document.querySelectorAll('#clsBody input[type=checkbox]').forEach(function(cb){
-    if(map[cb.dataset.cls]) map[cb.dataset.cls].flags[cb.dataset.k] = cb.checked;
-  });
-  var rows = Object.keys(map).map(function(k){ return map[k]; });
+  collectClasses();
   google.script.run.withSuccessHandler(function(m){
     btn.disabled = false;
     document.getElementById('clsStat').textContent = m + '（次に開いた児童から反映）';
   }).withFailureHandler(function(e){
     btn.disabled = false;
     document.getElementById('clsStat').textContent = 'エラー: ' + e.message;
-  }).saveClassConfig(rows);
+  }).saveClassConfig(CLS.classes);
 };
 
-document.getElementById('clsReset').onclick = function(){
-  FLAGS.forEach(function(f){
-    var g = Number(document.getElementById(f.gradeKey).value) || f.defaultGrade;
-    CLS.classes.forEach(function(c){ c.flags[f.key] = c.grade >= g; });
+function setAll(v){
+  collectClasses();
+  CLS.classes.forEach(function(c){
+    CLS.modes.forEach(function(m){ c.modes[m.id] = v; });
   });
   renderClasses();
-  document.getElementById('clsStat').textContent = '既定に戻しました（保存を押すと確定）';
-};
+  document.getElementById('clsStat').textContent =
+    (v ? 'ぜんぶオンにしました' : 'ぜんぶオフにしました') + '（保存を押すと確定）';
+}
+document.getElementById('clsAll').onclick  = function(){ setAll(true); };
+document.getElementById('clsNone').onclick = function(){ setAll(false); };
 </script>
 </body>
 </html>

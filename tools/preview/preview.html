@@ -36,7 +36,7 @@
  *   2. apps/<unit>/Unit.gs をそのまま実行して UNIT を得る（出題ロジックは一切書き直さない）
  *   3. common/ui.html を取得し、GAS の外で動かすための2箇所だけを汎用の実装に差し替える
  *      - previewItem()  … ダミーの代わりに UNIT.gen(Math.random, mode) を呼ぶ
- *      - 起動時の else 分岐 … MODES / UNITS / CFG.flags を UNIT.modes / UNIT.units / UNIT.flags から組み立てる
+ *      - 起動時の else 分岐 … MODES / UNITS / CFG.open を UNIT.modes / UNIT.units から組み立てる
  *   4. 1〜3を1つの HTML として iframe に流し込む
  *
  * 単元を追加してもこのファイルは変更不要（UNIT.gen / UNIT.modes / UNIT.units を読むだけの汎用実装のため）。
@@ -45,7 +45,7 @@
  * ui.html 側の経路を実機と共有しているので、digitCap の宣言ミスはここで再現する。
  */
 
-var KNOWN_UNITS = ['kuku', 'length', 'weight'];
+var KNOWN_UNITS = ['kuku', 'length', 'weight', 'divmod'];
 
 function q(name) {
   return new URLSearchParams(location.search).get(name);
@@ -124,8 +124,8 @@ async function main() {
     "  MODES_ALL.forEach(function(m){ var seen={}, list=[];\n" +
     "    for(var i=0;i<300;i++){ var t=UNIT.gen(Math.random,m).t; if(t&&!seen[t]){seen[t]=true;list.push(t);} }\n" +
     "    TYPES_BY_MODE[m]=list; });\n" +
-    "  CFG.flags = {};\n" +
-    "  (UNIT.flags||[]).forEach(function(f){ CFG.flags[f.key] = true; });\n" +
+    "  CFG.open = {};\n" +            // 公開設定はサーバー側の class_config なので、全モード出す
+    "  MODES_ALL.forEach(function(m){ CFG.open[m] = true; });\n" +
     "  CFG.settings = {};\n" +
     "  var __defs = (UNIT.defaults||{});\n" +
     "  for (var __k in __defs) CFG.settings[__k] = __defs[__k];\n" +

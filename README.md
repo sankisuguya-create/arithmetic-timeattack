@@ -35,6 +35,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 | `apps/kuku` | 九九・わり算（9×9 / 9×16） | 2〜4年 |
 | `apps/length` | km と m の換算・加減計算、まきじゃくの読み取り | 3年 |
 | `apps/weight` | g と kg の換算・加減計算、はかりの読み取り | 3年 |
+| `apps/divmod` | あまりのあるわり算（九九さがし→誤答判別→わり算） | 3年 |
 
 ## 構成
 
@@ -42,11 +43,12 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 common/
   Core.gs        共通エンジン。認証・出題配信・再採点・記録・ランキング・分析
   ui.html        共通の児童画面（レイアウト・キー配置・タイマー・送信）
-  teacher.html   共通の教師画面（設定・クラス別解禁・集計）
+  teacher.html   共通の教師画面（設定・クラスごとの公開モード・集計）
 apps/
   kuku/Unit.gs   九九の出題定義
   length/Unit.gs 長さの出題定義
   weight/Unit.gs おもさの出題定義
+  divmod/Unit.gs あまりのあるわり算の出題定義
   hub/           ハブ（Code.gs / index.html / teacher.html）
 docs/
   ARCHITECTURE.md  設計の考え方

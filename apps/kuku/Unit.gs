@@ -17,17 +17,12 @@ var UNIT = {
   /** 答えが整数1つなので単位は出ない */
   units: {},
 
-  /** モードの解禁フラグ。クラスごとに上書きできる */
-  flags: [
-    { key: 'div', label: 'わり算',      gradeKey: 'div_min_grade', defaultGrade: 3 },
-    { key: 'ext', label: '拡張(9×16)', gradeKey: 'ext_min_grade', defaultGrade: 4 }
-  ],
-
+  /** どのモードを児童に見せるかは、教師がクラスごとに指定する（class_config） */
   modes: [
-    { id: 1, name: 'かけ算', desc: '9×9 まで',  flag: null  },
-    { id: 2, name: 'かけ算', desc: '9×16 まで', flag: 'ext' },
-    { id: 3, name: 'わり算', desc: '9×9 まで',  flag: 'div' },
-    { id: 4, name: 'わり算', desc: '9×16 まで', flag: 'ext' }
+    { id: 1, name: 'かけ算 9×9',  desc: '2×6 のような九九' },
+    { id: 2, name: 'かけ算 9×16', desc: '9×14 まで広げる' },
+    { id: 3, name: 'わり算 9×9',  desc: '48÷6 のようなわり切れるわり算' },
+    { id: 4, name: 'わり算 9×16', desc: '126÷9 まで広げる' }
   ],
 
   /** 分析の軸。段ごとに見る */
