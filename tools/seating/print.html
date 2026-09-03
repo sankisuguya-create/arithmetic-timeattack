@@ -1,0 +1,196 @@
+<!--
+  print.html — 座席表の印刷（4種）
+
+  向きについて。教卓に立って児童を見る向きと、児童が黒板を見る向きは
+  上下も左右も逆になる（鏡像ではなく180度の回転）。上下だけ反転させると
+  左右が入れ替わらず、教室と合わない座席表ができる。ここでは回転で作る。
+
+  班の区切りは色ではなく太線で描く。校務の印刷機は白黒が既定で、
+  淡色の塗り分けは灰色の濃淡になって班の境界が読めなくなるため。
+
+  外部リソースを読まない（CSS・JSはすべてここに書く）。
+-->
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN","Meiryo",sans-serif;
+         color:#000; background:#f0f0f0; }
+  #bar { position:sticky; top:0; display:flex; gap:6px; align-items:center; padding:8px 12px;
+         background:#fff; border-bottom:1px solid #ccc; font-size:13px; }
+  button.t { padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; font-size:12px; }
+  button.t.on { background:#1a73e8; color:#fff; border-color:#1a73e8; }
+  button.t.go { background:#137333; color:#fff; border-color:#137333; margin-left:auto; }
+  #note { color:#666; font-size:11px; padding:4px 12px; }
+  #wrap { padding:14px; display:flex; justify-content:center; }
+
+  .sheet { background:#fff; padding:8mm; width:297mm; height:210mm; }
+  .head { display:flex; align-items:baseline; gap:8mm; height:9mm; }
+  .head .cls { font-size:5mm; font-weight:700; }
+  .head .sub { font-size:3.2mm; color:#444; }
+  table.seats { border-collapse:collapse; margin:0 auto; }
+  td.c { padding:0; text-align:center; vertical-align:middle; }
+  td.seat { border:0.25mm solid #000; }
+  td.note { border:0.25mm dashed #666; color:#333; }
+  .yomi { color:#333; }
+  .nm { font-weight:700; }
+  .no { color:#333; font-variant-numeric:tabular-nums; }
+  .corner { position:relative; height:100%; }
+  .corner .no { position:absolute; top:0.5mm; left:1mm; }
+
+  @media print {
+    @page { size: A4 landscape; margin: 8mm; }
+    body { background:#fff; }
+    #bar, #note { display:none; }
+    #wrap { padding:0; }
+    .sheet { padding:0; width:auto; height:auto; }
+  }
+</style>
+
+<div id="bar">
+  <button class="t on" id="t0" onclick="pick(0)">掲示用</button>
+  <button class="t" id="t1" onclick="pick(1)">教師用</button>
+  <button class="t" id="t2" onclick="pick(2)">番号のみ</button>
+  <button class="t" id="t3" onclick="pick(3)">白紙版</button>
+  <button class="t go" onclick="window.print()">この1枚を印刷</button>
+</div>
+<div id="note"></div>
+<div id="wrap"><div class="sheet" id="sheet">読み込み中…</div></div>
+
+<script>
+var D = null, mode = 0;
+var MODES = [
+  { key:'掲示用',  view:'child',   sub:'教室に貼る（児童から見た向き）' },
+  { key:'教師用',  view:'teacher', sub:'教卓に置く（教卓から見た向き）' },
+  { key:'番号のみ', view:'teacher', sub:'テスト・配布物の仕分け用' },
+  { key:'白紙版',  view:'teacher', sub:'授業中の記録用' }
+];
+
+google.script.run.withSuccessHandler(init).withFailureHandler(function (e) {
+  document.getElementById('sheet').textContent = String(e && e.message ? e.message : e);
+}).getBoardData();
+
+function init(d) { D = d; draw(); }
+
+function pick(i) {
+  mode = i;
+  for (var k = 0; k < 4; k++) document.getElementById('t' + k).className = 't' + (k === i ? ' on' : '');
+  draw();
+}
+
+/**
+ * 平面図は「教卓の位置」の設定どおりに描かれている。
+ * 教卓が上に描いてあれば、その向きがそのまま児童から見た向き。
+ * 教師用はそこから180度回す。教卓を下に描いている場合は逆になる。
+ */
+function needRotate(view) {
+  var drawnAsChildView = (D.teacherDeskAt !== '下');
+  return (view === 'child') ? !drawnAsChildView : drawnAsChildView;
+}
+
+function draw() {
+  if (!D) return;
+  var m = MODES[mode];
+  var rot = needRotate(m.view);
+  var rows = D.plan.rows, cols = D.plan.cols;
+
+  // A4横。余白8mmを引いた 281×194mm のうち、見出しに9mmを使う
+  var cw = Math.min(281 / cols, 46);
+  var ch = Math.min(185 / rows, cw * 1.15);
+
+  var byNum = {};
+  for (var i = 0; i < D.roster.length; i++) byNum[D.roster[i].num] = D.roster[i];
+
+  // 回転後の格子を先に組み立てる。罫線は回転後の隣どうしで判定する
+  var g = [];
+  for (var r = 0; r < rows; r++) {
+    g.push([]);
+    for (var c = 0; c < cols; c++) {
+      var src = rot ? D.plan.cells[rows - 1 - r][cols - 1 - c] : D.plan.cells[r][c];
+      g[r].push(src);
+    }
+  }
+
+  var html = '<div class="head">' +
+    '<span class="cls">' + esc(D.className) + '　座席表</span>' +
+    '<span class="sub">' + esc(m.key) + '　' + esc(m.sub) + '</span>' +
+    '<span class="sub" style="margin-left:auto">' + today() + '</span>' +
+    '</div><table class="seats">';
+
+  for (var r2 = 0; r2 < rows; r2++) {
+    html += '<tr>';
+    for (var c2 = 0; c2 < cols; c2++) {
+      var cell = g[r2][c2];
+      var style = 'width:' + cw.toFixed(2) + 'mm;height:' + ch.toFixed(2) + 'mm;';
+      if (cell.kind === 'empty') { html += '<td class="c" style="' + style + '"></td>'; continue; }
+      if (cell.kind === 'note') {
+        html += '<td class="c note" style="' + style + 'font-size:' + fs(cw / 6, 2.4, 4) + 'mm">' +
+                esc(cell.text) + '</td>';
+        continue;
+      }
+      html += '<td class="c seat" style="' + style + borders(g, r2, c2, rows, cols) + '">' +
+              body(cell, byNum, cw, ch) + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</table>';
+
+  document.getElementById('sheet').innerHTML = html;
+  document.getElementById('note').textContent =
+    '班の区切りは太線。白黒印刷で読めるように色は使っていない。' +
+    '［' + m.key + '］' + m.sub;
+}
+
+/** 隣が別の班、または机でないなら太線。班の形がそのまま線で出る */
+function borders(g, r, c, rows, cols) {
+  var me = g[r][c].group;
+  function diff(rr, cc) {
+    if (rr < 0 || cc < 0 || rr >= rows || cc >= cols) return true;
+    var o = g[rr][cc];
+    return o.kind !== 'seat' || o.group !== me;
+  }
+  var t = diff(r - 1, c), b = diff(r + 1, c), l = diff(r, c - 1), rr2 = diff(r, c + 1);
+  return 'border-top-width:' + (t ? '0.9mm' : '0.25mm') + ';' +
+         'border-bottom-width:' + (b ? '0.9mm' : '0.25mm') + ';' +
+         'border-left-width:' + (l ? '0.9mm' : '0.25mm') + ';' +
+         'border-right-width:' + (rr2 ? '0.9mm' : '0.25mm') + ';';
+}
+
+function body(cell, byNum, cw, ch) {
+  var num = D.assign[cell.id] || '';
+  var p = num ? byNum[num] : null;
+  var m = MODES[mode];
+
+  if (m.key === '白紙版') {
+    return '<div class="corner"><span class="no" style="font-size:' + fs(cw / 9, 2.0, 3.2) + 'mm">' +
+           esc(num) + '</span></div>';
+  }
+  if (m.key === '番号のみ') {
+    return '<span class="no" style="font-size:' + fs(Math.min(cw / 2.4, ch / 1.7), 4, 14) +
+           'mm;color:#000">' + esc(num) + '</span>';
+  }
+  if (!p) return '';
+
+  if (m.key === '掲示用') {
+    var nf = fs(Math.min(cw / 4.4, ch / 3.2), 3, 7);
+    return '<div class="yomi" style="font-size:' + (nf * 0.5).toFixed(2) + 'mm">' + esc(p.yomi) + '</div>' +
+           '<div class="nm" style="font-size:' + nf.toFixed(2) + 'mm">' + esc(p.sei) + '</div>' +
+           '<div class="nm" style="font-size:' + nf.toFixed(2) + 'mm">' + esc(p.mei) + '</div>';
+  }
+  // 教師用
+  var tf = fs(Math.min(cw / 5.2, ch / 3.4), 2.6, 6);
+  return '<div class="no" style="font-size:' + (tf * 0.62).toFixed(2) + 'mm">' + esc(num) + '</div>' +
+         '<div class="nm" style="font-size:' + tf.toFixed(2) + 'mm">' + esc(p.name) + '</div>';
+}
+
+function fs(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function today() {
+  var d = new Date();
+  return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+  });
+}
+</script>

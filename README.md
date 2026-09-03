@@ -56,6 +56,8 @@ docs/
   ADD_UNIT.md      新しい単元の作り方
 tools/
   preview/       スプレッドシート無しで Unit.gs をブラウザ確認する開発ツール（tools/preview/README.md）
+  seating/       名簿から座席表を作って印刷するスプレッドシート用スクリプト（tools/seating/README.md）
+                 算数タイムアタック本体とは独立していて、共有するコードはない
 ```
 
 **単元を足すときに書くのは `Unit.gs` 1枚だけ。**

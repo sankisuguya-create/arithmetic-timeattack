@@ -1,0 +1,265 @@
+<!--
+  board.html — 配置ボード
+
+  タッチパッドでの操作を前提にしているので、ドラッグ&ドロップは使わない。
+  児童をタップ → 席をタップ の2手で置き、席 → 席 で入れ替える。
+  30人ぶん繰り返す操作なので、1手の失敗率が効いてくる。
+
+  保存ボタンを置かない。押し忘れという失敗の種類そのものを消すため、
+  変更のたびに自動保存し、状態だけを右上に出す。
+
+  外部リソースを読まない（CSS・JSはすべてここに書く）。
+-->
+<style>
+  :root { --line:#d0d0d0; --ink:#222; --sel:#1a73e8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN","Meiryo",sans-serif;
+         color:var(--ink); font-size:13px; background:#fff; }
+  #head { display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line); }
+  #head h1 { font-size:14px; margin:0; font-weight:700; }
+  #stat { margin-left:auto; color:#666; font-size:12px; }
+  #warn { background:#fff4e5; color:#8a5a00; padding:6px 12px; font-size:12px; display:none; }
+  #main { display:flex; height:calc(100vh - 128px); }
+  #left { width:210px; border-right:1px solid var(--line); overflow-y:auto; padding:8px; }
+  #left h2 { font-size:12px; color:#666; margin:0 0 6px; font-weight:600; }
+  #right { flex:1; overflow:auto; padding:14px; background:#fafafa; }
+  .chip { display:block; width:100%; text-align:left; margin-bottom:4px; padding:6px 8px;
+          border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
+  .chip:hover { background:#f0f6ff; }
+  .chip.sel { border-color:var(--sel); box-shadow:0 0 0 2px rgba(26,115,232,.25); }
+  .chip .n { color:#888; margin-right:6px; font-variant-numeric:tabular-nums; }
+  table.grid { border-collapse:separate; border-spacing:3px; }
+  td.cell { padding:0; }
+  .seat { width:100%; height:100%; border:1px solid #bbb; border-radius:5px; cursor:pointer;
+          display:flex; flex-direction:column; align-items:center; justify-content:center;
+          line-height:1.15; overflow:hidden; padding:2px; }
+  .seat.empty { border-style:dashed; color:#aaa; background:#fff !important; }
+  .seat.sel { outline:3px solid var(--sel); outline-offset:-1px; }
+  .seat .num { font-size:10px; color:#666; font-variant-numeric:tabular-nums; }
+  .seat .nm { font-weight:700; }
+  .note { display:flex; align-items:center; justify-content:center; width:100%; height:100%;
+          background:#eee; border-radius:5px; color:#555; font-size:11px; }
+  .gap { width:100%; height:100%; }
+  #foot { display:flex; align-items:center; gap:8px; padding:8px 12px; border-top:1px solid var(--line); flex-wrap:wrap; }
+  button.act { padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; font-size:12px; }
+  button.act:hover { background:#f2f2f2; }
+  button.act.primary { background:#1a73e8; color:#fff; border-color:#1a73e8; }
+  button.act.primary:hover { background:#1666cc; }
+  #hint { color:#888; font-size:11px; margin-left:auto; }
+</style>
+
+<div id="head">
+  <h1 id="title">配置ボード</h1>
+  <span id="stat">読み込み中…</span>
+</div>
+<div id="warn"></div>
+<div id="main">
+  <div id="left">
+    <h2>まだ座っていない児童</h2>
+    <div id="pool"></div>
+  </div>
+  <div id="right"><div id="grid"></div></div>
+</div>
+<div id="foot">
+  <span style="color:#666">名簿順に流し込む</span>
+  <button class="act" onclick="fill('横順')">横順</button>
+  <button class="act" onclick="fill('縦順')">縦順</button>
+  <button class="act" onclick="fill('班順')">班順</button>
+  <button class="act" onclick="clearAll()">全部はずす</button>
+  <button class="act primary" onclick="goPrint()">印刷へ</button>
+  <span id="hint">児童 → 席 の順にクリックで配置／席 → 席 で入れ替え</span>
+</div>
+
+<script>
+var D = null;          // サーバから受け取った一式
+var A = {};            // 席ID → 番号
+var sel = null;        // {t:'pool', num} | {t:'seat', id}
+var timer = null;
+
+google.script.run.withSuccessHandler(init).withFailureHandler(fail).getBoardData();
+
+function fail(e) {
+  document.getElementById('stat').textContent = '';
+  var w = document.getElementById('warn');
+  w.style.display = 'block';
+  w.textContent = String(e && e.message ? e.message : e);
+}
+
+function init(d) {
+  D = d;
+  A = d.assign || {};
+  document.getElementById('title').textContent =
+    (d.className ? d.className + '　' : '') + '配置ボード';
+  render();
+}
+
+/* ---- 描画 ---- */
+
+function groupColor(idx) {
+  if (idx < 0) return '#ffffff';
+  return 'hsl(' + ((idx * 47 + 20) % 360) + ',45%,90%)';
+}
+
+function nameOf(num) {
+  for (var i = 0; i < D.roster.length; i++) if (D.roster[i].num === num) return D.roster[i];
+  return null;
+}
+
+function render() {
+  var cols = D.plan.cols, rows = D.plan.rows;
+  var w = Math.max(56, Math.min(104, Math.floor(690 / cols)));
+  var h = Math.max(46, Math.round(w * 0.72));
+
+  var gi = {};
+  for (var g = 0; g < D.plan.groups.length; g++) gi[D.plan.groups[g].id] = g;
+
+  var html = '<table class="grid">';
+  for (var r = 0; r < rows; r++) {
+    html += '<tr>';
+    for (var c = 0; c < cols; c++) {
+      var cell = D.plan.cells[r][c];
+      html += '<td class="cell" style="width:' + w + 'px;height:' + h + 'px">';
+      if (cell.kind === 'note') {
+        html += '<div class="note">' + esc(cell.text) + '</div>';
+      } else if (cell.kind === 'empty') {
+        html += '<div class="gap"></div>';
+      } else {
+        var num = A[cell.id] || '';
+        var p = num ? nameOf(num) : null;
+        var cls = 'seat' + (num ? '' : ' empty') +
+                  (sel && sel.t === 'seat' && sel.id === cell.id ? ' sel' : '');
+        var fs = Math.max(11, Math.min(16, Math.floor(w / 4.6)));
+        html += '<div class="' + cls + '" style="background:' + groupColor(gi[cell.group]) +
+                '" onclick="tapSeat(\'' + cell.id + '\')">';
+        if (p) {
+          html += '<div class="num">' + esc(p.num) + '</div>' +
+                  '<div class="nm" style="font-size:' + fs + 'px">' + esc(p.sei) + '</div>' +
+                  '<div class="nm" style="font-size:' + fs + 'px">' + esc(p.mei) + '</div>';
+        } else {
+          html += '<div style="font-size:11px">' + esc(cell.group) + '</div>';
+        }
+        html += '</div>';
+      }
+      html += '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</table>';
+  document.getElementById('grid').innerHTML = html;
+
+  renderPool();
+  renderStat();
+}
+
+function renderPool() {
+  var placed = {};
+  for (var id in A) placed[A[id]] = true;
+  var html = '';
+  for (var i = 0; i < D.roster.length; i++) {
+    var p = D.roster[i];
+    if (placed[p.num]) continue;
+    var cls = 'chip' + (sel && sel.t === 'pool' && sel.num === p.num ? ' sel' : '');
+    html += '<button class="' + cls + '" onclick="tapPool(\'' + p.num + '\')">' +
+            '<span class="n">' + esc(p.num) + '</span>' + esc(p.name) + '</button>';
+  }
+  if (!html) html = '<div style="color:#999;font-size:12px">全員座りました</div>';
+  document.getElementById('pool').innerHTML = html;
+}
+
+function renderStat() {
+  var placed = 0;
+  for (var id in A) placed++;
+  var seats = D.plan.seats.length;
+  document.getElementById('stat').textContent =
+    '席 ' + seats + '　児童 ' + D.roster.length + '　配置済み ' + placed;
+
+  var w = document.getElementById('warn');
+  var msg = '';
+  if (seats < D.roster.length) {
+    msg = '席が ' + (D.roster.length - seats) + ' 足りません。平面図に机を足してください。';
+  }
+  w.style.display = msg ? 'block' : 'none';
+  w.textContent = msg;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+  });
+}
+
+/* ---- 操作 ---- */
+
+function tapPool(num) {
+  if (sel && sel.t === 'pool' && sel.num === num) { sel = null; render(); return; }
+  // 席を選んだ状態で名簿の児童を押したら入れ替え。座っている子は名簿側へ戻る
+  if (sel && sel.t === 'seat') {
+    A[sel.id] = num;
+    sel = null; changed(); return;
+  }
+  sel = { t: 'pool', num: num };
+  render();
+}
+
+function tapSeat(id) {
+  if (sel && sel.t === 'pool') {
+    A[id] = sel.num;                 // もと座っていた子は自動的に名簿側へ戻る
+    sel = null; changed(); return;
+  }
+  if (sel && sel.t === 'seat') {
+    if (sel.id === id) { sel = null; render(); return; }
+    var a = A[sel.id], b = A[id];
+    if (b) A[sel.id] = b; else delete A[sel.id];
+    if (a) A[id] = a; else delete A[id];
+    sel = null; changed(); return;
+  }
+  if (A[id]) { sel = { t: 'seat', id: id }; render(); }
+}
+
+document.addEventListener('keydown', function (e) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && sel && sel.t === 'seat') {
+    delete A[sel.id]; sel = null; changed(); e.preventDefault();
+  }
+  if (e.key === 'Escape') { sel = null; render(); }
+});
+
+function fill(mode) {
+  document.getElementById('stat').textContent = '流し込み中…';
+  google.script.run.withSuccessHandler(function (map) {
+    A = map; sel = null; render(); mark('保存済み');
+  }).withFailureHandler(fail).fillByRoster(mode);
+}
+
+function clearAll() {
+  A = {}; sel = null; changed();
+}
+
+function goPrint() {
+  save(function () { google.script.run.switchToPrint(); });
+}
+
+/* ---- 自動保存 ----
+   1タップごとに通信すると操作が引っかかるので、最後の変更から少し置いて
+   まとめて送る。印刷へ移るときは待たずに保存する。 */
+
+function changed() {
+  render();
+  mark('保存中…');
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(function () { save(); }, 700);
+}
+
+function save(after) {
+  if (timer) { clearTimeout(timer); timer = null; }
+  google.script.run
+    .withSuccessHandler(function () { mark('保存済み'); if (after) after(); })
+    .withFailureHandler(fail)
+    .saveAssign(A);
+}
+
+function mark(t) {
+  var placed = 0; for (var id in A) placed++;
+  document.getElementById('stat').textContent =
+    '席 ' + D.plan.seats.length + '　児童 ' + D.roster.length + '　配置済み ' + placed + '　' + t;
+}
+</script>
