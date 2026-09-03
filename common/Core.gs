@@ -10,7 +10,8 @@
 var SHEETS = {
   CONFIG: 'config', ROSTER: 'roster', CLASS: 'class_config',
   LOG: 'log', DAILY: 'daily', SUMMARY: 'summary',
-  WCHILD: 'weak_child', WCLASS: 'weak_class'
+  WCHILD: 'weak_child', WCLASS: 'weak_class',
+  FOCUS: 'focus', EXPORT: 'export'
 };
 
 /** 全単元で共通の既定値。UNIT.defaults で上書きできる */
@@ -61,6 +62,11 @@ var BASE_DEFAULTS = {
 var TTL = { config: 60, roster: 300, session: 21600 };
 var QN = 200;                              // 1セッションの出題数
 var SCHEMA_VERSION = 3;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示
+
+// この Core.gs の版。単元ごとに手で貼るので、貼り忘れた単元だけ古い版で動き続ける。
+// 気づく手段が無いと、単元によって weak_child の色の基準が食い違う。
+// focus シートの先頭と教師画面に出す。Core.gs を直したらここも直すこと。
+var CORE_VERSION = '2026-09-03';
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
 var GUEST_DOMAIN = '@edu.nishi.or.jp';     // 名簿になくても試用できる（記録なし）
 
@@ -767,7 +773,8 @@ function resetDaily() {
 
 function getConfigForUI() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return { config: config_(), unit: { id: UNIT.id, title: UNIT.title,
+  return { config: config_(), core: CORE_VERSION,
+           unit: { id: UNIT.id, title: UNIT.title,
            modes: UNIT.modes, types: UNIT.types,
            settings: UNIT.settings || [],
            tips: UNIT.tips || '' } };
@@ -844,36 +851,49 @@ function typeOrder_() { return Object.keys(UNIT.types); }
 function aggregateCore_() {
   var cfg = config_();
   var v = sh_(SHEETS.LOG).getDataRange().getValues();
-  var child = {}, typeMiss = {}, wrongCnt = {};
+  var child = {}, prev = {}, typeMiss = {}, wrongCnt = {}, days7 = {};
 
-  function slot(mail, row) {
-    if (!child[mail]) {
-      child[mail] = { name: row[5], grade: row[2], cls: row[3], no: row[4], t: {}, miss: 0 };
+  function slot(map, mail, row) {
+    if (!map[mail]) {
+      map[mail] = { name: row[5], grade: row[2], cls: row[3], no: row[4], t: {}, miss: 0 };
     }
-    return child[mail];
+    return map[mail];
   }
 
   // 期間窓。全期間平均にすると直近の変化が薄まって伸びが見えなくなる。
+  // 同じ長さの「ひとつ前の窓」も同時に集める。いまの値だけでは、
+  // 手を打った結果その型が速くなったのかどうかが分からない。
   var days = Number(cfg.window_days) || 0;
-  var cutoff = days > 0 ? (Date.now() - days * 86400000) : 0;
+  var now = Date.now();
+  var cutoff  = days > 0 ? now - days * 86400000 : 0;
+  var cutoff2 = days > 0 ? now - days * 2 * 86400000 : 0;
+  var d7 = now - 7 * 86400000;
   var used = 0;
 
   for (var i = 1; i < v.length; i++) {
     var mail = String(v[i][1]).toLowerCase();
     if (!mail) continue;
     var row = v[i];
+    var ts = rowTime_(row[0]);
 
-    if (cutoff) {
-      var ts = rowTime_(row[0]);
-      if (ts && ts < cutoff) continue;    // 読めない ts は残す（見落としを避ける）
+    var bucket;
+    if (!cutoff || !ts || ts >= cutoff) bucket = child;   // 読めない ts は残す（見落としを避ける）
+    else if (ts >= cutoff2) bucket = prev;
+    else continue;
+    if (bucket === child) used++;
+
+    // 実施日数（直近7日に何日やったか）。保持に効くのは総回数より、
+    // 何日に分けてやったか。「今週まだ一度もやっていない子」を出すために持つ
+    if (ts && ts >= d7) {
+      if (!days7[mail]) days7[mail] = {};
+      days7[mail][dstr_(row[0])] = 1;
     }
-    used++;
 
     String(row[13] || '').split(',').forEach(function (t) {
       if (!t) return;
       var p = t.split(':');
       if (p.length < 3) return;
-      var c = slot(mail, row);
+      var c = slot(bucket, mail, row);
       if (!c.t[p[0]]) c.t[p[0]] = [0, 0, 0, 0, 0, 0, 0];
       c.t[p[0]][0] += Number(p[1]) || 0;
       c.t[p[0]][1] += Number(p[2]) || 0;
@@ -890,12 +910,14 @@ function aggregateCore_() {
       }
     });
 
+    if (bucket !== child) continue;       // 誤答の集計はいまの窓だけ
+
     String(row[11] || '').split(',').forEach(function (t) {
       if (!t) return;
       var ty = t.split(':')[0];
       if (!ty) return;
       typeMiss[ty] = (typeMiss[ty] || 0) + 1;
-      slot(mail, row).miss++;
+      slot(child, mail, row).miss++;
     });
 
     String(row[14] || '').split(',').forEach(function (t) {
@@ -904,17 +926,66 @@ function aggregateCore_() {
     });
   }
 
-  writeWeakChild_(child, cfg);
-  writeWeakClass_(typeMiss, wrongCnt);
-  writeMistakes_(v);
+  var order = typeOrder_();
+  var minN = Number(cfg.min_n) || 3;
+  var cur  = childMeans_(child, order, minN);
+  var pre  = childMeans_(prev,  order, minN);
 
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
   var span = days > 0 ? ('直近' + days + '日') : '全期間';
+
+  writeWeakChild_(child, cfg, cur);
+  writeWeakClass_(typeMiss, wrongCnt);
+  writeMistakes_(v);
+  writeFocus_(child, cur, pre, typeMiss, wrongCnt, days7, cfg, span, stamp);
+  writeExport_(child, cur, cfg);
+
   try {
-    sh_(SHEETS.WCHILD).getRange(1, typeOrder_().length + 11)
+    sh_(SHEETS.WCHILD).getRange(1, order.length + 11)
       .setValue('最終集計: ' + stamp + '（' + span + '）').setFontColor('#888888');
   } catch (e) {}
   return '集計しました（' + span + ' ' + used + ' 試行 / 全 ' + (v.length - 1) + ' 試行 / ' + stamp + '）';
+}
+
+/**
+ * 児童 × 型 の平均想起時間(ms)と、学年 × 型 の中央値を出す。
+ *
+ * 中央値を基準にするのは、型そのものの難しさが全員に同じだけ乗るため。
+ * 九九は積が大きいほど誰でも遅い（問題サイズ効果）ので、絶対秒で線を引くと
+ * その型の列が全児童ぶん赤くなり、「誰を見るか」という主目的が消える。
+ *
+ * 母集団を学級ではなく学年にしてあるのは、学級（30人程度）だと中央値が
+ * 不安定なうえ、学級ぜんたいが遅い状態が基準そのものに吸収されて見えなくなるため。
+ * 学年ぜんたいの遅さは focus と weak_child の「まん中」の行で、絶対値として見る。
+ */
+function childMeans_(child, order, minN) {
+  var mean = {}, pool = {}, med = {};
+
+  Object.keys(child).forEach(function (k) {
+    var c = child[k];
+    mean[k] = {};
+    order.forEach(function (t) {
+      var x = c.t[t];
+      if (!x || x[2] < minN) return;      // 試行が少ない型は平均を出さない
+      var m = x[3] / x[2];
+      mean[k][t] = m;
+      if (!pool[c.grade]) pool[c.grade] = {};
+      (pool[c.grade][t] = pool[c.grade][t] || []).push(m);
+    });
+  });
+
+  Object.keys(pool).forEach(function (g) {
+    med[g] = {};
+    order.forEach(function (t) {
+      var a = pool[g][t];
+      if (!a || a.length < minN) return;  // 母数が足りない型は基準を作らない
+      a = a.slice().sort(function (x, y) { return x - y; });
+      var h = a.length >> 1;
+      med[g][t] = (a.length % 2) ? a[h] : (a[h - 1] + a[h]) / 2;
+    });
+  });
+
+  return { mean: mean, med: med };
 }
 
 /**
@@ -970,7 +1041,7 @@ function writeMistakes_(logRows) {
   sh.setTabColor('#93C47D');
 }
 
-function writeWeakChild_(child, cfg) {
+function writeWeakChild_(child, cfg, stats) {
   var sh = sh_(SHEETS.WCHILD);
   sh.clear(); sh.setConditionalFormatRules([]);
   var order = typeOrder_();
@@ -996,37 +1067,8 @@ function writeWeakChild_(child, cfg) {
     return x.grade - y.grade || (x.cls < y.cls ? -1 : x.cls > y.cls ? 1 : 0) || x.no - y.no;
   });
 
-  /* 児童 × 型 の平均想起時間(ms)を先に出す。色を決めるのに学年全体が要る */
-  var mean = {};                      // mail -> type -> ms
-  var pool = {};                      // grade -> type -> [ms, ...]
-  keys.forEach(function (k) {
-    var c = child[k];
-    mean[k] = {};
-    order.forEach(function (t) {
-      var x = c.t[t];
-      if (!x || x[2] < minN) return;  // 試行が少ない型は平均を出さない
-      var m = x[3] / x[2];
-      mean[k][t] = m;
-      if (!pool[c.grade]) pool[c.grade] = {};
-      (pool[c.grade][t] = pool[c.grade][t] || []).push(m);
-    });
-  });
-
-  // 学年ごと・型ごとの中央値。
-  // これを基準にするのは、型そのものの難しさが全員に同じだけ乗るため。
-  // 九九の7・8の段は誰でも遅い（積が大きいほど想起に時間がかかる）ので、
-  // 絶対秒で線を引くと全児童の同じ列が赤くなり、個人差の情報が消える。
-  var med = {};
-  Object.keys(pool).forEach(function (g) {
-    med[g] = {};
-    order.forEach(function (t) {
-      var a = pool[g][t];
-      if (!a || a.length < minN) return;   // 母数が足りない型は基準を作らない
-      a = a.slice().sort(function (x, y) { return x - y; });
-      var h = a.length >> 1;
-      med[g][t] = (a.length % 2) ? a[h] : (a[h - 1] + a[h]) / 2;
-    });
-  });
+  // 児童 × 型 の平均と、学年 × 型 の中央値。中央値を基準にする理由は childMeans_ を見る
+  var mean = stats.mean, med = stats.med;
 
   var rows = [head], bg = [];
 
@@ -1125,6 +1167,198 @@ function writeWeakChild_(child, cfg) {
     '空欄は、この期間にその型のデータが無いという意味です。'
   );
   sh.setTabColor('#93C47D');
+}
+
+/**
+ * focus — 帯活動の直後に見る1枚。
+ *
+ * weak_class（学級の傾向）/ weak_child（個人）/ mistakes（誤答の実物）は
+ * 分析の器としては正しいが、**3枚を往復しないと次の一手が決まらない**。
+ * 授業直後に教師が使える時間は1分ほどしかないので、そこで要る答えだけを縦に並べる。
+ *
+ *   ① 授業で扱う型（学年ぜんたいが遅い）
+ *   ② よくある誤答の実物
+ *   ③ 個別に声をかける子
+ *   ④ この7日 やっていない子
+ *
+ * ①〜③は「何を教えるか」、④は「そもそも回っているか」。
+ * ④を上の3つと同じ紙に置くのは、分散して取り組めていない子には
+ * 型の分析より先に実施頻度の手当てが要るため。
+ */
+function writeFocus_(child, cur, pre, typeMiss, wrongCnt, days7, cfg, span, stamp) {
+  var sh = sh_(SHEETS.FOCUS);
+  sh.clear(); sh.setConditionalFormatRules([]);
+
+  var order = typeOrder_();
+  var slowTk = Number(cfg.slow_tk_ms) || Math.round(Number(cfg.slow_ms) * 0.7);
+  var relRed = (Number(cfg.rel_red_pct) || 150) / 100;
+  var missPc = Number(cfg.miss_pct) || 40;
+  var W = 6, rows = [], marks = [];
+
+  function put(r, kind) {
+    var a = (r || []).slice(0, W);
+    while (a.length < W) a.push('');
+    rows.push(a); marks.push(kind || '');
+  }
+  function sec(ms) { return (Math.round(ms / 100) / 10).toFixed(1) + '秒'; }
+
+  put([UNIT.title || '', '', '', '', '', ''], 'title');
+  put(['Core ' + CORE_VERSION, '集計 ' + stamp, span, '', '', ''], 'meta');
+  put([]);
+
+  /* ① 授業で扱う型 ------------------------------------------------ */
+  put(['① 授業で扱う型（学年ぜんたいが ' + (slowTk / 1000).toFixed(1) + '秒 を超えている）'], 'head');
+  put(['学年', '型', '学年のまん中', 'ひとつ前の期間', '変化', '誤答数'], 'sub');
+  var slowTypes = [];
+  Object.keys(cur.med).forEach(function (g) {
+    order.forEach(function (t) {
+      var m = cur.med[g][t];
+      if (m == null || m <= slowTk) return;
+      var p = pre.med[g] && pre.med[g][t];
+      slowTypes.push([Number(g), t, m, p == null ? null : p]);
+    });
+  });
+  slowTypes.sort(function (a, b) { return b[2] - a[2]; });
+  if (!slowTypes.length) put(['（この期間、学年のまん中が基準を超えた型はありません）'], 'none');
+  slowTypes.slice(0, 6).forEach(function (r) {
+    var d = r[3] == null ? '' : (r[2] - r[3]);
+    put([r[0] + '年', UNIT.types[r[1]], sec(r[2]),
+         r[3] == null ? '—' : sec(r[3]),
+         d === '' ? '' : (d < 0 ? '▼ ' + sec(-d) + ' 速く' : '▲ ' + sec(d) + ' 遅く'),
+         typeMiss[r[1]] || 0], d !== '' && d < 0 ? 'good' : '');
+  });
+  put([]);
+
+  /* ② よくある誤答 ------------------------------------------------ */
+  put(['② よくある誤答（同じ間違いが何件出たか）'], 'head');
+  put(['型', '問題', '正しい答え', 'まちがい', '件数', ''], 'sub');
+  var ws = Object.keys(wrongCnt).sort(function (a, b) { return wrongCnt[b] - wrongCnt[a]; });
+  if (!ws.length) put(['（この期間、記録された誤答はありません）'], 'none');
+  ws.slice(0, 6).forEach(function (k) {
+    var p = k.split('|');
+    put([UNIT.types[p[0]] || p[0], p[1], fmtByType_(p[0], p[2]), fmtByType_(p[0], p[3]), wrongCnt[k], '']);
+  });
+  put([]);
+
+  /* ③ 声をかける子 ------------------------------------------------ */
+  put(['③ 声をかける子（学年のまん中の ' + Math.round(relRed * 100) + '% 以上）'], 'head');
+  put(['学年', '組', '番号', '氏名', '型', 'まん中の何倍 / 秒'], 'sub');
+  var picks = [];
+  Object.keys(child).forEach(function (k) {
+    var c = child[k];
+    order.forEach(function (t) {
+      var m = cur.mean[k] && cur.mean[k][t];
+      var base = cur.med[c.grade] && cur.med[c.grade][t];
+      if (m == null || !base) return;
+      var ratio = m / base;
+      if (ratio < relRed) return;
+      picks.push([c, t, m, ratio]);
+    });
+  });
+  picks.sort(function (a, b) { return b[3] - a[3]; });
+  if (!picks.length) put(['（この期間、学年のまん中から大きく離れた子はいません）'], 'none');
+  var seen = {};
+  picks.forEach(function (r) {
+    if (seen[r[0].name + r[1]]) return;
+    if (Object.keys(seen).length >= 10) return;
+    seen[r[0].name + r[1]] = 1;
+    put([r[0].grade, r[0].cls, r[0].no, r[0].name, UNIT.types[r[1]],
+         r[3].toFixed(1) + '倍 / ' + sec(r[2])], 'warn');
+  });
+  put([]);
+
+  /* ④ この7日 やっていない子 -------------------------------------- */
+  put(['④ この7日 一度もやっていない子（分散して取り組めているか）'], 'head');
+  var idle = [];
+  try {
+    var rv = sh_(SHEETS.ROSTER).getDataRange().getValues();
+    for (var i = 1; i < rv.length; i++) {
+      var mail = String(rv[i][0]).toLowerCase();
+      if (!mail || mail.indexOf('@') < 0) continue;
+      if (days7[mail]) continue;
+      idle.push([rv[i][1], rv[i][2], rv[i][3], rv[i][4]]);
+    }
+  } catch (e) { put(['（名簿が読めませんでした）'], 'none'); }
+  if (!idle.length) put(['（全員が この7日 に取り組んでいます）'], 'good');
+  idle.slice(0, 12).forEach(function (r) {
+    put([r[0], r[1], r[2], r[3], '', ''], 'warn');
+  });
+  if (idle.length > 12) put(['ほか ' + (idle.length - 12) + ' 人'], 'none');
+
+  sh.getRange(1, 1, rows.length, W).setValues(rows);
+
+  /* 見出し・注意の色。読む順が上から下に決まっているので、
+     行の種類ごとに色を変えて、どこを見ているかを見失わないようにする */
+  marks.forEach(function (kind, i) {
+    var r = sh.getRange(i + 1, 1, 1, W);
+    if (kind === 'title') r.setFontWeight('bold').setFontSize(14);
+    else if (kind === 'meta') r.setFontColor('#888888');
+    else if (kind === 'head') r.setFontWeight('bold').setBackground('#E8F0E4');
+    else if (kind === 'sub')  r.setFontColor('#666666').setBackground('#F5F5F5');
+    else if (kind === 'warn') r.setBackground('#FDE4B8');
+    else if (kind === 'good') r.setBackground('#E3F0DA');
+    else if (kind === 'none') r.setFontColor('#888888').setFontStyle('italic');
+  });
+  sh.setColumnWidth(4, 140); sh.setColumnWidth(5, 160); sh.setColumnWidth(6, 160);
+
+  sh.getRange('A1').setNote(
+    '帯活動の直後に、この1枚だけ見れば次の一手が決まるようにしたシートです。\n\n' +
+    '① 学年ぜんたいが遅い型 → 一斉指導で扱う的\n' +
+    '② よくある誤答の実物 → その場で取り上げる材料\n' +
+    '③ 学年のまん中から離れている子 → 個別に声をかける相手\n' +
+    '④ この7日やっていない子 → 型の話より先に、実施頻度の手当てが要る子\n\n' +
+    '③は児童に見せないでください。「あなたは○の段が遅い」と名指すと、\n' +
+    '遅さを隠す行動（当てずっぽう連打・欠席）が出ます。\n\n' +
+    '2行目の「Core」はこの単元に貼ってある共通エンジンの版です。\n' +
+    '単元ごとに数字が違うときは、どれかに貼り忘れています。'
+  );
+  sh.setTabColor('#F1C232');
+  try { sh.activate(); ss_().moveActiveSheet(1); } catch (e2) {}
+}
+
+/**
+ * export — ハブが IMPORTRANGE で集める用の縦持ち。
+ *
+ * weak_child は単元ごとに列（型）が違うので、単元をまたいで並べられない。
+ * 「九九は速いのに あまりのあるわり算で詰まる」という最も指導価値の高い像は、
+ * 単元をまたがないと作れない。1行1（児童×型）の形にしておけば、
+ * ハブ側で縦に積むだけで済む。
+ *
+ * 機械可読が目的のシートなので、教師はここを読まなくてよい。
+ */
+function writeExport_(child, cur, cfg) {
+  var sh = sh_(SHEETS.EXPORT);
+  sh.clear();
+  var order = typeOrder_();
+  var minN = Number(cfg.min_n) || 3;
+
+  var head = ['単元', 'core', 'email', '学年', '組', '番号', '氏名',
+              '型', '平均秒', 'まん中比', '取りこぼし%', '誤答数'];
+  var rows = [head];
+
+  Object.keys(child).forEach(function (k) {
+    var c = child[k];
+    order.forEach(function (t) {
+      var m = cur.mean[k] && cur.mean[k][t];
+      if (m == null) return;
+      var base = cur.med[c.grade] && cur.med[c.grade][t];
+      var x = c.t[t];
+      var lost = (x && x[5] >= minN) ? Math.round((1 - x[6] / x[5]) * 100) : '';
+      rows.push([UNIT.id, CORE_VERSION, k, c.grade, c.cls, c.no, c.name,
+                 UNIT.types[t], Math.round(m / 100) / 10,
+                 base ? Math.round(m / base * 100) / 100 : '', lost, c.miss]);
+    });
+  });
+
+  sh.getRange(1, 1, rows.length, head.length).setValues(rows);
+  sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  sh.getRange('A1').setNote(
+    'ハブの学年ダッシュボードが IMPORTRANGE で読むための、機械向けのシートです。\n' +
+    '教師が読むのは focus / weak_child / weak_class / mistakes のほうです。\n' +
+    'このシートを手で編集すると、次の集計で上書きされます。'
+  );
+  sh.setTabColor('#B7B7B7');
 }
 
 function writeWeakClass_(typeMiss, wrongCnt) {
@@ -1250,6 +1484,9 @@ function applyFriendlyStyling_() {
   var technical = { config: '#B7B7B7', class_config: '#B7B7B7', roster: '#4A86E8',
                      log: '#B7B7B7', daily: '#B7B7B7' };
   var friendly = { summary: '#93C47D', weak_child: '#93C47D', weak_class: '#93C47D' };
+  technical[SHEETS.EXPORT] = '#B7B7B7';
+  // focus だけ色を変える。緑（分析用）の中でも「まずここを見る」1枚だと分かるように
+  friendly[SHEETS.FOCUS] = '#F1C232';
 
   Object.keys(technical).forEach(function (name) {
     var sh = ss.getSheetByName(name);
@@ -1266,7 +1503,9 @@ function applyFriendlyStyling_() {
     class_config: 'クラスごとに、どのモードを児童に見せるかの設定です。チェックの無いモードは表示されません。\n通常は教師用ページ（?page=teacher）から操作してください。',
     log: '1回のプレイ（1試行）を1行で記録した内部データです。直接は読まなくてよいシートです。\n個々の誤答を読みたいときは mistakes シートを、傾向を見たいときは weak_child / weak_class を見てください。',
     daily: '当日の学級内ランキングを計算するための内部データです。直接は見なくてよいシートです。',
-    summary: '児童ごと・モードごと・制限時間ごとの累計成績とハイスコアです。kind列は r=本番／p=練習です。'
+    summary: '児童ごと・モードごと・制限時間ごとの累計成績とハイスコアです。kind列は r=本番／p=練習です。',
+    focus: '帯活動の直後に、この1枚だけ見れば次の一手が決まるようにしたシートです。集計のたびに作り直されます。',
+    "export": 'ハブの学年ダッシュボードが IMPORTRANGE で読むための、機械向けのシートです。教師は読まなくて構いません。'
   };
   Object.keys(notes).forEach(function (name) {
     var sh = ss.getSheetByName(name);
@@ -1286,6 +1525,8 @@ function ensureSheets_() {
                           'tries', 'total_correct', 'total_attempts', 'best', 'best_count'];
   defs[SHEETS.WCHILD] = [];
   defs[SHEETS.WCLASS] = [];
+  defs[SHEETS.FOCUS] = [];
+  defs[SHEETS.EXPORT] = [];
 
   // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
   // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。

@@ -120,7 +120,9 @@ var SETTINGS = [];
 google.script.run.withSuccessHandler(function(r){
   var c = r.config, u = r.unit;
   document.getElementById('h1').textContent = u.teacherTitle || u.title || '設定・分析';
-  document.getElementById('sub').textContent = '設定と分析';
+  // 共通エンジンの版。単元ごとに手で貼るので、貼り忘れた単元だけ古い版で動き続ける。
+  // 4つの単元でこの数字が揃っているかを見れば、貼り忘れに気づける
+  document.getElementById('sub').textContent = '設定と分析　Core ' + (r.core || '?');
   document.getElementById('tips').innerHTML = u.tips || '';
 
   // 単元が宣言した設定欄。Core も teacher.html もキーの意味を知らない。
