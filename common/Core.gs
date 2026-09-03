@@ -34,6 +34,24 @@ var BASE_DEFAULTS = {
   // 想起が自動化していれば 20〜30%程度。想起と計数が混ざると 50%を超える。
   wobble_pct: 40,
 
+  // weak_child のセルを色づける基準（学年の中央値に対する比・%）。
+  // 絶対秒で色を決めると、九九の7・8の段のように「全員が遅い型」が
+  // 全児童ぶん赤くなり、誰を見ればよいかが消える（問題サイズ効果）。
+  // 比で見るのは、想起時間の分布がおよそ対数正規で、型ごとの難度差が
+  // 加算ではなく倍率として乗るため。学年の中央値の何倍かで判断する。
+  rel_red_pct: 150,
+  rel_amber_pct: 125,
+
+  // 型ごとの平均を出すのに最低限必要な試行数。
+  // 1回の記録から出した平均を赤くすると、教師の注意がその1回に持っていかれる。
+  min_n: 3,
+
+  // 「取りこぼし」（その型が出たうち第1試行で正解できなかった割合）の閾値(%)。
+  // 平均想起時間は第1試行で正解した問題だけから計算しているので、
+  // 取りこぼしが多い型ほど「その子が答えられた易しい問題」だけが平均に残り、
+  // 速く見える。平均の速さを読む前に、この列を見る必要がある。
+  miss_pct: 40,
+
   // weak_child / weak_class の集計に使う期間（日）。0 なら全期間。
   // 全期間平均にすると、年間数百試行に対して直近の変化が1%程度に薄まり、
   // 伸びも落ちも見えなくなる。
@@ -532,12 +550,19 @@ function submitSession(token, items) {
         }
       }
     }
+    // [第1試行正解数, Σ送信まで, 初打鍵が取れた数, Σ初打鍵まで, Σ(初打鍵まで)^2, 出題数]
+    // 二乗和まで持つのは、平均だけでは「毎回同じ速さで遅い子」と
+    // 「想起と計数を行き来していて時々速い子」が区別できないため。
+    // 前者は手続きの短縮、後者は想起そのものの練習が要る。
+    //
+    // 末尾の「出題数」だけは firstTry の外で数える。ここから先の4つは
+    // 第1試行で正解した問題だけを見ているので、苦手な型ほど誤答が母数から
+    // 落ち、その子が答えられた易しい問題だけが平均に残る（＝速く見える）。
+    // 出題数と突き合わせないと、この向きのずれに気づけない。
+    if (!stat[qq.t]) stat[qq.t] = [0, 0, 0, 0, 0, 0];
+    stat[qq.t][5]++;
+
     if (firstTry) {
-      // [試行数, Σ送信まで, 初打鍵が取れた数, Σ初打鍵まで, Σ(初打鍵まで)^2]
-      // 二乗和まで持つのは、平均だけでは「毎回同じ速さで遅い子」と
-      // 「想起と計数を行き来していて時々速い子」が区別できないため。
-      // 前者は手続きの短縮、後者は想起そのものの練習が要る。
-      if (!stat[qq.t]) stat[qq.t] = [0, 0, 0, 0, 0];
       var tk = Number(it.tk) || 0;
       stat[qq.t][0]++; stat[qq.t][1] += Number(it.ms) || 0;
       if (tk > 0) { stat[qq.t][2]++; stat[qq.t][3] += tk; stat[qq.t][4] += tk * tk; }
@@ -849,13 +874,19 @@ function aggregateCore_() {
       var p = t.split(':');
       if (p.length < 3) return;
       var c = slot(mail, row);
-      if (!c.t[p[0]]) c.t[p[0]] = [0, 0, 0, 0, 0];
+      if (!c.t[p[0]]) c.t[p[0]] = [0, 0, 0, 0, 0, 0, 0];
       c.t[p[0]][0] += Number(p[1]) || 0;
       c.t[p[0]][1] += Number(p[2]) || 0;
       if (p.length >= 6) {                // 初打鍵を記録するようになってからの行
         c.t[p[0]][2] += Number(p[3]) || 0;
         c.t[p[0]][3] += Number(p[4]) || 0;
         c.t[p[0]][4] += Number(p[5]) || 0;
+      }
+      if (p.length >= 7) {                // 出題数を記録するようになってからの行
+        // 取りこぼし率の分母と分子は、同じ行から取らないと比にならない。
+        // 出題数を持たない古い行の第1試行正解数を分子に混ぜると率が1を超える。
+        c.t[p[0]][5] += Number(p[6]) || 0;
+        c.t[p[0]][6] += Number(p[1]) || 0;
       }
     });
 
@@ -880,7 +911,7 @@ function aggregateCore_() {
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
   var span = days > 0 ? ('直近' + days + '日') : '全期間';
   try {
-    sh_(SHEETS.WCHILD).getRange(1, typeOrder_().length + 9)
+    sh_(SHEETS.WCHILD).getRange(1, typeOrder_().length + 11)
       .setValue('最終集計: ' + stamp + '（' + span + '）').setFontColor('#888888');
   } catch (e) {}
   return '集計しました（' + span + ' ' + used + ' 試行 / 全 ' + (v.length - 1) + ' 試行 / ' + stamp + '）';
@@ -948,64 +979,150 @@ function writeWeakChild_(child, cfg) {
   // 0.7 は暫定。log から1打鍵あたりのコストを実測して置き換えること
   var slowTk = Number(cfg.slow_tk_ms) || Math.round(Number(cfg.slow_ms) * 0.7);
   var wobble = Number(cfg.wobble_pct) || 40;
+  var minN   = Number(cfg.min_n) || 3;
+  var relRed = (Number(cfg.rel_red_pct)   || 150) / 100;
+  var relAmb = (Number(cfg.rel_amber_pct) || 125) / 100;
+  var missPc = Number(cfg.miss_pct) || 40;
+
+  var RED = '#F8C9C9', AMBER = '#FDE4B8', GREY = '#EDEDED', NONE = '#FFFFFF';
 
   var head = ['学年', '組', '番号', '氏名'];
   order.forEach(function (t) { head.push(UNIT.types[t]); });
-  head.push('ゆらぎ', 'ゆらぎの型', '誤答数');
+  head.push('ゆらぎ', 'ゆらぎの型', '取りこぼし', '取りこぼしの型', '誤答数');
+  var W = head.length;
 
-  var rows = [head];
-  Object.keys(child).sort(function (a, b) {
+  var keys = Object.keys(child).sort(function (a, b) {
     var x = child[a], y = child[b];
     return x.grade - y.grade || (x.cls < y.cls ? -1 : x.cls > y.cls ? 1 : 0) || x.no - y.no;
-  }).forEach(function (k) {
-    var c = child[k], r = [c.grade, c.cls, c.no, c.name];
-    var wMax = 0, wType = '';
+  });
+
+  /* 児童 × 型 の平均想起時間(ms)を先に出す。色を決めるのに学年全体が要る */
+  var mean = {};                      // mail -> type -> ms
+  var pool = {};                      // grade -> type -> [ms, ...]
+  keys.forEach(function (k) {
+    var c = child[k];
+    mean[k] = {};
     order.forEach(function (t) {
       var x = c.t[t];
-      if (!x || !x[2]) { r.push(''); return; }   // 初打鍵のデータが無い型は空欄
-      var n = x[2], mean = x[3] / n;
-      r.push(Math.round(mean / 100) / 10);       // 表示は秒。下の閾値判定も同じ単位
+      if (!x || x[2] < minN) return;  // 試行が少ない型は平均を出さない
+      var m = x[3] / x[2];
+      mean[k][t] = m;
+      if (!pool[c.grade]) pool[c.grade] = {};
+      (pool[c.grade][t] = pool[c.grade][t] || []).push(m);
+    });
+  });
 
-      // ばらつきは 標準偏差÷平均（%）。試行が少ないと不安定なので5回以上の型だけ候補にする
-      if (n >= 5 && mean > 0) {
-        var vr = x[4] / n - mean * mean;
-        var cv = Math.round((vr > 0 ? Math.sqrt(vr) : 0) / mean * 100);
+  // 学年ごと・型ごとの中央値。
+  // これを基準にするのは、型そのものの難しさが全員に同じだけ乗るため。
+  // 九九の7・8の段は誰でも遅い（積が大きいほど想起に時間がかかる）ので、
+  // 絶対秒で線を引くと全児童の同じ列が赤くなり、個人差の情報が消える。
+  var med = {};
+  Object.keys(pool).forEach(function (g) {
+    med[g] = {};
+    order.forEach(function (t) {
+      var a = pool[g][t];
+      if (!a || a.length < minN) return;   // 母数が足りない型は基準を作らない
+      a = a.slice().sort(function (x, y) { return x - y; });
+      var h = a.length >> 1;
+      med[g][t] = (a.length % 2) ? a[h] : (a[h - 1] + a[h]) / 2;
+    });
+  });
+
+  var rows = [head], bg = [];
+
+  /* 学年ごとの基準行。児童のセルは「学年のまん中の何倍か」で色がつくので、
+     学年ぜんたいが遅い状態はどの児童のセルにも出ない。この行にだけ出る。
+     ここは絶対の閾値で色をつける（見ている問いが児童行と別なので分けてある） */
+  Object.keys(med).sort(function (a, b) { return Number(a) - Number(b); }).forEach(function (g) {
+    var r = [Number(g), '', '', '── ' + g + '年のまん中 ──'], b = [GREY, GREY, GREY, GREY];
+    order.forEach(function (t) {
+      var m = med[g][t];
+      if (m == null) { r.push(''); b.push(GREY); return; }
+      r.push(Math.round(m / 100) / 10);
+      b.push(m > slowTk ? RED : GREY);
+    });
+    r.push('', '', '', '', '');
+    for (var i = 0; i < 5; i++) b.push(GREY);
+    rows.push(r); bg.push(b);
+  });
+  var medRows = rows.length - 1;
+
+  keys.forEach(function (k) {
+    var c = child[k];
+    var r = [c.grade, c.cls, c.no, c.name], b = [NONE, NONE, NONE, NONE];
+    var wMax = 0, wType = '', mMax = 0, mType = '';
+
+    order.forEach(function (t) {
+      var x = c.t[t], m = mean[k][t];
+      if (m == null) { r.push(''); b.push(NONE); return; }
+      r.push(Math.round(m / 100) / 10);          // 表示は秒
+
+      var base = med[c.grade] && med[c.grade][t];
+      if (base) {
+        var ratio = m / base;
+        b.push(ratio >= relRed ? RED : ratio >= relAmb ? AMBER : NONE);
+      } else {
+        b.push(m > slowTk ? RED : NONE);         // 基準が作れないときだけ絶対秒で見る
+      }
+
+      // ばらつきは 標準偏差÷平均（%）
+      if (x[2] >= 5) {
+        var vr = x[4] / x[2] - m * m;
+        var cv = Math.round((vr > 0 ? Math.sqrt(vr) : 0) / m * 100);
         if (cv > wMax) { wMax = cv; wType = UNIT.types[t]; }
       }
     });
-    r.push(wMax || '', wType, c.miss);
-    rows.push(r);
+
+    // 取りこぼし：その型が出たうち、第1試行で正解できなかった割合。
+    // 上の平均は第1試行で正解した問題だけから出しているので、
+    // ここが大きい型の平均は「その子が答えられた問題だけの平均」で、実力より速い
+    order.forEach(function (t) {
+      var x = c.t[t];
+      if (!x || x[5] < minN) return;
+      var pc = Math.round((1 - x[6] / x[5]) * 100);
+      if (pc > mMax) { mMax = pc; mType = UNIT.types[t]; }
+    });
+
+    r.push(wMax || '', wType, mMax || '', mType, c.miss);
+    b.push(wMax > wobble ? AMBER : NONE, NONE, mMax > missPc ? AMBER : NONE, NONE, NONE);
+    rows.push(r); bg.push(b);
   });
 
-  sh.getRange(1, 1, rows.length, head.length).setValues(rows);
-  sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
-  sh.setFrozenRows(1); sh.setFrozenColumns(4);
+  sh.getRange(1, 1, rows.length, W).setValues(rows);
+  sh.getRange(1, 1, 1, W).setFontWeight('bold');
+  if (bg.length) sh.getRange(2, 1, bg.length, W).setBackgrounds(bg);
+  sh.setFrozenRows(1 + (medRows <= 3 ? medRows : 0));
+  sh.setFrozenColumns(4);
 
   if (rows.length > 1) {
-    var n = rows.length - 1, wob = 5 + order.length;   // ゆらぎ列 / その右が型名 / さらに右が誤答数
+    var n = rows.length - 1, wob = 5 + order.length;
     sh.getRange(2, 5, n, order.length).setNumberFormat('0.0"秒"');
     sh.getRange(2, wob, n, 1).setNumberFormat('0"%"');
-    sh.getRange(2, wob + 2, n, 1).setNumberFormat('0"回"');
-    sh.setConditionalFormatRules([
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberGreaterThan(slowTk / 1000).setBackground('#F8C9C9')
-        .setRanges([sh.getRange(2, 5, n, order.length)]).build(),
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberGreaterThan(wobble).setBackground('#FDE4B8')
-        .setRanges([sh.getRange(2, wob, n, 1)]).build()
-    ]);
+    sh.getRange(2, wob + 2, n, 1).setNumberFormat('0"%"');
+    sh.getRange(2, wob + 4, n, 1).setNumberFormat('0"回"');
+    if (medRows) sh.getRange(2, 1, medRows, W).setFontStyle('italic');
   }
+
   sh.getRange('A1').setNote(
     (UNIT.tips ? UNIT.tips.replace(/<[^>]+>/g, '') + '\n\n' : '') +
     '各型の数字は「問題が出てから最初のキーを押すまで」の平均です（想起にかかった時間）。\n' +
     '打鍵にかかる時間を含まないので、答えの桁数が違う型どうしを比べられます。\n' +
-    '赤いセルは ' + (slowTk / 1000).toFixed(1) + ' 秒を超えています。\n\n' +
-    '「ゆらぎ」は、その子がいちばん不安定だった型の ばらつき（標準偏差÷平均）です（' + wobble + '%超で色）。\n' +
-    '平均が基準内でもここが大きい子は、想起できる時と数えている時が混ざっています。\n' +
-    '平均だけを見ていると、この子は「基準内」に見えて素通りします。\n' +
-    '平均が遅い子は手続きの短縮、ゆらぎが大きい子は想起そのものの練習が要ります。\n\n' +
-    '空欄は、この期間にその型のデータが無いという意味です。\n' +
-    '（初打鍵の記録は途中から始めたため、それ以前の記録しかない子は空欄になります）'
+    '試行が ' + minN + ' 回に満たない型は空欄です。\n\n' +
+    '■ セルの色は「学年のまん中の何倍か」です。絶対の秒数ではありません。\n' +
+    '  赤 = まん中の ' + Math.round(relRed * 100) + '%以上 / だいだい = ' + Math.round(relAmb * 100) + '%以上。\n' +
+    '  型そのものの難しさ（九九なら7・8の段が誰でも遅い）は全員に同じだけ乗るので、\n' +
+    '  秒で線を引くと同じ列が全員赤くなり、誰を見ればよいかが消えます。\n' +
+    '  上の「── ○年のまん中 ──」の行が、その基準です。\n' +
+    '  この行が赤いときは、学年ぜんたいがその型で ' + (slowTk / 1000).toFixed(1) + ' 秒を超えています\n' +
+    '  （個人ではなく授業で扱う的です）。\n\n' +
+    '■「ゆらぎ」は、その子がいちばん不安定だった型の ばらつき（標準偏差÷平均）です（' + wobble + '%超で色）。\n' +
+    '  平均が基準内でもここが大きい子は、想起できる時と数えている時が混ざっています。\n' +
+    '  平均が遅い子は手続きの短縮、ゆらぎが大きい子は想起そのものの練習が要ります。\n\n' +
+    '■「取りこぼし」は、その型が出たうち第1試行で正解できなかった割合です（' + missPc + '%超で色）。\n' +
+    '  各型の平均は、第1試行で正解した問題だけから計算しています。\n' +
+    '  つまり取りこぼしが多い型ほど「その子が答えられた易しい問題」だけが平均に残り、\n' +
+    '  実力より速く出ます。平均の秒数より先に、この列を見てください。\n\n' +
+    '空欄は、この期間にその型のデータが無いという意味です。'
   );
   sh.setTabColor('#93C47D');
 }
