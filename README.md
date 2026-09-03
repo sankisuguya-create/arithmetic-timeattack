@@ -43,7 +43,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 common/
   Core.gs        共通エンジン。認証・出題配信・再採点・記録・ランキング・分析
   ui.html        共通の児童画面（レイアウト・キー配置・タイマー・送信）
-  teacher.html   共通の教師画面（設定・クラス別解禁・集計）
+  teacher.html   共通の教師画面（設定・クラスごとの公開モード・集計）
 apps/
   kuku/Unit.gs   九九の出題定義
   length/Unit.gs 長さの出題定義

@@ -26,30 +26,34 @@ body{
 .apptitle{font-size:clamp(1.3rem,4.5vw,1.9rem);font-weight:800;letter-spacing:.02em}
 .timelede{font-size:clamp(1.5rem,5.5vw,2.3rem);font-weight:800;color:var(--mint);margin-top:-.6rem}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;width:min(760px,96vw)}
+/* モード名は必ず1段に収める。折り返すと、どのモードを選んでいるかが読み取りにくい。
+   そのために上段＝番号＋モード名、下段＝記号とベストの2段組にしてある。 */
 .card{background:#fff;border:1.5px solid var(--line);border-radius:14px;
-  padding:1rem 1.1rem;display:flex;align-items:center;gap:.85rem;
-  transition:border-color .12s;cursor:pointer}
+  padding:.85rem 1.1rem;display:block;transition:border-color .12s;cursor:pointer}
 .card:hover{border-color:var(--ink)}
+.card .top{display:flex;align-items:center;gap:.75rem}
 .card .k{font-size:1.05rem;font-weight:800;color:#fff;background:var(--ink);
   width:1.9rem;height:1.9rem;border-radius:7px;display:flex;align-items:center;
   justify-content:center;flex:0 0 auto}
-.card .t{font-size:1.18rem;font-weight:800;line-height:1.15}
-.card .s{font-size:.76rem;color:var(--mute);font-weight:600;margin-top:.12rem}
-.card .rt{margin-left:auto;display:flex;align-items:center;gap:.55rem}
-.card .medal{font-size:1.4rem;line-height:1;height:1.4rem}
+.card .t{font-size:1.18rem;font-weight:800;line-height:1.2;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.card .bot{display:flex;align-items:flex-end;gap:.5rem;margin-top:.35rem;
+  padding-left:2.65rem;min-height:1.6rem}
 /* 学級内＝絵文字のメダル、個人内＝ミントの★n。記号の種類で区別する */
-.card .star{font-size:.9rem;font-weight:800;color:var(--mint);line-height:1;margin-top:.28rem;
+.card .medal{font-size:1.25rem;line-height:1.2}
+.card .star{font-size:.9rem;font-weight:800;color:var(--mint);line-height:1.4;
   letter-spacing:.02em;white-space:nowrap}
-.card .badges{display:flex;flex-direction:column;align-items:center;min-width:2.6rem}
 .pbest{font-size:.62rem;color:var(--mute);font-weight:700;margin-top:.2rem}
-.card .hsbox{text-align:right;line-height:1}
-.card .hs{font-size:1.8rem;font-weight:800}
+.card .hsbox{margin-left:auto;display:flex;align-items:baseline;gap:.35rem}
+.card .hs{font-size:1.7rem;font-weight:800;line-height:1}
 .card .hs.none{color:var(--line)}
-.card .hslbl{font-size:.58rem;color:var(--mute);letter-spacing:.1em;font-weight:700;margin-top:.2rem}
-/* まだ開いていないモード。消さずに薄く出す（順序が見えないと「順番にやる」が伝わらない） */
+.card .hslbl{font-size:.58rem;color:var(--mute);letter-spacing:.08em;font-weight:700}
+/* 順次開放でまだ届いていないモード。消さずに薄く出す
+   （順序が見えないと「順番にやる」こと自体が伝わらない）。
+   教師が非公開にしたモードはそもそも一覧に出さない。 */
 .card.locked{opacity:.5;background:#F7F8FA;cursor:default}
 .card.locked .k{background:var(--line)}
-.card .lock{font-size:.72rem;color:var(--mute);font-weight:700;margin-top:.3rem;line-height:1.25}
+.card .lock{font-size:.72rem;color:var(--mute);font-weight:700;line-height:1.3}
 .hint{font-size:.88rem;color:var(--mute);font-weight:600}
 .tap{cursor:pointer;padding:.35rem .6rem;border-radius:8px;display:inline-block}
 .tap:hover{background:#EDEDE8;color:var(--ink)}
@@ -309,7 +313,7 @@ var SCALE = {};
 /* 演算子トークン → 表示記号。四則は全単元共通なのでここに置く */
 var OPS = {'+':'+', '-':'−', '×':'×', '÷':'÷', '=':'='};
 
-var CFG = {limitSec:60, missLimit:3, guest:false, flags:{}};
+var CFG = {limitSec:60, missLimit:3, guest:false, open:{}};
 var BEST = {}, MEDAL = {}, STARS = {}, PBEST = {};
 
 var scr='none', mode=1, queue=[], qi=0;
@@ -361,34 +365,33 @@ function show(id){
 }
 function fatal(t){ $('msg').textContent = t; $('msg').classList.add('on'); }
 
+/* 教師がクラスごとに公開したモードだけを出す。非公開のものは一覧に載せない */
 function visibleModes(){
-  return MODES_ALL.filter(function(m){
-    var f = MODES[m].flag;
-    return !f || !!CFG.flags[f];
-  });
+  return MODES_ALL.filter(function(m){ return !!CFG.open[m]; });
 }
 function isLocked(m){ return !!LOCKED[m]; }
+
+/* 上段＝番号とモード名だけ。副題は出さない（児童が選ぶのに要らず、名前の幅を奪う） */
+function cardTop(m, idx){
+  return '<div class="top"><div class="k">'+(idx+1)+'</div>'+
+         '<div class="t">'+MODES[m].name+'</div></div>';
+}
 
 function renderMenu(){
   var vis = visibleModes();
   $('modeGrid').innerHTML = vis.map(function(m, idx){
-    var hs = BEST[m];
     if(isLocked(m)){
-      return '<div class="card locked" data-mode="'+m+'">'+
-        '<div class="k">'+(idx+1)+'</div>'+
-        '<div><div class="t">'+MODES[m].name+'</div><div class="s">'+MODES[m].desc+'</div>'+
-        '<div class="lock">'+LOCKED[m]+'</div></div></div>';
+      return '<div class="card locked" data-mode="'+m+'">'+ cardTop(m, idx) +
+        '<div class="bot"><div class="lock">'+LOCKED[m]+'</div></div></div>';
     }
-    var head = '<div class="card" data-mode="'+m+'">'+
-      '<div class="k">'+(idx+1)+'</div>'+
-      '<div><div class="t">'+MODES[m].name+'</div><div class="s">'+MODES[m].desc+'</div></div>';
-    return head +
-      '<div class="rt"><div class="badges">'+
+    var hs = BEST[m];
+    return '<div class="card" data-mode="'+m+'">'+ cardTop(m, idx) +
+      '<div class="bot">'+
         '<div class="medal">'+(MEDAL[m]||'')+'</div>'+
         (STARS[m] ? '<div class="star">★'+STARS[m]+'</div>' : '')+
-      '</div>'+
-      '<div class="hsbox"><div class="hs'+(hs?'':' none')+'">'+(hs||'—')+'</div>'+
-      '<div class="hslbl">'+CFG.limitSec+'びょう ベスト</div></div></div></div>';
+        '<div class="hsbox"><div class="hs'+(hs?'':' none')+'">'+(hs||'—')+'</div>'+
+        '<div class="hslbl">'+CFG.limitSec+'びょう ベスト</div></div>'+
+      '</div></div>';
   }).join('');
   // 押せる番号だけを案内する。順次開放で閉じているモードの番号を混ぜると、
   // 押しても始まらないキーを児童に教えることになる。
@@ -406,9 +409,9 @@ function openPractice(){
   var vis = visibleModes();
   $('poptGrid').innerHTML = vis.map(function(m, idx){
     return '<div class="card'+(isLocked(m)?' locked':'')+'" data-pmode="'+m+'">'+
-      '<div class="k">'+(idx+1)+'</div>'+
-      '<div><div class="t">'+MODES[m].name+'</div><div class="s">'+MODES[m].desc+'</div>'+
-      (isLocked(m) ? '<div class="lock">'+LOCKED[m]+'</div>' : '')+'</div></div>';
+      cardTop(m, idx) +
+      (isLocked(m) ? '<div class="bot"><div class="lock">'+LOCKED[m]+'</div></div>' : '')+
+      '</div>';
   }).join('');
   show('popt');
 }
@@ -1052,8 +1055,7 @@ function finishPractice(){
 }
 
 function begin(m){
-  if(MODES[m].flag && !CFG.flags[MODES[m].flag]) return;
-  if(isLocked(m)) return;
+  if(!CFG.open[m] || isLocked(m)) return;
   practice=false; pTimed=false; pRecorded=false;
   document.body.classList.remove('practice-result');
   mode=m; token=''; ready=false;
@@ -1290,7 +1292,7 @@ function setAppTitle(t){
  */
 function applyBoot(r){
   CFG.limitSec=r.limitSec; CFG.missLimit=r.missLimit;
-  CFG.flags = r.flags || {}; CFG.guest = !!r.guest;
+  CFG.open = r.open || {}; CFG.guest = !!r.guest;
   CFG.settings = r.settings || {};
   LOCKED = r.locked || {};             // 古い控えには無いので {}（＝全部開いて見える）に落とす
   MODES = {}; MODES_ALL = [];

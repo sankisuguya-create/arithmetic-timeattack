@@ -39,17 +39,13 @@ var UNIT = {
   /** 出題に出る単位と、その表示色（空文字は既定のグレー） */
   units: { km: '#FFC53D', m: '', cm: '#6FA8FF' },
 
-  flags: [
-    { key: 'calc', label: '計算モード', gradeKey: 'calc_min_grade', defaultGrade: 3 }
-  ],
-
   modes: [
-    { id: 1, name: 'かんさん きほん',   desc: '3km=□m ／ 7000m=□km',  flag: null   },
-    { id: 2, name: 'かんさん ぜんぶ',   desc: '1200m=□km□m もあり',   flag: null   },
-    { id: 3, name: 'けいさん たしざん', desc: '1km700m + 600m',        flag: 'calc' },
-    { id: 4, name: 'けいさん ひきざん', desc: '2km100m − 1km700m',     flag: 'calc' },
-    { id: 5, name: 'めもり きほん',     desc: 'まきじゃく 1mまで',      flag: null   },
-    { id: 6, name: 'めもり ぜんぶ',     desc: 'まきじゃく 1mより長い',  flag: null,
+    { id: 1, name: 'かんさん きほん',   desc: '3km=□m ／ 7000m=□km' },
+    { id: 2, name: 'かんさん ぜんぶ',   desc: '1200m=□km□m もあり' },
+    { id: 3, name: 'けいさん たしざん', desc: '1km700m + 600m' },
+    { id: 4, name: 'けいさん ひきざん', desc: '2km100m − 1km700m' },
+    { id: 5, name: 'めもり きほん',     desc: 'まきじゃく 1mまで' },
+    { id: 6, name: 'めもり ぜんぶ',     desc: 'まきじゃく 1mより長い',
       help: 'Enter で こたえあわせ' }   // 答えの桁数が 1〜3 と変わり自動確定できない
   ],
 

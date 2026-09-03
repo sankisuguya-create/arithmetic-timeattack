@@ -22,17 +22,13 @@ var UNIT = {
   /** 出題に出る単位と、その表示色（空文字は既定のグレー） */
   units: { kg: '#FFC53D', g: '' },
 
-  flags: [
-    { key: 'calc', label: '計算モード', gradeKey: 'calc_min_grade', defaultGrade: 3 }
-  ],
-
   modes: [
-    { id: 1, name: 'かんさん きほん',   desc: '3kg=□g ／ 5000g=□kg', flag: null   },
-    { id: 2, name: 'かんさん ぜんぶ',   desc: '1200g=□kg□g もあり',   flag: null   },
-    { id: 3, name: 'けいさん たしざん', desc: '1kg300g + 500g',        flag: 'calc' },
-    { id: 4, name: 'けいさん ひきざん', desc: '2kg100g − 1kg700g',     flag: 'calc' },
-    { id: 5, name: 'めもり きほん',     desc: '1kgのはかり（1目もり5g）',  flag: null },
-    { id: 6, name: 'めもり ぜんぶ',     desc: '2kgのはかり（1目もり10g）', flag: null }
+    { id: 1, name: 'かんさん きほん',   desc: '3kg=□g ／ 5000g=□kg' },
+    { id: 2, name: 'かんさん ぜんぶ',   desc: '1200g=□kg□g もあり' },
+    { id: 3, name: 'けいさん たしざん', desc: '1kg300g + 500g' },
+    { id: 4, name: 'けいさん ひきざん', desc: '2kg100g − 1kg700g' },
+    { id: 5, name: 'めもり きほん',     desc: '1kgのはかり（1目もり5g）' },
+    { id: 6, name: 'めもり ぜんぶ',     desc: '2kgのはかり（1目もり10g）' }
   ],
 
   types: {

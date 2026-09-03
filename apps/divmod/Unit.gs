@@ -25,31 +25,21 @@ var UNIT = {
   /** 「あまり」は答えの欄のあいだに出る。q の中にも同じトークンで出す */
   units: { 'あまり': '' },
 
-  /**
-   * 順次開放を教師が一括で外すためのフラグ。
-   * defaultGrade を 99 にして既定オフにし、class_config のチェックで開ける
-   * （授業で全員に同じモードをやらせる場面のため）。
-   */
-  flags: [
-    { key: 'open_all', label: 'じゅんばん解除（ぜんぶ使える）',
-      gradeKey: 'open_all_min_grade', defaultGrade: 99 }
-  ],
-
   modes: [
     { id: 1, name: '九九さがし', desc: '6のだん 29まで',
       help: 'その だんの こたえで、その かずを こえない いちばん 大きい かず' },
 
     { id: 2, name: 'あってる？', desc: '32÷9＝2あまり14',
-      needs: { mode: 1, tries: 3, bypass: 'open_all' },
+      needs: { mode: 1, tries: 3 },
       help: '上の しきを たしかめて、正しい こたえを 書こう' },
 
-    { id: 3, name: 'わり算', desc: 'あまりのある　32÷9',
-      needs: { mode: 2, tries: 3, bypass: 'open_all' } },
+    { id: 3, name: 'あまりのある わり算', desc: '32÷9',
+      needs: { mode: 2, tries: 3 } },
 
     // 同じ型を続けるほうがその場の成績は上がるが、保持は混合のほうが良い
     // （docs/ADD_UNIT.md 7章）。最後に混合を置く。
     { id: 4, name: 'ぜんぶ まぜ', desc: '①②③',
-      needs: { mode: 3, tries: 3, bypass: 'open_all' } }
+      needs: { mode: 3, tries: 3 } }
   ],
 
   /**
