@@ -384,6 +384,9 @@ function boot() {
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
+            // 正答の残像を出すかどうかの宣言。出す・出さないを決めるのは単元の側で、
+            // ui.html は単元名を知らないままこの真偽値だけを見る
+            answerEcho: !!UNIT.answerEcho,
             // 合計で判定するときの換算率。ui.html が単位名を決め打ちしないために渡す
             scale: UNIT.scale || {} },
     settings: uset,

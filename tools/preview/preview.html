@@ -118,6 +118,7 @@ async function main() {
     "  UNITS = UNIT.units || {};\n" +
     "  DIGITCAP = UNIT.digitCap || {};\n" +   // 実機の boot() と同じものを同じ変数に入れる
     "  SCALE = UNIT.scale || {};\n" +
+    "  ECHO = !!UNIT.answerEcho;\n" +        // 正答の残像。宣言した単元だけで出る
     "  TYPES = UNIT.types || {};\n" +
     // 型の一覧は Core.gs と同じく gen を回して導出する
     "  TYPES_BY_MODE = {};\n" +

@@ -136,6 +136,13 @@ body{
   display:inline-block;text-align:center;cursor:pointer}
 .eq .slot.cur{border-bottom-color:var(--mint)}
 .eq.reveal .slot{color:var(--amber);border-bottom-color:var(--amber)}
+
+/* 正答の残像。確定した答えを、いま欄がある位置から浮かせて消す。
+   色は正解の系統（ミント＝Enter・正答数と同じ）。誤答時に出るアンバーとは役割で分ける。
+   位置は JS が付ける（欄の位置は問題ごとに変わるので CSS では決められない）。 */
+.echo{position:absolute;pointer-events:none;transform:translate(-50%,-50%);z-index:4}
+.echo .in{color:var(--mint);font-weight:800;line-height:1.1;white-space:nowrap}
+.echo .in .u{font-size:.62em;opacity:.7;margin-left:.04em}
 .footnote{text-align:center;padding-bottom:.8rem;font-size:.82rem;color:#4A5270;
   font-weight:600;height:1.2rem}
 #missline{position:absolute;left:20%;right:20%;bottom:calc(clamp(3rem,8vw,4.2rem) * 3 + 1.6rem);
@@ -310,6 +317,8 @@ var UNITS = {};
 var DIGITCAP = {};
 /* 欄キー → 合計で判定するときの換算率。Unit.gs が決める（例 {km:1000, m:100, cm:1}） */
 var SCALE = {};
+/* 正答の残像を出すか。Unit.gs の answerEcho 宣言が決める（この画面は単元名を知らない） */
+var ECHO = false;
 /* 演算子トークン → 表示記号。四則は全単元共通なのでここに置く */
 var OPS = {'+':'+', '-':'−', '×':'×', '÷':'÷', '=':'='};
 
@@ -360,6 +369,7 @@ function previewItem(){
  *  画面
  * ============================================================ */
 function show(id){
+  killEcho();                          // 画面が変わったら残像は持ち越さない
   ['start','keyset','popt','ptime','ptype','play','result'].forEach(function(s){ $(s).classList.remove('on'); });
   $(id).classList.add('on'); scr = id;
 }
@@ -645,6 +655,87 @@ function showMiss(){
 }
 
 /* ============================================================
+ *  正答の残像
+ *
+ *  自動確定の引き金は必ず最終桁で、その桁を paintSlots が DOM に書いた直後、
+ *  同じ同期タスクの中で draw() が式ごと上書きする。ブラウザはタスクが終わってから
+ *  描画するので、確定した答えは一度もフレームに乗らない。児童から見ると、
+ *  自分が何を打って通ったのかが分からないまま次の問題に変わる。
+ *
+ *  止めて見せる案は採らない。60秒24問で1問300ms止めると 7.2 秒＝12% を失い、
+ *  1分あたりの問題数が変わって、すでに教室にある記録と比較できなくなる。
+ *  次の問題は止めず、答えだけを欄の位置から浮かせて消す。時間コストは 0。
+ * ============================================================ */
+/* 見え方の調整はここだけ。life は次の正答が出れば途中で切れるので上限として効く */
+var ECHO_CFG = { life: 1500, riseEm: 1.0, opacity: 0.90, scale: 0.68 };
+var echoEl = null, echoTimer = 0;
+
+function killEcho(){
+  if(echoTimer){ clearTimeout(echoTimer); echoTimer = 0; }
+  if(echoEl && echoEl.parentNode) echoEl.parentNode.removeChild(echoEl);
+  echoEl = null;
+}
+
+/**
+ * 確定した答えを欄の位置から浮かせる。式が draw() で消える前に呼ぶこと
+ * （位置を取るのに欄の要素そのものが要る）。
+ *
+ * 起点を欄に取るのは、確定の瞬間に児童の視線がそこに在るため。画面の端に固定で
+ * 出すと視線移動が要り、タイムアタック中の児童は焦点から目を離さないので読まれない。
+ *
+ * 中身は「答えの数値」だけにする。式ごと出すと、次の問題の式と二重に重なる。
+ * 打った値をそのまま出す（正解と一致しているが、めもりのように 132cm と 1m32cm の
+ * どちらでも正解になる単元があるので、児童が実際に打った形を返す）。
+ */
+function spawnEcho(q){
+  killEcho();
+  var slots = eqEl.querySelectorAll('.slot');
+  if(!slots.length) return;
+
+  var stage = eqEl.parentNode;
+  var sr = stage.getBoundingClientRect();
+  var a  = slots[0].getBoundingClientRect();
+  var lastEl = slots[slots.length-1], lastU = lastEl.nextElementSibling;
+  var right = (lastU ? lastU : lastEl).getBoundingClientRect().right;
+
+  var em = parseFloat(getComputedStyle(eqEl).fontSize) || 40;
+  var html = '';
+  q.f.forEach(function(u){
+    html += (typed[u] === '' ? '0' : typed[u]) + (u ? '<span class="u">'+u+'</span>' : '');
+  });
+
+  var el = document.createElement('div');
+  el.className = 'echo';
+  el.style.fontSize = (em * ECHO_CFG.scale) + 'px';
+  el.style.top = ((a.top + a.bottom) / 2 - sr.top) + 'px';
+  el.innerHTML = '<div class="in">' + html + '</div>';
+  stage.appendChild(el);
+  echoEl = el;
+
+  // 横位置は欄の中央。式が端に寄る単元でも画面の外へ出さない
+  var half = el.getBoundingClientRect().width / 2;
+  var cx = (a.left + right) / 2 - sr.left;
+  el.style.left = Math.max(half + 8, Math.min(sr.width - half - 8, cx)) + 'px';
+
+  // 動きを減らす設定の端末では浮上させず、その場で薄くなるだけにする
+  var still = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches);
+  var inner = el.firstChild;
+  if(inner.animate){
+    inner.animate(
+      [{ transform:'translateY(0)', opacity: ECHO_CFG.opacity },
+       { transform:'translateY(-' + (still ? 0 : em * ECHO_CFG.riseEm) + 'px)', opacity: 0 }],
+      { duration: ECHO_CFG.life, easing:'cubic-bezier(.2,.75,.35,1)', fill:'forwards' }
+    );
+  }else{
+    inner.style.opacity = ECHO_CFG.opacity;
+  }
+  // 消去は必ずこのタイマーが持つ。末尾の
+  // @media (prefers-reduced-motion:reduce){*{animation:none!important}} が効く端末で、
+  // 消えるところまでアニメーションに任せると残り続ける
+  echoTimer = setTimeout(killEcho, ECHO_CFG.life + 40);
+}
+
+/* ============================================================
  *  判定
  * ============================================================ */
 /**
@@ -723,6 +814,7 @@ function submit(){
 
   if(isRight()){
     correct++; countEl.textContent = correct; bumpCount();
+    if(ECHO) spawnEcho(q);             // draw() で欄が消える前に位置を取る
     if(!practice || pRecorded) pushItem();
     miss = 0;
     nextQuestion();
@@ -1300,6 +1392,7 @@ function applyBoot(r){
   UNITS = r.unit.units || {};
   DIGITCAP = r.unit.digitCap || {};    // 古い localStorage の控えには無いので {} に落とす
   SCALE = r.unit.scale || {};
+  ECHO = !!r.unit.answerEcho;          // 宣言の無い単元・古い控えでは false（＝これまでどおり）
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);
