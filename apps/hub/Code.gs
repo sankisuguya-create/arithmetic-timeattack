@@ -5,7 +5,8 @@
  * 名簿はここを正本とし、各単元は IMPORTRANGE で参照する（三重管理を避ける）。
  */
 
-var SHEETS = { LINKS: 'links', ROSTER: 'roster', CONFIG: 'config' };
+var SHEETS = { LINKS: 'links', ROSTER: 'roster', CONFIG: 'config',
+               UNITS: 'units', DASH: 'dashboard' };
 var DEFAULTS = { title: '算数タイムアタック', teachers: '' };
 var TTL = { links: 60, roster: 300 };
 var GUEST_DOMAIN = '@edu.nishi.or.jp';
@@ -255,6 +256,9 @@ function ensureReady_() {
     defs[SHEETS.CONFIG] = ['key', 'value'];
     defs[SHEETS.ROSTER] = ['email', '学年', '組', '番号', '氏名'];
     defs[SHEETS.LINKS] = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order'];
+    // 単元アプリの「スプレッドシート」のURL。links の url はウェブアプリのURLで別物。
+    // ダッシュボードは各単元の export シートを読むので、シートのURLが要る
+    defs[SHEETS.UNITS] = ['単元名', 'スプレッドシートURL'];
 
     for (var name in defs) {
       var sh = ss.getSheetByName(name) || ss.insertSheet(name);
@@ -278,5 +282,153 @@ function ensureReady_() {
 function setup() {
   cache_().remove('ready');
   ensureReady_();
-  return 'セットアップ完了（links / roster / config を用意しました）';
+  return 'セットアップ完了（links / roster / config / units を用意しました）';
+}
+
+/* ============================================================
+ *  学年ダッシュボード
+ * ============================================================ */
+
+/**
+ * 各単元の export シートを読んで、1行1児童の横断表を作る。
+ *
+ * 単元ごとにスプレッドシートを分けてあるので、**同じ児童の九九と
+ * あまりのあるわり算を突き合わせられない**。「九九は速いのに あまりで詰まる」は
+ * 最も指導価値の高い像で、それが単元をまたがないと作れない。
+ *
+ * IMPORTRANGE ではなくスクリプトで読むのは、単元が1つでも読めないと
+ * 配列結合ごと壊れるため。ここでは単元ごとに try で囲み、
+ * 読めなかった単元だけを「状態」に出して残りは表示する。
+ *
+ * 各単元の Core の版も並べる。単元ごとに Core.gs を手で貼っているので、
+ * 貼り忘れた単元だけ古い版で動き続ける。版が揃っているかはここで分かる。
+ */
+function buildDashboard() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  ensureReady_();
+  var ss = ss_();
+
+  var uv = sh_(SHEETS.UNITS).getDataRange().getValues();
+  var units = [];
+  for (var i = 1; i < uv.length; i++) {
+    var name = String(uv[i][0] || '').trim(), url = String(uv[i][1] || '').trim();
+    if (name && url) units.push({ name: name, url: url });
+  }
+  if (!units.length) {
+    return 'units シートに単元名とスプレッドシートURLを入れてください。';
+  }
+
+  var kids = {};          // email -> { grade, cls, no, name, u: { 単元名: {型, 比} } }
+  units.forEach(function (u) {
+    u.core = ''; u.rows = 0; u.state = '';
+    var v;
+    try {
+      v = SpreadsheetApp.openByUrl(u.url).getSheetByName('export').getDataRange().getValues();
+    } catch (e) {
+      u.state = '読めません（URL・共有設定・export シートの有無を確認）';
+      return;
+    }
+    if (!v || v.length < 2) { u.state = 'データがありません（先に単元側で集計する）'; return; }
+
+    for (var r = 1; r < v.length; r++) {
+      var row = v[r], mail = String(row[2] || '').toLowerCase();
+      if (!mail) continue;
+      u.core = u.core || String(row[1] || '');
+      u.rows++;
+      if (!kids[mail]) {
+        kids[mail] = { grade: row[3], cls: row[4], no: row[5], name: row[6], u: {} };
+      }
+      // 単元ごとに「まん中比がいちばん大きかった型」だけを残す。
+      // 全型を並べると単元数×型数の幅になり、横断表として読めなくなる
+      var ratio = Number(row[9]);
+      if (!ratio) continue;
+      var cur = kids[mail].u[u.name];
+      if (!cur || ratio > cur.ratio) {
+        kids[mail].u[u.name] = { type: String(row[7] || ''), ratio: ratio, sec: Number(row[8]) };
+      }
+    }
+    if (!u.state) u.state = '読めました';
+  });
+
+  var sh = ss.getSheetByName(SHEETS.DASH) || ss.insertSheet(SHEETS.DASH);
+  sh.clear();
+
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
+  var W = 5 + units.length;
+  var rows = [], marks = [];
+  function put(a, kind) {
+    var x = (a || []).slice(0, W);
+    while (x.length < W) x.push('');
+    rows.push(x); marks.push(kind || '');
+  }
+
+  put(['学年ダッシュボード', stamp], 'title');
+  put([]);
+
+  put(['単元の状態（Core の版が揃っていなければ、どれかに貼り忘れています）'], 'head');
+  put(['単元', 'Core の版', '行数', '状態', ''], 'sub');
+  var cores = {};
+  units.forEach(function (u) {
+    if (u.core) cores[u.core] = 1;
+    put([u.name, u.core || '—', u.rows, u.state, ''], u.state === '読めました' ? '' : 'warn');
+  });
+  if (Object.keys(cores).length > 1) {
+    put(['↑ Core の版が単元ごとに違います。古いほうに貼り直してください。'], 'warn');
+  }
+  put([]);
+
+  put(['児童ごとの横断表（数字は「学年のまん中の何倍か」。1.5倍以上を色つき）'], 'head');
+  var head = ['学年', '組', '番号', '氏名'];
+  units.forEach(function (u) { head.push(u.name); });
+  head.push('気になる単元数');
+  put(head, 'sub');
+
+  var list = Object.keys(kids).map(function (k) { return kids[k]; });
+  list.forEach(function (c) {
+    c.flag = 0;
+    units.forEach(function (u) {
+      var x = c.u[u.name];
+      if (x && x.ratio >= 1.5) c.flag++;
+    });
+  });
+  list.sort(function (a, b) {
+    return b.flag - a.flag || a.grade - b.grade ||
+           (a.cls < b.cls ? -1 : a.cls > b.cls ? 1 : 0) || a.no - b.no;
+  });
+
+  if (!list.length) put(['（どの単元にもデータがありません）'], 'none');
+  list.forEach(function (c) {
+    var r = [c.grade, c.cls, c.no, c.name];
+    units.forEach(function (u) {
+      var x = c.u[u.name];
+      r.push(x ? (x.type + ' ' + x.ratio.toFixed(1) + '倍') : '');
+    });
+    r.push(c.flag || '');
+    put(r, c.flag ? 'warn' : '');
+  });
+
+  sh.getRange(1, 1, rows.length, W).setValues(rows);
+  marks.forEach(function (kind, i) {
+    var r = sh.getRange(i + 1, 1, 1, W);
+    if (kind === 'title') r.setFontWeight('bold').setFontSize(14);
+    else if (kind === 'head') r.setFontWeight('bold').setBackground('#E8F0E4');
+    else if (kind === 'sub')  r.setFontColor('#666666').setBackground('#F5F5F5');
+    else if (kind === 'warn') r.setBackground('#FDE4B8');
+    else if (kind === 'none') r.setFontColor('#888888').setFontStyle('italic');
+  });
+  for (var w = 5; w <= W; w++) sh.setColumnWidth(w, 150);
+  sh.setTabColor('#93C47D');
+
+  sh.getRange('A1').setNote(
+    '各単元の export シートを読んで作った横断表です。「ダッシュボードを作る」を押すたびに作り直されます。\n\n' +
+    'セルは、その単元でその子がいちばん遅かった型と、学年のまん中の何倍かです。\n' +
+    '「九九は普通なのに あまりのあるわり算だけ 1.8倍」のような読み方をします。\n' +
+    '単元ごとの絶対の秒数ではなく比を並べているのは、単元によって想起にかかる時間が\n' +
+    'そもそも違い、秒のままでは単元をまたいで比べられないためです。\n\n' +
+    'この表は児童に見せないでください。'
+  );
+
+  var bad = units.filter(function (u) { return u.state !== '読めました'; });
+  return 'ダッシュボードを作りました（' + list.length + '人 / ' + units.length + '単元' +
+         (bad.length ? ' / 読めなかった単元 ' + bad.length : '') + '）';
 }

@@ -86,6 +86,24 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
   </div>
 
   <div class="box">
+    <h2>学年ダッシュボード</h2>
+    <div class="hint">
+      各単元の <code>export</code> シートを読んで、<b>1行1児童の横断表</b>を
+      <code>dashboard</code> シートに作ります。<br>
+      「九九は普通なのに あまりのあるわり算だけ遅い」のような、
+      単元をまたがないと見えない像を出すためのものです。<br><br>
+      先に <code>units</code> シートに、単元名と<b>スプレッドシートのURL</b>を
+      入れてください（ウェブアプリのURLではありません）。<br>
+      各単元側で先に集計しておく必要があります。<br><br>
+      <b>この表は児童に見せない前提です。</b>
+    </div>
+    <div class="bar">
+      <button id="dash" class="ghost">ダッシュボードを作る</button>
+      <span class="stat" id="dashStat"></span>
+    </div>
+  </div>
+
+  <div class="box">
     <h2>名簿について</h2>
     <div class="hint">
       このハブの <code>roster</code> シートを<b>名簿の正本</b>にしてください。<br>
@@ -222,6 +240,16 @@ $('saveCfg').onclick = function(){
   }).withFailureHandler(function(e){
     btn.disabled = false; $('cfgStat').textContent = 'エラー: ' + e.message;
   }).saveHubConfig({ title: $('title').value, teachers: $('teachers').value });
+};
+
+$('dash').onclick = function(){
+  var btn = this; btn.disabled = true;
+  $('dashStat').textContent = '作成中…（単元の数だけ時間がかかります）';
+  google.script.run.withSuccessHandler(function(m){
+    btn.disabled = false; $('dashStat').textContent = m;
+  }).withFailureHandler(function(e){
+    btn.disabled = false; $('dashStat').textContent = 'エラー: ' + e.message;
+  }).buildDashboard();
 };
 
 google.script.run.withSuccessHandler(function(r){
