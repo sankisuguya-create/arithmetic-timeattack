@@ -55,6 +55,9 @@ body{
 .card.locked .k{background:var(--line)}
 .card .lock{font-size:.72rem;color:var(--mute);font-weight:700;line-height:1.3}
 .hint{font-size:.88rem;color:var(--mute);font-weight:600}
+/* 公開されたモードが0件のとき。読み込み中と見分けがつく大きさで出す */
+.empty{grid-column:1/-1;background:#fff;border:1.5px dashed var(--line);border-radius:14px;
+  padding:1.6rem 1.2rem;text-align:center;font-size:1.05rem;font-weight:700;line-height:1.9}
 .tap{cursor:pointer;padding:.35rem .6rem;border-radius:8px;display:inline-block}
 .tap:hover{background:#EDEDE8;color:var(--ink)}
 .prow{width:min(620px,94vw);border-top:1.5px dashed var(--line);padding-top:1.1rem;
@@ -301,6 +304,11 @@ var SRV = (typeof google !== 'undefined' && google.script && google.script.run);
 
 /* モードはサーバー（Unit.gs）から受け取る。この画面は単元を知らない */
 var MODES = {}, MODES_ALL = [], LOCKED = {};
+/* boot() の結果を1度でも反映したか。
+   公開モードが0件のとき、起動待ちなのか「教師がまだ開いていない」のかを
+   区別するために要る。両方を『よみこみ中…』と出すと、
+   通信が止まったように見えて教師・児童とも打つ手が分からなくなる。 */
+var BOOTED = false;
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -319,6 +327,7 @@ var BEST = {}, MEDAL = {}, STARS = {}, PBEST = {};
 var scr='none', mode=1, queue=[], qi=0;
 var typed = {}, fi = 0;                    // 2欄入力の状態
 var correct=0, attempts=0, miss=0, startT=0, raf=0, locked=false, ready=false;
+var startAborted=false;                    // 開始が失敗した。カウントダウンを畳む合図
 var items=[], curAns=[], shownAt=0, firstKeyAt=0, token='';
 var practice=false, pMode=1, pTimed=false, pRecorded=false;
 /* 絞って練習する問題型。'' なら絞らない（＝いろいろ混ぜる） */
@@ -364,12 +373,32 @@ function show(id){
   $(id).classList.add('on'); scr = id;
 }
 function fatal(t){ $('msg').textContent = t; $('msg').classList.add('on'); }
+/**
+ * サーバーが混んでいて進めないとき。fatal と違って画面を塞がない。
+ * 帯活動では40人が同じ数秒に集中するので、混雑は事故ではなく通常の状態。
+ * 児童は最初の画面に戻って、もう一度押せばよい。
+ */
+function busy(t){
+  show('start');
+  $('startHint').textContent = t;
+}
 
 /* 教師がクラスごとに公開したモードだけを出す。非公開のものは一覧に載せない */
 function visibleModes(){
   return MODES_ALL.filter(function(m){ return !!CFG.open[m]; });
 }
 function isLocked(m){ return !!LOCKED[m]; }
+
+/**
+ * 公開されたモードが0件のときの箱。
+ * 教師が公開すれば openWatch が拾って自動で出るので、児童は待てばよい。
+ * 見張りを打ち切ったあと（WATCH_GAVEUP）だけ、再読み込みを頼む。
+ */
+function emptyBox(){
+  return '<div class="empty">まだ もんだいが ひらいて いません。<br>' +
+    (WATCH_GAVEUP ? 'がめんを さいど よみこんで ください。'
+                  : 'せんせいが ひらくと じどうで でます。') + '</div>';
+}
 
 /* 上段＝番号とモード名だけ。副題は出さない（児童が選ぶのに要らず、名前の幅を奪う） */
 function cardTop(m, idx){
@@ -379,6 +408,11 @@ function cardTop(m, idx){
 
 function renderMenu(){
   var vis = visibleModes();
+  if(!vis.length){
+    $('modeGrid').innerHTML = BOOTED ? emptyBox() : '';
+    $('startHint').textContent = BOOTED ? '' : 'よみこみ中…';
+    return;
+  }
   $('modeGrid').innerHTML = vis.map(function(m, idx){
     if(isLocked(m)){
       return '<div class="card locked" data-mode="'+m+'">'+ cardTop(m, idx) +
@@ -399,14 +433,19 @@ function renderMenu(){
   var open = vis.map(function(m, i){ return isLocked(m) ? 0 : i+1; })
                 .filter(function(n){ return n; });
   var seq = open.length && open[open.length-1] === open.length;
-  $('startHint').textContent = !vis.length ? 'よみこみ中…'
-    : !open.length ? ''
+  $('startHint').textContent = !open.length ? ''
     : open.length === 1 ? (open[0] + ' のキーで はじまります')
     : seq ? ('1〜' + open.length + ' のキーで はじまります')
     : (open.join('・') + ' のキーで はじまります');
 }
 function openPractice(){
   var vis = visibleModes();
+  if(!vis.length){
+    // 本番と同じ理由で空になる。ここだけ白い画面にすると、押した児童が戻り方に迷う
+    $('poptGrid').innerHTML = emptyBox();
+    show('popt');
+    return;
+  }
   $('poptGrid').innerHTML = vis.map(function(m, idx){
     return '<div class="card'+(isLocked(m)?' locked':'')+'" data-pmode="'+m+'">'+
       cardTop(m, idx) +
@@ -973,6 +1012,7 @@ function beginPractice(timed){
   pRecorded = practiceRecorded(timed);
   correct=0; attempts=0; miss=0; locked=false; items=[]; curAns=[]; token='';
   ready = !pRecorded;                       // 記録するときは問題列の到着を待つ
+  startAborted = false;
   countEl.textContent='0';
   $('playMedal').textContent='';
   $('playLabel').textContent = MODES[pMode].name +
@@ -993,8 +1033,10 @@ function beginPractice(timed){
         return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null};
       });
       qi = 0; clearTyped(); ready = true;
-    }).withFailureHandler(function(){ fatal('つうしんに しっぱいしました。'); })
-      .startSession(pMode, true);
+    }).withFailureHandler(function(){
+      startAborted = true;
+      busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
+    }).startSession(pMode, true);
   }else{
     pBuf = null; pFail = 0; ready = false; clearTyped();
   }
@@ -1058,7 +1100,7 @@ function begin(m){
   if(!CFG.open[m] || isLocked(m)) return;
   practice=false; pTimed=false; pRecorded=false;
   document.body.classList.remove('practice-result');
-  mode=m; token=''; ready=false;
+  mode=m; token=''; ready=false; startAborted=false;
   barEl.classList.remove('hidden');
   $('playLabel').textContent = MODES[m].name;
   $('footnote').textContent='';
@@ -1074,8 +1116,10 @@ function begin(m){
         return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null};
       });
       ready = true; clearTyped();
-    }).withFailureHandler(function(){ fatal('つうしんに しっぱいしました。'); })
-      .startSession(m);
+    }).withFailureHandler(function(){
+      startAborted = true;
+      busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
+    }).startSession(m);
   }else{
     queue = []; for(var i=0;i<200;i++) queue.push(previewItem());
     token=''; ready=true; clearTyped();
@@ -1100,8 +1144,19 @@ function countdown(n){
   var el = $('countdown');
   el.classList.add('on'); el.textContent = n;
   if(n > 1){ setTimeout(function(){ countdown(n-1); }, 700); return; }
+  // 問題列の到着を待つ上限。これが無いと、サーバーが詰まったとき
+  // カウントダウンの「1」を出したまま永久に止まる（何も知らせないまま）
+  var until = Date.now() + 15000;
   var go = function(){
-    if(!ready){ setTimeout(go, 120); return; }
+    if(startAborted){ el.classList.remove('on'); return; }
+    if(!ready){
+      if(Date.now() > until){
+        el.classList.remove('on');
+        busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
+        return;
+      }
+      setTimeout(go, 120); return;
+    }
     el.classList.remove('on');
     clearTyped(); draw();
     startT = performance.now();
@@ -1290,7 +1345,7 @@ function setAppTitle(t){
  * boot() の結果を画面に反映する。
  * サーバーからの応答でも、localStorage の前回分でも、同じ経路を通す。
  */
-function applyBoot(r){
+function applyBoot(r, live){
   CFG.limitSec=r.limitSec; CFG.missLimit=r.missLimit;
   CFG.open = r.open || {}; CFG.guest = !!r.guest;
   CFG.settings = r.settings || {};
@@ -1304,6 +1359,9 @@ function applyBoot(r){
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);
   BEST=r.best; MEDAL=r.medals;
+  // 控えを描いただけでは「開いていない」と断定できない。
+  // 断定してよいのはサーバーが答えた時だけ（live）
+  if(live) BOOTED = true;
   STARS = r.stars || {}; PBEST = r.practiceBest || {};
   if(r.keyGap >= 0) $('pad').style.gap = Math.min(Number(r.keyGap)||8, 40) + 'px';
   $('timelede').textContent = '1回 ' + r.limitSec + 'びょう';
@@ -1322,6 +1380,95 @@ function applyBoot(r){
  * 弾くので不正には通らない（表示だけが最大1往復ぶん古い）。
  * デプロイURLごとに分けて持つ（九九と長さで混ざらないように）。
  */
+/* ============================================================
+ *  公開待ちの見張り
+ *
+ *  boot() は起動時の1回だけ。教師が授業中にモードを公開しても、
+ *  画面を開いたままの端末は再読み込みするまで空のまま残る。
+ *  帯活動の最中に40人へ「もう一回ひらいて」と言わせないために、
+ *  「公開が0件のときだけ」取り直す。1件でも開けば止まる。
+ *
+ *  既に開いている児童は1回も余計に叩かない（通常は通信が増えない）。
+ *  待っている端末だけが対象なので、負荷は「まだ開いていない人数」で頭打ちになり、
+ *  教師が公開した瞬間に0へ戻る。
+ * ============================================================ */
+var WATCH_EVERY = 15000;     // 間隔(ms)。教室で「押したらすぐ出る」と感じる範囲の上限
+var WATCH_MAX   = 40;        // 打ち切りまでの回数。15秒×40＝約10分
+var WATCH_LEFT  = WATCH_MAX, WATCH_GAVEUP = false, watchTimer = 0;
+
+function watchNext(ms){
+  if(watchTimer) clearTimeout(watchTimer);
+  // 端末ごとに散らす。40台が同じ授業の頭に開くと、揃った秒に一斉に叩くことになる
+  watchTimer = setTimeout(watchRun, ms + Math.floor(Math.random() * 5000));
+}
+function watchRun(){
+  watchTimer = 0;
+  if(!SRV || visibleModes().length) return;                 // 開いた＝見張り終了
+  if(scr !== 'start' && scr !== 'popt'){ watchNext(WATCH_EVERY); return; }
+  if(document.hidden){ watchNext(WATCH_EVERY); return; }     // ふたを閉じた端末は数えない
+  if(WATCH_LEFT <= 0){ WATCH_GAVEUP = true; renderMenu(); return; }
+  WATCH_LEFT--;
+  google.script.run.withSuccessHandler(function(r){
+    if(r && r.ok){
+      applyBoot(r, true); bootCacheSave(r);
+      if(visibleModes().length){
+        if(scr === 'popt') openPractice();                   // 練習の選択画面も描き直す
+        return;
+      }
+    }
+    watchNext(WATCH_EVERY);
+  }).withFailureHandler(function(){ watchNext(WATCH_EVERY); }).boot();
+}
+/* ふたを開け直した・タブに戻ってきた時は、次の15秒を待たずに見に行く。
+   打ち切っていても、戻ってきた操作を「まだ待つ」の合図として数え直す */
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden || !SRV) return;
+  if(!BOOTED){                       // 起動そのものが通っていない。数え直して取り直す
+    if(bootTry > 0){ bootTry = 0; bootFetch(); }
+    return;
+  }
+  if(visibleModes().length) return;
+  WATCH_LEFT = WATCH_MAX; WATCH_GAVEUP = false;
+  renderMenu();
+  watchNext(1000);
+});
+
+/**
+ * 起動の取得。失敗しても黙らない。
+ *
+ * 以前は「控えがあれば何もしない」だった。控えがある端末では失敗が画面に出ず、
+ * 案内は『よみこみ中…』のまま残る。帯活動で40人が同時に開くと、
+ * サーバー側の同時実行の枠を超えた児童はこの状態のまま置き去りになり、
+ * 教師には「読み込み中で止まった」としか見えない。
+ *
+ * 混雑は事故ではなく通常の状態なので、間を空けて自分で取り直す。
+ * 間隔は 2,4,8,16,30,30… 秒（＋ばらつき）。40台が揃って再挑戦すると
+ * 混雑をそのまま再現するので、ここでも秒をずらす。
+ */
+var bootTry = 0;
+function bootFetch(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok){ fatal(r.msg); return; }
+    bootTry = 0;
+    applyBoot(r, true);
+    bootCacheSave(r);
+    show('start');
+    setTimeout(pendFlush, Math.floor(Math.random() * 8000));   // 未送信の再送も散らす
+    if(!visibleModes().length) watchNext(WATCH_EVERY);         // 公開0件のときだけ見張る
+  }).withFailureHandler(function(){
+    bootTry++;
+    // 遊べる控えがあるなら黙って取り直す。案内文を混雑の知らせで潰さない
+    if(!visibleModes().length){
+      $('startHint').textContent = (bootTry >= 8)
+        ? 'サーバーが こんでいます。ページを ひらきなおして ください。'
+        : 'サーバーが こんでいます。まっててね…';
+    }
+    if(bootTry >= 8) return;
+    setTimeout(bootFetch, Math.min(2000 * Math.pow(2, bootTry - 1), 30000)
+                          + Math.floor(Math.random() * 3000));
+  }).boot();
+}
+
 var BOOT_KEY = 'km_boot_' + (location.pathname || '');
 function bootCacheSave(r){
   try{ localStorage.setItem(BOOT_KEY, JSON.stringify(r)); }catch(e){}
@@ -1344,16 +1491,7 @@ if(SRV){
     show('start');
   }
 
-  google.script.run.withSuccessHandler(function(r){
-    if(!r.ok){ fatal(r.msg); return; }
-    applyBoot(r);
-    bootCacheSave(r);
-    show('start');
-    pendFlush();
-  }).withFailureHandler(function(){
-    // 控えを描けているなら、通信が落ちても遊べないだけで画面は保つ
-    if(!cached) fatal('つうしんに しっぱいしました。ページを ひらきなおして ください。');
-  }).boot();
+  bootFetch();
 }else{
   BEST={1:18,2:12,3:9,4:0}; MEDAL={1:'🥈',2:'',3:'',4:''};
   STARS={1:7,2:3,3:1,4:0}; PBEST={1:15,2:0,3:0,4:0};

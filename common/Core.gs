@@ -40,7 +40,7 @@ var BASE_DEFAULTS = {
   window_days: 30
 };
 
-var TTL = { config: 60, roster: 300, session: 21600 };
+var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
 var QN = 200;                              // 1セッションの出題数
 var SCHEMA_VERSION = 3;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
@@ -426,7 +426,7 @@ function nextPracticeItem(mode, type) {
   mode = Number(mode);
   if (modeIds_().indexOf(mode) < 0) return { ok: false };
   if (c && !modeAllowed_(mode, openFor_(c.grade, c.cls),
-                         seqOffFor_(c.grade, c.cls), triesByMode_(mail))) return { ok: false };
+                         seqOffFor_(c.grade, c.cls), triesForGate_(mail))) return { ok: false };
 
   var rand = rng_(Math.floor(Math.random() * 2147483647));
   var it = UNIT.gen(rand, mode);
@@ -463,7 +463,7 @@ function startSession(mode, practice) {
   }
 
   if (!modeAllowed_(mode, openFor_(c.grade, c.cls),
-                    seqOffFor_(c.grade, c.cls), triesByMode_(mail))) {
+                    seqOffFor_(c.grade, c.cls), triesForGate_(mail))) {
     return { ok: false, msg: 'このモードは まだ つかえません。' };
   }
 
@@ -550,10 +550,25 @@ function submitSession(token, items) {
   }).join(',');
 
   var isPractice = !!s.p;
-  var lock = LockService.getScriptLock();
   var rank = 0, res = { best: correct, star: 0, updated: false };
+
+  /*
+   * 記録は直列に書く（同じ行を読んで書き換えるため）。
+   * 待ち時間を30秒から10秒に縮めてある。40人が同じ1分の終わりに送ると、
+   * 待っている実行が同時実行の枠（1ユーザーあたり30）を埋めたまま居座り、
+   * その間、他の児童の boot と startSession が実行されない。
+   * 教室で最初に壊れるのは記録ではなく「始められないこと」なので、
+   * 混んでいるときは記録を諦めて枠を空ける。
+   *
+   * 諦めても失われない。token をキャッシュから消すのはロックの内側なので、
+   * ここで抜けた回は何も書いていない。端末は未送信として持ち続け、
+   * 次の起動でそのまま送り直す（pendFlush）。
+   */
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    return { ok: false, msg: 'こんでいます。あとで おくりなおします。' };
+  }
   try {
-    lock.waitLock(30000);
     cache_().remove('sess_' + token);
 
     if (!isPractice) {
@@ -566,6 +581,9 @@ function submitSession(token, items) {
     }
     res = updateSummary_(mail, s.mode, limSec, isPractice ? 'p' : 'r', correct, attempts);
     if (!isPractice) rank = updateDaily_(classKey_(c), s.mode, limSec, mail, correct);
+    // 索引を作り直させる。次に起動した児童が古いベストを見ないように
+    cache_().remove('sumidx_' + limSec);
+    if (!isPractice) cache_().remove('top3_' + classKey_(c) + '_' + limSec);
   } catch (err) {
     return { ok: false, msg: '記録に失敗しました。' };   // code 無し = 再送する
   } finally {
@@ -610,30 +628,67 @@ function match_(a, qq, byTotal) {
  */
 var SUM = { MAIL:0, MODE:1, NAME:2, LIM:3, KIND:4, TRIES:5, TC:6, TA:7, BEST:8, COUNT:9 };
 
-function bests_(mail, limitSec) {
-  var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
-  var real = {}, prac = {}, stars = {}, tries = {};
-  modeIds_().forEach(function (m) { real[m] = 0; prac[m] = 0; stars[m] = 0; tries[m] = 0; });
+/**
+ * summary をメール別に畳んだ索引。1回の読み取りを学級全体で分け合う。
+ *
+ * 帯活動では40人が同じ1分に起動する。児童ごとに summary 全体を読んでいると、
+ * 同じ内容を40回読むことになり、実行時間がそのまま同時実行の枠を埋める。
+ * 索引にすれば、シートを読むのは最初の1つの実行だけになる。
+ *
+ * TTL は30秒。自分の記録は submitSession の戻り値でその場で画面に入るので、
+ * ここが数十秒古くても児童には見えない（送信時に該当キーは落とす）。
+ */
+function summaryIndex_(limitSec) {
+  var key = 'sumidx_' + limitSec;
+  var hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
 
+  var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
+  var idx = {};
   for (var i = 1; i < v.length; i++) {
-    if (String(v[i][SUM.MAIL]).toLowerCase() !== mail) continue;
-    var mt = Number(v[i][SUM.MODE]);
+    var mail = String(v[i][SUM.MAIL]).toLowerCase().trim();
+    if (!mail) continue;
+    var e = idx[mail];
+    if (!e) e = idx[mail] = { best: {}, prac: {}, stars: {}, tries: {} };
+    var m = Number(v[i][SUM.MODE]);
     // 順次開放に使う試行回数だけは、制限時間も本番／練習も問わずに合算する。
     // 「何回やったか」の条件なので、条件を満たす道を制限時間の設定で塞がない。
-    if (tries[mt] !== undefined) tries[mt] += Number(v[i][SUM.TRIES]) || 0;
+    e.tries[m] = (e.tries[m] || 0) + (Number(v[i][SUM.TRIES]) || 0);
     if (Number(v[i][SUM.LIM]) !== Number(limitSec)) continue;
-    var m = Number(v[i][SUM.MODE]);
     if (String(v[i][SUM.KIND]) === 'p') {
-      prac[m] = Number(v[i][SUM.BEST]) || 0;
+      e.prac[m] = Number(v[i][SUM.BEST]) || 0;
     } else {
-      real[m] = Number(v[i][SUM.BEST]) || 0;
-      stars[m] = Math.min(Number(v[i][SUM.COUNT]) || 0, STAR_MAX);
+      e.best[m] = Number(v[i][SUM.BEST]) || 0;
+      e.stars[m] = Math.min(Number(v[i][SUM.COUNT]) || 0, STAR_MAX);
     }
   }
+  // キャッシュ1件は100KBまで。児童数が多い年は入らないので、その時は素で読む
+  var json = JSON.stringify(idx);
+  if (json.length < 90000) cache_().put(key, json, TTL.index);
+  return idx;
+}
+
+function bests_(mail, limitSec) {
+  var e = summaryIndex_(limitSec)[mail] || {};
+  var real = {}, prac = {}, stars = {}, tries = {};
+  modeIds_().forEach(function (m) {
+    real[m]  = Number((e.best  || {})[m]) || 0;
+    prac[m]  = Number((e.prac  || {})[m]) || 0;
+    stars[m] = Number((e.stars || {})[m]) || 0;
+    tries[m] = Number((e.tries || {})[m]) || 0;
+  });
   return { best: real, practiceBest: prac, stars: stars, tries: tries };
 }
 
-/** 順次開放の判定だけに使う。boot は bests_ が返す tries を使い、ここは通らない */
+/**
+ * 順次開放の判定だけに使う。boot は bests_ が返す tries を使い、ここは通らない。
+ *
+ * needs を持たない単元（九九・長さ・おもさ）では判定そのものが不要なので読まない。
+ * 以前は単元を問わず呼んでいて、児童が1回始めるたびに summary 全体を読んでいた。
+ * 40人が同時に始める帯活動では、これが同時実行の枠を埋める側に回る。
+ */
+function triesForGate_(mail) { return hasNeeds_() ? triesByMode_(mail) : null; }
+
 function triesByMode_(mail) {
   var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
   var out = {};
@@ -714,12 +769,38 @@ function updateDaily_(ck, mode, limitSec, mail, score) {
   return rankOf_(v, ck, mode, limitSec, mail);
 }
 
-function medals_(ck, mail, limitSec) {
+/**
+ * そのクラス・その制限時間の、当日の上位3名。{ モードid: [1位, 2位, 3位] }
+ * 児童に見えるのは自分がメダル圏内かどうかだけなので、3人ぶんで足りる。
+ * summary と同じ理由で、daily の読み取りも学級で1回にまとめる。
+ */
+function top3_(ck, limitSec) {
+  var key = 'top3_' + ck + '_' + limitSec;
+  var hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
+
   var v = sh_(SHEETS.DAILY).getDataRange().getValues();
-  var out = {};
+  var td = today_(), out = {};
   modeIds_().forEach(function (m) {
-    var r = rankOf_(v, ck, m, limitSec, mail);
-    out[m] = (r >= 1 && r <= 3) ? ['🥇', '🥈', '🥉'][r - 1] : '';
+    var pool = [];
+    for (var i = 1; i < v.length; i++) {
+      if (dstr_(v[i][0]) === td && String(v[i][1]) === ck &&
+          Number(v[i][2]) === m && Number(v[i][4]) === Number(limitSec)) {
+        pool.push({ mail: String(v[i][5]).toLowerCase(), s: Number(v[i][6]), t: Number(v[i][7]) });
+      }
+    }
+    pool.sort(function (a, b) { return b.s - a.s || a.t - b.t; });   // 同点は先着優先
+    out[m] = pool.slice(0, 3).map(function (x) { return x.mail; });
+  });
+  cache_().put(key, JSON.stringify(out), TTL.index);
+  return out;
+}
+
+function medals_(ck, mail, limitSec) {
+  var t = top3_(ck, limitSec), out = {};
+  modeIds_().forEach(function (m) {
+    var k = (t[m] || []).indexOf(mail);
+    out[m] = k >= 0 ? ['🥇', '🥈', '🥉'][k] : '';
   });
   return out;
 }
@@ -740,9 +821,26 @@ function resetDaily() {
  *  教師用 API
  * ============================================================ */
 
+/**
+ * いまどの写しを操作しているか。教師画面の見出しに出す。
+ *
+ * 版を入れ替えた直後は、古い写しと新しい写しが両方開ける状態になる
+ * （ゴミ箱に入れただけのスプレッドシートも、履歴やブックマークから開ける）。
+ * 教師が古い方で公開し、児童が新しい方を開いていると、
+ * 症状は「公開したのに反映されない」になり、どちらの画面を見ても原因が出ない。
+ * 名前とURLを画面に出しておけば、取り違えはその場で分かる。
+ */
+function where_() {
+  var out = { file: '', url: '' };
+  try { out.file = ss_().getName(); } catch (e) {}
+  try { out.url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+  return out;
+}
+
 function getConfigForUI() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return { config: config_(), unit: { id: UNIT.id, title: UNIT.title,
+  return { config: config_(), where: where_(),
+           unit: { id: UNIT.id, title: UNIT.title,
            modes: UNIT.modes, types: UNIT.types,
            settings: UNIT.settings || [],
            tips: UNIT.tips || '' } };
@@ -1048,36 +1146,51 @@ function writeWeakClass_(typeMiss, wrongCnt) {
  *  自動セットアップ（手動実行は不要）
  * ============================================================ */
 
+/**
+ * 準備が要るのは設置直後と版を上げた直後だけ。通常はプロパティを1つ読んで終わる。
+ *
+ * 以前は「済んだ印」をスクリプトキャッシュに置いていた。キャッシュは消えるので、
+ * 消えた直後に40人が同時に開くと、40の実行が同じシート操作を並行に走らせる。
+ * ensureSheets_ は書き込みを含み、ensureSchema_ は30秒待つロックを取るので、
+ * 実行は直列化したまま同時実行の枠（1ユーザーあたり30）を埋め、
+ * その間に来た boot / startSession が実行できなくなる。
+ * 「40人中1人だけ動いた」の主因はここ。
+ *
+ * 印は消えないプロパティに持ち、ロックは取れなければ待たずに諦める。
+ * 準備は誰か1つの実行がやれば足りる。待つ側に回るくらいなら、
+ * その実行はそのまま先へ進めたほうがよい（シートは既にあることがほとんど）。
+ */
+var READY_KEY = 'ready_schema';
+
 function ensureReady_() {
-  if (cache_().get('ready')) return;
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) return;
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(0)) return;              // 誰かが準備中。待たない
   try {
+    if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) return;
     ensureSheets_();
     ensureSchema_();
     ensureTriggers_();
-    cache_().put('ready', '1', 3600);
+    props.setProperty(READY_KEY, String(SCHEMA_VERSION));
   } catch (e) {
-    console.error('ensureReady_ 失敗: ' + e.message);   // キャッシュしない＝次回再挑戦
+    console.error('ensureReady_ 失敗: ' + e.message);   // 印を立てない＝次回再挑戦
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
   }
 }
 
 /**
  * スキーマの自動移行。手動実行は不要。
- * 排他ロックで守るので、40人が同時に開いても1回しか走らない。
+ * 呼ぶのは ensureReady_ だけで、そこで排他ロックを取っている。
  */
 function ensureSchema_() {
   var props = PropertiesService.getScriptProperties();
   if (Number(props.getProperty('schema_version')) >= SCHEMA_VERSION) return;
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-    if (Number(props.getProperty('schema_version')) < SCHEMA_VERSION) {
-      migrateSummaryV2_();
-      migrateModeNameAndWrong_();
-      props.setProperty('schema_version', String(SCHEMA_VERSION));
-    }
-  } finally {
-    try { lock.releaseLock(); } catch (e) {}
-  }
+  migrateSummaryV2_();
+  migrateModeNameAndWrong_();
+  props.setProperty('schema_version', String(SCHEMA_VERSION));
 }
 
 /** v1 (kind / best_count なし) から v2 へ。既存データは本番・更新1回として扱う */
@@ -1173,14 +1286,16 @@ function ensureSheets_() {
   // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
   // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。
   // モード単位に変えた時点で中身は読めないので、残しても意味がない。
+  var made = false;
   var cls = ss.getSheetByName(SHEETS.CLASS);
   if (cls && cls.getLastRow() > 0) {
     var h0 = cls.getRange(1, 1, 1, cls.getLastColumn()).getValues()[0].map(String);
     var hasMode = h0.some(function (x) { return x.indexOf('mode_') === 0; });
-    if (!hasMode) cls.clear();
+    // 作り直したら made を立てる。キャッシュに旧形式の読み取り結果が残ったままだと、
+    // 消した直後の最大60秒、公開設定を古い列のまま返し続ける。
+    if (!hasMode) { cls.clear(); made = true; }
   }
 
-  var made = false;
   for (var name in defs) {
     var sh = ss.getSheetByName(name);
     if (!sh) { sh = ss.insertSheet(name); made = true; }
@@ -1189,7 +1304,8 @@ function ensureSheets_() {
       sh.setFrozenRows(1);
     }
   }
-  ss.getSheetByName(SHEETS.DAILY).getRange('A:A').setNumberFormat('@');
+  // 書式の指定は書き込み。毎回やると、開いただけの実行が全部シートに書きに行く
+  if (made) ss.getSheetByName(SHEETS.DAILY).getRange('A:A').setNumberFormat('@');
 
   var cf = ss.getSheetByName(SHEETS.CONFIG);
   if (cf.getLastRow() <= 1) {
@@ -1215,7 +1331,7 @@ function ensureTriggers_() {
 
 /** 承認のために最初に1度だけ実行する */
 function setup() {
-  cache_().remove('ready');
+  PropertiesService.getScriptProperties().deleteProperty(READY_KEY);
   ensureReady_();
   return 'セットアップ完了（シート・トリガーを確認しました）';
 }
