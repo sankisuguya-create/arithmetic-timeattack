@@ -8,7 +8,14 @@
 var SHEETS = { LINKS: 'links', ROSTER: 'roster', CONFIG: 'config' };
 var DEFAULTS = { title: '算数タイムアタック', teachers: '' };
 var TTL = { links: 60, roster: 300 };
-var GUEST_DOMAIN = '@edu.nishi.or.jp';
+/**
+ * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
+ *
+ * **児童は @kyoiku.edu.nishi.or.jp で、教師ドメインのサブドメインになっている。**
+ * 「edu.nishi.or.jp を含む」で判定すると児童が全員教師になり、
+ * リンクの編集画面が児童から開けてしまう。@ の右側の完全一致でだけ判定すること。
+ */
+var TEACHER_DOMAIN = 'edu.nishi.or.jp';
 
 /* 各リンクの色。児童が見分けやすいよう6色から選ぶ。
  * fg は bg に対して 36px 太字（WCAG の大きい文字 3:1）を満たす値を選んである。
@@ -34,10 +41,14 @@ function email_() {
   var e = Session.getActiveUser().getEmail();
   return e ? e.toLowerCase() : '';
 }
-function isGuest_(mail) {
-  return !!mail && mail.length > GUEST_DOMAIN.length &&
-         mail.indexOf(GUEST_DOMAIN, mail.length - GUEST_DOMAIN.length) >= 0;
+function domainOf_(mail) {
+  var at = String(mail || '').lastIndexOf('@');
+  return at < 0 ? '' : String(mail).slice(at + 1);
 }
+function isTeacherDomain_(mail) { return domainOf_(mail) === TEACHER_DOMAIN; }
+
+/** 名簿になくても開ける（記録しない）。教師ドメインだけ */
+function isGuest_(mail) { return isTeacherDomain_(mail); }
 function toBool_(x) {
   if (x === true) return true;
   if (x === false || x === '' || x == null) return false;
@@ -61,10 +72,30 @@ function config_() {
 
 function isTeacher_(mail) {
   if (!mail) return false;
+  if (isTeacherDomain_(mail)) return true;          // 設定を読まずに済むので先に見る
   try { if (mail === ss_().getOwner().getEmail().toLowerCase()) return true; } catch (e) {}
+  // config.teachers は例外の口。別ドメインの教師を1件ずつ足す
   var list = String(config_().teachers || '').toLowerCase().split(',');
   for (var i = 0; i < list.length; i++) if (list[i].trim() === mail) return true;
   return false;
+}
+
+/** 教師画面の URL。いま動いているデプロイに ?page=teacher を付ける */
+function teacherUrl_() {
+  try {
+    var u = ScriptApp.getService().getUrl();
+    return u ? (u + (u.indexOf('?') >= 0 ? '&' : '?') + 'page=teacher') : '';
+  } catch (e) { return ''; }
+}
+
+/** いまどの写しを操作しているか。教師画面の行き先に使う */
+function where_() {
+  var out = { file: '', id: '', url: '', sheetUrl: '' };
+  try { out.file = ss_().getName(); } catch (e) {}
+  try { out.id = ss_().getId(); } catch (e) {}
+  try { out.sheetUrl = ss_().getUrl(); } catch (e) {}
+  try { out.url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+  return out;
 }
 
 function child_(mail) {
@@ -152,8 +183,13 @@ function boot() {
     return { ok: false, msg: '名簿に登録がありません。担任の先生に伝えてください。' };
   }
   var grade = c ? c.grade : 0;
+  var teacher = isTeacher_(mail);
   return {
     ok: true,
+    // 教師が児童画面から設定画面へ移れるようにする。
+    // 児童のアカウントではこの2つが入らないので、リンク自体が描かれない
+    teacher: teacher,
+    teacherUrl: teacher ? teacherUrl_() : '',
     title: config_().title,
     name: c ? c.name : '',
     grade: grade,
@@ -170,7 +206,7 @@ function boot() {
 
 function getAllLinks() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return { links: links_(), colors: COLORS, config: config_() };
+  return { links: links_(), colors: COLORS, config: config_(), where: where_() };
 }
 
 /** 画面の一覧をそのまま保存する（並び順は配列の順） */
