@@ -55,6 +55,9 @@ body{
 .card.locked .k{background:var(--line)}
 .card .lock{font-size:.72rem;color:var(--mute);font-weight:700;line-height:1.3}
 .hint{font-size:.88rem;color:var(--mute);font-weight:600}
+/* 公開されたモードが0件のとき。読み込み中と見分けがつく大きさで出す */
+.empty{grid-column:1/-1;background:#fff;border:1.5px dashed var(--line);border-radius:14px;
+  padding:1.6rem 1.2rem;text-align:center;font-size:1.05rem;font-weight:700;line-height:1.9}
 .tap{cursor:pointer;padding:.35rem .6rem;border-radius:8px;display:inline-block}
 .tap:hover{background:#EDEDE8;color:var(--ink)}
 .prow{width:min(620px,94vw);border-top:1.5px dashed var(--line);padding-top:1.1rem;
@@ -301,6 +304,11 @@ var SRV = (typeof google !== 'undefined' && google.script && google.script.run);
 
 /* モードはサーバー（Unit.gs）から受け取る。この画面は単元を知らない */
 var MODES = {}, MODES_ALL = [], LOCKED = {};
+/* boot() の結果を1度でも反映したか。
+   公開モードが0件のとき、起動待ちなのか「教師がまだ開いていない」のかを
+   区別するために要る。両方を『よみこみ中…』と出すと、
+   通信が止まったように見えて教師・児童とも打つ手が分からなくなる。 */
+var BOOTED = false;
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -379,6 +387,13 @@ function cardTop(m, idx){
 
 function renderMenu(){
   var vis = visibleModes();
+  if(!vis.length){
+    $('modeGrid').innerHTML = BOOTED
+      ? '<div class="empty">まだ もんだいが ひらいて いません。<br>せんせいに つたえて ください。</div>'
+      : '';
+    $('startHint').textContent = BOOTED ? '' : 'よみこみ中…';
+    return;
+  }
   $('modeGrid').innerHTML = vis.map(function(m, idx){
     if(isLocked(m)){
       return '<div class="card locked" data-mode="'+m+'">'+ cardTop(m, idx) +
@@ -399,14 +414,20 @@ function renderMenu(){
   var open = vis.map(function(m, i){ return isLocked(m) ? 0 : i+1; })
                 .filter(function(n){ return n; });
   var seq = open.length && open[open.length-1] === open.length;
-  $('startHint').textContent = !vis.length ? 'よみこみ中…'
-    : !open.length ? ''
+  $('startHint').textContent = !open.length ? ''
     : open.length === 1 ? (open[0] + ' のキーで はじまります')
     : seq ? ('1〜' + open.length + ' のキーで はじまります')
     : (open.join('・') + ' のキーで はじまります');
 }
 function openPractice(){
   var vis = visibleModes();
+  if(!vis.length){
+    // 本番と同じ理由で空になる。ここだけ白い画面にすると、押した児童が戻り方に迷う
+    $('poptGrid').innerHTML =
+      '<div class="empty">まだ もんだいが ひらいて いません。<br>せんせいに つたえて ください。</div>';
+    show('popt');
+    return;
+  }
   $('poptGrid').innerHTML = vis.map(function(m, idx){
     return '<div class="card'+(isLocked(m)?' locked':'')+'" data-pmode="'+m+'">'+
       cardTop(m, idx) +
@@ -1303,7 +1324,7 @@ function applyBoot(r){
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);
-  BEST=r.best; MEDAL=r.medals;
+  BEST=r.best; MEDAL=r.medals; BOOTED = true;
   STARS = r.stars || {}; PBEST = r.practiceBest || {};
   if(r.keyGap >= 0) $('pad').style.gap = Math.min(Number(r.keyGap)||8, 40) + 'px';
   $('timelede').textContent = '1回 ' + r.limitSec + 'びょう';

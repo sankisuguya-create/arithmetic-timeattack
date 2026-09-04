@@ -1173,14 +1173,16 @@ function ensureSheets_() {
   // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
   // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。
   // モード単位に変えた時点で中身は読めないので、残しても意味がない。
+  var made = false;
   var cls = ss.getSheetByName(SHEETS.CLASS);
   if (cls && cls.getLastRow() > 0) {
     var h0 = cls.getRange(1, 1, 1, cls.getLastColumn()).getValues()[0].map(String);
     var hasMode = h0.some(function (x) { return x.indexOf('mode_') === 0; });
-    if (!hasMode) cls.clear();
+    // 作り直したら made を立てる。キャッシュに旧形式の読み取り結果が残ったままだと、
+    // 消した直後の最大60秒、公開設定を古い列のまま返し続ける。
+    if (!hasMode) { cls.clear(); made = true; }
   }
 
-  var made = false;
   for (var name in defs) {
     var sh = ss.getSheetByName(name);
     if (!sh) { sh = ss.insertSheet(name); made = true; }
