@@ -379,6 +379,17 @@ function visibleModes(){
 }
 function isLocked(m){ return !!LOCKED[m]; }
 
+/**
+ * 公開されたモードが0件のときの箱。
+ * 教師が公開すれば openWatch が拾って自動で出るので、児童は待てばよい。
+ * 見張りを打ち切ったあと（WATCH_GAVEUP）だけ、再読み込みを頼む。
+ */
+function emptyBox(){
+  return '<div class="empty">まだ もんだいが ひらいて いません。<br>' +
+    (WATCH_GAVEUP ? 'がめんを さいど よみこんで ください。'
+                  : 'せんせいが ひらくと じどうで でます。') + '</div>';
+}
+
 /* 上段＝番号とモード名だけ。副題は出さない（児童が選ぶのに要らず、名前の幅を奪う） */
 function cardTop(m, idx){
   return '<div class="top"><div class="k">'+(idx+1)+'</div>'+
@@ -388,9 +399,7 @@ function cardTop(m, idx){
 function renderMenu(){
   var vis = visibleModes();
   if(!vis.length){
-    $('modeGrid').innerHTML = BOOTED
-      ? '<div class="empty">まだ もんだいが ひらいて いません。<br>せんせいに つたえて ください。</div>'
-      : '';
+    $('modeGrid').innerHTML = BOOTED ? emptyBox() : '';
     $('startHint').textContent = BOOTED ? '' : 'よみこみ中…';
     return;
   }
@@ -423,8 +432,7 @@ function openPractice(){
   var vis = visibleModes();
   if(!vis.length){
     // 本番と同じ理由で空になる。ここだけ白い画面にすると、押した児童が戻り方に迷う
-    $('poptGrid').innerHTML =
-      '<div class="empty">まだ もんだいが ひらいて いません。<br>せんせいに つたえて ください。</div>';
+    $('poptGrid').innerHTML = emptyBox();
     show('popt');
     return;
   }
@@ -1343,6 +1351,54 @@ function applyBoot(r){
  * 弾くので不正には通らない（表示だけが最大1往復ぶん古い）。
  * デプロイURLごとに分けて持つ（九九と長さで混ざらないように）。
  */
+/* ============================================================
+ *  公開待ちの見張り
+ *
+ *  boot() は起動時の1回だけ。教師が授業中にモードを公開しても、
+ *  画面を開いたままの端末は再読み込みするまで空のまま残る。
+ *  帯活動の最中に40人へ「もう一回ひらいて」と言わせないために、
+ *  「公開が0件のときだけ」取り直す。1件でも開けば止まる。
+ *
+ *  既に開いている児童は1回も余計に叩かない（通常は通信が増えない）。
+ *  待っている端末だけが対象なので、負荷は「まだ開いていない人数」で頭打ちになり、
+ *  教師が公開した瞬間に0へ戻る。
+ * ============================================================ */
+var WATCH_EVERY = 15000;     // 間隔(ms)。教室で「押したらすぐ出る」と感じる範囲の上限
+var WATCH_MAX   = 40;        // 打ち切りまでの回数。15秒×40＝約10分
+var WATCH_LEFT  = WATCH_MAX, WATCH_GAVEUP = false, watchTimer = 0;
+
+function watchNext(ms){
+  if(watchTimer) clearTimeout(watchTimer);
+  // 端末ごとに散らす。40台が同じ授業の頭に開くと、揃った秒に一斉に叩くことになる
+  watchTimer = setTimeout(watchRun, ms + Math.floor(Math.random() * 5000));
+}
+function watchRun(){
+  watchTimer = 0;
+  if(!SRV || visibleModes().length) return;                 // 開いた＝見張り終了
+  if(scr !== 'start' && scr !== 'popt'){ watchNext(WATCH_EVERY); return; }
+  if(document.hidden){ watchNext(WATCH_EVERY); return; }     // ふたを閉じた端末は数えない
+  if(WATCH_LEFT <= 0){ WATCH_GAVEUP = true; renderMenu(); return; }
+  WATCH_LEFT--;
+  google.script.run.withSuccessHandler(function(r){
+    if(r && r.ok){
+      applyBoot(r); bootCacheSave(r);
+      if(visibleModes().length){
+        if(scr === 'popt') openPractice();                   // 練習の選択画面も描き直す
+        return;
+      }
+    }
+    watchNext(WATCH_EVERY);
+  }).withFailureHandler(function(){ watchNext(WATCH_EVERY); }).boot();
+}
+/* ふたを開け直した・タブに戻ってきた時は、次の15秒を待たずに見に行く。
+   打ち切っていても、戻ってきた操作を「まだ待つ」の合図として数え直す */
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden || !SRV || !BOOTED || visibleModes().length) return;
+  WATCH_LEFT = WATCH_MAX; WATCH_GAVEUP = false;
+  renderMenu();
+  watchNext(1000);
+});
+
 var BOOT_KEY = 'km_boot_' + (location.pathname || '');
 function bootCacheSave(r){
   try{ localStorage.setItem(BOOT_KEY, JSON.stringify(r)); }catch(e){}
@@ -1371,6 +1427,7 @@ if(SRV){
     bootCacheSave(r);
     show('start');
     pendFlush();
+    if(!visibleModes().length) watchNext(WATCH_EVERY);   // 公開0件のときだけ見張る
   }).withFailureHandler(function(){
     // 控えを描けているなら、通信が落ちても遊べないだけで画面は保つ
     if(!cached) fatal('つうしんに しっぱいしました。ページを ひらきなおして ください。');
