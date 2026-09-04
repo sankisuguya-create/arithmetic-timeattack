@@ -97,7 +97,9 @@ async function main() {
   var previewItemRe = /function\s+previewItem\s*\(\)\s*\{[\s\S]*?\n\}/;
   // ".boot();" は起動シーケンスに1箇所しか出てこないので、それを目印に
   // 直後の "}else{ ... }" だけを狙う（ファイル中には他にも "}else{" があるため）。
-  var elseBlockRe = /(?<=\.boot\(\);\s{0,20})\}else\{[\s\S]*?renderMenu\(\);\s*show\('start'\);\s*\}/;
+  // 起動の呼び出しは boot() 直書きから bootFetch()（失敗したら取り直す）に変わった。
+  // どちらの形でも同じ else 分岐を捕まえる
+  var elseBlockRe = /(?<=(?:\.boot\(\)|bootFetch\(\));\s{0,20})\}else\{[\s\S]*?renderMenu\(\);\s*show\('start'\);\s*\}/;
   if (!previewItemRe.test(uiText) || !elseBlockRe.test(uiText)) {
     fail('common/ui.html の想定していた箇所（previewItem / 起動時の else 分岐）が見つかりませんでした。ui.html の構造が変わった可能性があります。');
     return;

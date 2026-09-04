@@ -327,6 +327,7 @@ var BEST = {}, MEDAL = {}, STARS = {}, PBEST = {};
 var scr='none', mode=1, queue=[], qi=0;
 var typed = {}, fi = 0;                    // 2欄入力の状態
 var correct=0, attempts=0, miss=0, startT=0, raf=0, locked=false, ready=false;
+var startAborted=false;                    // 開始が失敗した。カウントダウンを畳む合図
 var items=[], curAns=[], shownAt=0, firstKeyAt=0, token='';
 var practice=false, pMode=1, pTimed=false, pRecorded=false;
 /* 絞って練習する問題型。'' なら絞らない（＝いろいろ混ぜる） */
@@ -372,6 +373,15 @@ function show(id){
   $(id).classList.add('on'); scr = id;
 }
 function fatal(t){ $('msg').textContent = t; $('msg').classList.add('on'); }
+/**
+ * サーバーが混んでいて進めないとき。fatal と違って画面を塞がない。
+ * 帯活動では40人が同じ数秒に集中するので、混雑は事故ではなく通常の状態。
+ * 児童は最初の画面に戻って、もう一度押せばよい。
+ */
+function busy(t){
+  show('start');
+  $('startHint').textContent = t;
+}
 
 /* 教師がクラスごとに公開したモードだけを出す。非公開のものは一覧に載せない */
 function visibleModes(){
@@ -1002,6 +1012,7 @@ function beginPractice(timed){
   pRecorded = practiceRecorded(timed);
   correct=0; attempts=0; miss=0; locked=false; items=[]; curAns=[]; token='';
   ready = !pRecorded;                       // 記録するときは問題列の到着を待つ
+  startAborted = false;
   countEl.textContent='0';
   $('playMedal').textContent='';
   $('playLabel').textContent = MODES[pMode].name +
@@ -1022,8 +1033,10 @@ function beginPractice(timed){
         return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null};
       });
       qi = 0; clearTyped(); ready = true;
-    }).withFailureHandler(function(){ fatal('つうしんに しっぱいしました。'); })
-      .startSession(pMode, true);
+    }).withFailureHandler(function(){
+      startAborted = true;
+      busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
+    }).startSession(pMode, true);
   }else{
     pBuf = null; pFail = 0; ready = false; clearTyped();
   }
@@ -1087,7 +1100,7 @@ function begin(m){
   if(!CFG.open[m] || isLocked(m)) return;
   practice=false; pTimed=false; pRecorded=false;
   document.body.classList.remove('practice-result');
-  mode=m; token=''; ready=false;
+  mode=m; token=''; ready=false; startAborted=false;
   barEl.classList.remove('hidden');
   $('playLabel').textContent = MODES[m].name;
   $('footnote').textContent='';
@@ -1103,8 +1116,10 @@ function begin(m){
         return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null};
       });
       ready = true; clearTyped();
-    }).withFailureHandler(function(){ fatal('つうしんに しっぱいしました。'); })
-      .startSession(m);
+    }).withFailureHandler(function(){
+      startAborted = true;
+      busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
+    }).startSession(m);
   }else{
     queue = []; for(var i=0;i<200;i++) queue.push(previewItem());
     token=''; ready=true; clearTyped();
@@ -1129,8 +1144,19 @@ function countdown(n){
   var el = $('countdown');
   el.classList.add('on'); el.textContent = n;
   if(n > 1){ setTimeout(function(){ countdown(n-1); }, 700); return; }
+  // 問題列の到着を待つ上限。これが無いと、サーバーが詰まったとき
+  // カウントダウンの「1」を出したまま永久に止まる（何も知らせないまま）
+  var until = Date.now() + 15000;
   var go = function(){
-    if(!ready){ setTimeout(go, 120); return; }
+    if(startAborted){ el.classList.remove('on'); return; }
+    if(!ready){
+      if(Date.now() > until){
+        el.classList.remove('on');
+        busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
+        return;
+      }
+      setTimeout(go, 120); return;
+    }
     el.classList.remove('on');
     clearTyped(); draw();
     startT = performance.now();
@@ -1319,7 +1345,7 @@ function setAppTitle(t){
  * boot() の結果を画面に反映する。
  * サーバーからの応答でも、localStorage の前回分でも、同じ経路を通す。
  */
-function applyBoot(r){
+function applyBoot(r, live){
   CFG.limitSec=r.limitSec; CFG.missLimit=r.missLimit;
   CFG.open = r.open || {}; CFG.guest = !!r.guest;
   CFG.settings = r.settings || {};
@@ -1332,7 +1358,10 @@ function applyBoot(r){
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);
-  BEST=r.best; MEDAL=r.medals; BOOTED = true;
+  BEST=r.best; MEDAL=r.medals;
+  // 控えを描いただけでは「開いていない」と断定できない。
+  // 断定してよいのはサーバーが答えた時だけ（live）
+  if(live) BOOTED = true;
   STARS = r.stars || {}; PBEST = r.practiceBest || {};
   if(r.keyGap >= 0) $('pad').style.gap = Math.min(Number(r.keyGap)||8, 40) + 'px';
   $('timelede').textContent = '1回 ' + r.limitSec + 'びょう';
@@ -1381,7 +1410,7 @@ function watchRun(){
   WATCH_LEFT--;
   google.script.run.withSuccessHandler(function(r){
     if(r && r.ok){
-      applyBoot(r); bootCacheSave(r);
+      applyBoot(r, true); bootCacheSave(r);
       if(visibleModes().length){
         if(scr === 'popt') openPractice();                   // 練習の選択画面も描き直す
         return;
@@ -1393,11 +1422,52 @@ function watchRun(){
 /* ふたを開け直した・タブに戻ってきた時は、次の15秒を待たずに見に行く。
    打ち切っていても、戻ってきた操作を「まだ待つ」の合図として数え直す */
 document.addEventListener('visibilitychange', function(){
-  if(document.hidden || !SRV || !BOOTED || visibleModes().length) return;
+  if(document.hidden || !SRV) return;
+  if(!BOOTED){                       // 起動そのものが通っていない。数え直して取り直す
+    if(bootTry > 0){ bootTry = 0; bootFetch(); }
+    return;
+  }
+  if(visibleModes().length) return;
   WATCH_LEFT = WATCH_MAX; WATCH_GAVEUP = false;
   renderMenu();
   watchNext(1000);
 });
+
+/**
+ * 起動の取得。失敗しても黙らない。
+ *
+ * 以前は「控えがあれば何もしない」だった。控えがある端末では失敗が画面に出ず、
+ * 案内は『よみこみ中…』のまま残る。帯活動で40人が同時に開くと、
+ * サーバー側の同時実行の枠を超えた児童はこの状態のまま置き去りになり、
+ * 教師には「読み込み中で止まった」としか見えない。
+ *
+ * 混雑は事故ではなく通常の状態なので、間を空けて自分で取り直す。
+ * 間隔は 2,4,8,16,30,30… 秒（＋ばらつき）。40台が揃って再挑戦すると
+ * 混雑をそのまま再現するので、ここでも秒をずらす。
+ */
+var bootTry = 0;
+function bootFetch(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok){ fatal(r.msg); return; }
+    bootTry = 0;
+    applyBoot(r, true);
+    bootCacheSave(r);
+    show('start');
+    setTimeout(pendFlush, Math.floor(Math.random() * 8000));   // 未送信の再送も散らす
+    if(!visibleModes().length) watchNext(WATCH_EVERY);         // 公開0件のときだけ見張る
+  }).withFailureHandler(function(){
+    bootTry++;
+    // 遊べる控えがあるなら黙って取り直す。案内文を混雑の知らせで潰さない
+    if(!visibleModes().length){
+      $('startHint').textContent = (bootTry >= 8)
+        ? 'サーバーが こんでいます。ページを ひらきなおして ください。'
+        : 'サーバーが こんでいます。まっててね…';
+    }
+    if(bootTry >= 8) return;
+    setTimeout(bootFetch, Math.min(2000 * Math.pow(2, bootTry - 1), 30000)
+                          + Math.floor(Math.random() * 3000));
+  }).boot();
+}
 
 var BOOT_KEY = 'km_boot_' + (location.pathname || '');
 function bootCacheSave(r){
@@ -1421,17 +1491,7 @@ if(SRV){
     show('start');
   }
 
-  google.script.run.withSuccessHandler(function(r){
-    if(!r.ok){ fatal(r.msg); return; }
-    applyBoot(r);
-    bootCacheSave(r);
-    show('start');
-    pendFlush();
-    if(!visibleModes().length) watchNext(WATCH_EVERY);   // 公開0件のときだけ見張る
-  }).withFailureHandler(function(){
-    // 控えを描けているなら、通信が落ちても遊べないだけで画面は保つ
-    if(!cached) fatal('つうしんに しっぱいしました。ページを ひらきなおして ください。');
-  }).boot();
+  bootFetch();
 }else{
   BEST={1:18,2:12,3:9,4:0}; MEDAL={1:'🥈',2:'',3:'',4:''};
   STARS={1:7,2:3,3:1,4:0}; PBEST={1:15,2:0,3:0,4:0};
