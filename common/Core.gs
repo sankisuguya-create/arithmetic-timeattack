@@ -44,7 +44,15 @@ var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
 var QN = 200;                              // 1セッションの出題数
 var SCHEMA_VERSION = 3;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
-var GUEST_DOMAIN = '@edu.nishi.or.jp';     // 名簿になくても試用できる（記録なし）
+/**
+ * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
+ *
+ * **児童は @kyoiku.edu.nishi.or.jp で、教師ドメインのサブドメインになっている。**
+ * 「edu.nishi.or.jp を含む」で判定すると児童が全員教師になり、
+ * weak_child（誰がどの型で遅いか）まで児童の画面から開けてしまう。
+ * @ の右側の完全一致でだけ判定すること。
+ */
+var TEACHER_DOMAIN = 'edu.nishi.or.jp';
 
 function defaults_() {
   var d = {};
@@ -89,10 +97,15 @@ function dstr_(v) {
   return String(v);
 }
 
-function isGuest_(mail) {
-  return !!mail && mail.length > GUEST_DOMAIN.length &&
-         mail.indexOf(GUEST_DOMAIN, mail.length - GUEST_DOMAIN.length) >= 0;
+function domainOf_(mail) {
+  var at = String(mail || '').lastIndexOf('@');
+  return at < 0 ? '' : String(mail).slice(at + 1);
 }
+
+function isTeacherDomain_(mail) { return domainOf_(mail) === TEACHER_DOMAIN; }
+
+/** 名簿になくても試用できる（記録しない）。教師ドメインだけ */
+function isGuest_(mail) { return isTeacherDomain_(mail); }
 
 function toBool_(x) {
   if (x === true) return true;
@@ -119,7 +132,9 @@ function config_() {
 
 function isTeacher_(mail) {
   if (!mail) return false;
+  if (isTeacherDomain_(mail)) return true;          // 設定を読まずに済むので先に見る
   try { if (mail === ss_().getOwner().getEmail().toLowerCase()) return true; } catch (e) {}
+  // config.teachers は例外の口。別ドメインの教師（支援員・非常勤など）を1件ずつ足す
   var list = String(config_().teachers || '').toLowerCase().split(',');
   for (var i = 0; i < list.length; i++) if (list[i].trim() === mail) return true;
   return false;
@@ -394,6 +409,11 @@ function boot() {
     settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
+
+  // 教師が児童画面から教師画面へ移れるようにする。
+  // 児童のアカウントではこの2つが入らないので、リンク自体が描かれない
+  base.teacher = isTeacher_(mail);
+  if (base.teacher) base.teacherUrl = teacherUrl_();
 
   if (!c) {
     if (!isGuest_(mail)) {
@@ -835,9 +855,18 @@ function resetDaily() {
  * 症状は「公開したのに反映されない」になり、どちらの画面を見ても原因が出ない。
  * 名前とURLを画面に出しておけば、取り違えはその場で分かる。
  */
+/** 教師画面の URL。いま動いているデプロイに ?page=teacher を付ける */
+function teacherUrl_() {
+  try {
+    var u = ScriptApp.getService().getUrl();
+    return u ? (u + (u.indexOf('?') >= 0 ? '&' : '?') + 'page=teacher') : '';
+  } catch (e) { return ''; }
+}
+
 function where_() {
-  var out = { file: '', id: '', url: '' };
+  var out = { file: '', id: '', url: '', sheetUrl: '' };
   try { out.file = ss_().getName(); } catch (e) {}
+  try { out.sheetUrl = ss_().getUrl(); } catch (e) {}
   // 名前は写しても同じになる。取り違えを確かめられるのは ID のほうで、
   // スプレッドシートの URL の /d/ と /edit のあいだにある文字列と突き合わせる
   try { out.id = ss_().getId(); } catch (e) {}

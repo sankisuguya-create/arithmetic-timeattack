@@ -11,7 +11,13 @@ body{background:var(--paper);color:var(--ink);
   padding:2rem 1.3rem 4rem;line-height:1.6}
 .wrap{max-width:820px;margin:0 auto}
 h1{font-size:1.35rem;font-weight:800;margin-bottom:.2rem}
-.sub{font-size:.82rem;color:var(--mute);margin-bottom:1.8rem}
+.sub{font-size:.82rem;color:var(--mute);margin-bottom:1.8rem;line-height:1.9;word-break:break-all}
+.sub b{color:var(--ink)}
+/* 行き先。設定を直したあと、シートと児童画面の両方を見に行くことになる */
+.golinks{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0 .9rem}
+.golinks a{font-size:.84rem;font-weight:700;text-decoration:none;color:var(--ink);
+  border:1.5px solid var(--line);border-radius:9px;padding:.45rem .9rem;background:#fff}
+.golinks a:hover{border-color:var(--ink)}
 .box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.3rem;margin-bottom:1.1rem}
 h2{font-size:.72rem;letter-spacing:.18em;color:var(--mute);font-weight:700;margin-bottom:1rem}
 label{font-size:.82rem;font-weight:700;color:var(--mute);display:block;margin-bottom:.25rem}
@@ -53,14 +59,15 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 <body>
 <div class="wrap">
   <h1>リンク集 設定</h1>
-  <div class="sub">児童のホーム画面に出す単元サイトを管理します</div>
+  <div class="golinks" id="golinks"></div>
+  <div class="sub" id="sub">児童のホーム画面に出す単元サイトを管理します</div>
 
   <div class="box">
     <h2>ぜんたい</h2>
     <label>ホーム画面のタイトル</label>
     <input id="title" type="text" placeholder="算数タイムアタック">
     <div style="margin-top:.9rem">
-      <label>この画面を開ける教師（カンマ区切り。所有者は常に開けます）</label>
+      <label>この画面を開ける教師（@edu.nishi.or.jp と所有者は書かなくても開けます。別ドメインの人だけカンマ区切りで）</label>
       <input id="teachers" type="text">
     </div>
     <div class="bar">
@@ -224,10 +231,24 @@ $('saveCfg').onclick = function(){
   }).saveHubConfig({ title: $('title').value, teachers: $('teachers').value });
 };
 
+/* いま設定している写しと、そこからの行き先。
+   写しが2つあると画面が同じで見分けられないので、名前とIDも出す */
+function showWhere(w){
+  w = w || {};
+  $('golinks').innerHTML =
+    (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシートを開く</a>' : '') +
+    (w.url      ? '<a href="' + esc(w.url) + '">児童の画面を見る</a>' : '');
+  if(!w.file) return;
+  $('sub').innerHTML = 'このページが設定しているのは <b>' + esc(w.file) + '</b>' +
+    (w.id ? '<br>スプレッドシート ID: <code>' + esc(w.id) + '</code>' : '') +
+    (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '');
+}
+
 google.script.run.withSuccessHandler(function(r){
   COLORS = r.colors; LINKS = r.links;
   $('title').value = r.config.title || '';
   $('teachers').value = r.config.teachers || '';
+  showWhere(r.where);
   render();
 }).withFailureHandler(function(e){
   $('stat').textContent = '読み込めません: ' + e.message;

@@ -12,6 +12,11 @@ body{background:var(--paper);color:var(--ink);
 .wrap{max-width:640px;margin:0 auto}
 h1{font-size:1.35rem;font-weight:800;margin-bottom:.3rem}
 .sub{font-size:.82rem;color:var(--mute);margin-bottom:2rem;line-height:1.9;word-break:break-all}
+/* 行き先。設定を直したあと、シートと児童画面の両方を見に行くことになる */
+.golinks{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0 .9rem}
+.golinks a{font-size:.84rem;font-weight:700;text-decoration:none;color:var(--ink);
+  border:1.5px solid var(--line);border-radius:9px;padding:.45rem .9rem;background:#fff}
+.golinks a:hover{border-color:var(--ink)}
 .sub b{color:var(--ink)}
 .box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.4rem;margin-bottom:1.1rem}
 /* チェックを触ってから保存するまでの間。押し忘れると児童の画面が変わらないので、
@@ -49,6 +54,7 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 <body>
 <div class="wrap">
   <h1 id="h1">設定・分析</h1>
+  <div class="golinks" id="golinks"></div>
   <div class="sub" id="sub">設定と分析</div>
 
   <div class="box">
@@ -71,7 +77,8 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
     </div>
     <div class="row" style="display:block">
       <label style="display:block;margin-bottom:.5rem">この画面を開ける教師
-        <span class="note">メールアドレスをカンマ区切りで。所有者は常に開けます</span></label>
+        <span class="note">@edu.nishi.or.jp のアカウントと所有者は、書かなくても開けます。
+        別ドメインの人を足すときだけ、メールアドレスをカンマ区切りで</span></label>
       <input id="teachers" class="wide" type="text">
     </div>
     <div id="settingRows"></div>
@@ -128,6 +135,9 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 function showWhere(w){
   w = w || {};
   if(!w.file) return;
+  document.getElementById('golinks').innerHTML =
+    (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシートを開く</a>' : '') +
+    (w.url      ? '<a href="' + esc(w.url) + '">児童の画面を見る</a>' : '');
   document.getElementById('sub').innerHTML =
     'このページが設定しているのは <b>' + esc(w.file) + '</b>' +
     (w.id  ? '<br>スプレッドシート ID: <code>' + esc(w.id) + '</code>' : '') +
