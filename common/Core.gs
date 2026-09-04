@@ -155,9 +155,14 @@ function classKey_(c) { return c.grade + '-' + c.cls; }
  * 「わり算9×16 だけ閉じる」ができず、`flag: null` のモードは閉じる手段が無かった。
  * 20モードのうち単独で閉じられるものが1つも無い状態だったので、モード単位にした。
  */
-function classConfig_() {
-  var hit = cache_().get('classcfg');
-  if (hit) return JSON.parse(hit);
+function classConfig_(fresh) {
+  // 教師画面は fresh で呼ぶ。設定した本人が見る画面が、
+  // 最大60秒古い写しを見せると「保存できていない」と区別がつかない。
+  // 児童側は毎回シートを読むと重いので、これまでどおりキャッシュを使う。
+  if (!fresh) {
+    var hit = cache_().get('classcfg');
+    if (hit) return JSON.parse(hit);
+  }
   var map = {};
   var sh = ss_().getSheetByName(SHEETS.CLASS);
   if (sh && sh.getLastRow() > 1) {
@@ -831,8 +836,11 @@ function resetDaily() {
  * 名前とURLを画面に出しておけば、取り違えはその場で分かる。
  */
 function where_() {
-  var out = { file: '', url: '' };
+  var out = { file: '', id: '', url: '' };
   try { out.file = ss_().getName(); } catch (e) {}
+  // 名前は写しても同じになる。取り違えを確かめられるのは ID のほうで、
+  // スプレッドシートの URL の /d/ と /edit のあいだにある文字列と突き合わせる
+  try { out.id = ss_().getId(); } catch (e) {}
   try { out.url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
   return out;
 }
@@ -863,23 +871,24 @@ function saveConfig(obj) {
 
 function listClasses() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  var over = classConfig_();
-  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
+  var over = classConfig_(true);
+  var classes = listClassesCore_(over);
 
-  var seen = {}, out = [];
-  for (var i = 1; i < v.length; i++) {
-    var grade = Number(v[i][1]), cls = String(v[i][2]).trim();
-    if (!grade || !cls) continue;
-    var ck = grade + '-' + cls;
-    if (seen[ck]) { seen[ck].n++; continue; }
-    var o = over[ck];
-    var row = { cls: ck, grade: grade, room: cls, n: 1,
-                modes: {}, seqOff: !!(o && o.seqOff) };
-    modeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
-    seen[ck] = row; out.push(row);
-  }
-  out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
-  return { classes: out, modes: UNIT.modes, hasNeeds: hasNeeds_() };
+  /*
+   * class_config にあるのに、名簿から作られるクラスと一致しない行を拾う。
+   *
+   * 公開の判定は「学年-組」の文字列一致だけで決まる（openFor_）。
+   * 名簿の組が「1」で class_config が「1組」なら、シートには TRUE が入っているのに
+   * 児童には1つも開かない。この食い違いはどちらの画面にも出ないので、
+   * 「保存したのに反映されない」としか見えない。名前を並べて出す。
+   */
+  var known = {};
+  classes.forEach(function (c) { known[c.cls] = true; });
+  var orphans = [];
+  for (var k in over) if (!known[k]) orphans.push(k);
+
+  return { classes: classes, modes: UNIT.modes, hasNeeds: hasNeeds_(),
+           orphans: orphans, where: where_() };
 }
 
 function saveClassConfig(rows) {
@@ -898,7 +907,55 @@ function saveClassConfig(rows) {
   sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
   sh.setFrozenRows(1);
   cache_().remove('classcfg');
-  return '保存しました（' + (out.length - 1) + ' クラス）';
+
+  /*
+   * 書いたら読み戻して照合する。
+   *
+   * 「保存しました」とだけ返していると、書けていない時に教師は児童側を疑い、
+   * 原因のない場所を探し続けることになる（実際そうなった）。
+   * 保存が通ったかどうかは、保存の瞬間に教師の画面で分かるべきもの。
+   *
+   * 読み戻しは classConfig_ を通す。児童の公開判定が読むのと同じ経路なので、
+   * ここが一致していれば「教師が見ている状態＝児童に効く状態」が保証される。
+   */
+  var back = classConfig_(true);
+  var bad = [];
+  (rows || []).forEach(function (r) {
+    var b = back[String(r.cls)];
+    var same = ids.every(function (id) {
+      return !!(b && b.modes[id]) === !!(r.modes && r.modes[id]);
+    });
+    if (!same) bad.push(String(r.cls));
+  });
+  if (bad.length) {
+    throw new Error('保存できていません（' + bad.join('・') +
+                    '）。class_config シートが編集中でないか確かめてください。');
+  }
+  return { msg: '保存しました（' + (out.length - 1) + ' クラス）',
+           classes: listClassesCore_(back) };
+}
+
+/**
+ * class_config の内容を、教師画面の表と同じ形にして返す。
+ * listClasses と保存後の読み戻しで同じ組み立てを使う
+ * （別々に書くと、保存直後の表示と再読み込み後の表示がずれる）。
+ */
+function listClassesCore_(over) {
+  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
+  var seen = {}, out = [];
+  for (var i = 1; i < v.length; i++) {
+    var grade = Number(v[i][1]), cls = String(v[i][2]).trim();
+    if (!grade || !cls) continue;
+    var ck = grade + '-' + cls;
+    if (seen[ck]) { seen[ck].n++; continue; }
+    var o = over[ck];
+    var row = { cls: ck, grade: grade, room: cls, n: 1,
+                modes: {}, seqOff: !!(o && o.seqOff) };
+    modeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
+    seen[ck] = row; out.push(row);
+  }
+  out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
+  return out;
 }
 
 /* ---- 集計 ---- */
@@ -1163,8 +1220,15 @@ function writeWeakClass_(typeMiss, wrongCnt) {
 var READY_KEY = 'ready_schema';
 
 function ensureReady_() {
+  // 速い順に見る。キャッシュは消えるので判断の正本ではないが、
+  // 消えていない間はプロパティの読み取り（毎回100ms前後かかることがある）を省ける
+  if (cache_().get('ready') === String(SCHEMA_VERSION)) return;
+
   var props = PropertiesService.getScriptProperties();
-  if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) return;
+  if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) {
+    cache_().put('ready', String(SCHEMA_VERSION), 3600);
+    return;
+  }
 
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(0)) return;              // 誰かが準備中。待たない
@@ -1174,6 +1238,7 @@ function ensureReady_() {
     ensureSchema_();
     ensureTriggers_();
     props.setProperty(READY_KEY, String(SCHEMA_VERSION));
+    cache_().put('ready', String(SCHEMA_VERSION), 3600);
   } catch (e) {
     console.error('ensureReady_ 失敗: ' + e.message);   // 印を立てない＝次回再挑戦
   } finally {
@@ -1258,8 +1323,10 @@ function applyFriendlyStyling_() {
 
   var notes = {
     roster: 'ここに児童を登録します（email／学年／組／番号／氏名）。\n学年・組の表記はそろえてください（「2」に統一。「2組」などを混ぜない）。',
-    config: '各種設定です。通常は教師用ページ（?page=teacher）から変更してください。\n直接編集すると、反映まで最大5分かかります。',
-    class_config: 'クラスごとに、どのモードを児童に見せるかの設定です。チェックの無いモードは表示されません。\n通常は教師用ページ（?page=teacher）から操作してください。',
+    config: '各種設定です。通常は教師用ページ（?page=teacher）から変更してください。\n直接編集した場合、児童への反映は最大1分遅れます（教師用ページから保存すると即時）。',
+    class_config: 'クラスごとに、どのモードを児童に見せるかの設定です。チェックの無いモードは表示されません。\n' +
+                  'A列は roster の「学年」「組」から作る「学年-組」と1文字も違ってはいけません（例: 3-1）。\n' +
+                  '通常は教師用ページ（?page=teacher）から操作してください。直接編集した場合、児童への反映は最大1分遅れます。',
     log: '1回のプレイ（1試行）を1行で記録した内部データです。直接は読まなくてよいシートです。\n個々の誤答を読みたいときは mistakes シートを、傾向を見たいときは weak_child / weak_class を見てください。',
     daily: '当日の学級内ランキングを計算するための内部データです。直接は見なくてよいシートです。',
     summary: '児童ごと・モードごと・制限時間ごとの累計成績とハイスコアです。kind列は r=本番／p=練習です。'
@@ -1286,20 +1353,28 @@ function ensureSheets_() {
   // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
   // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。
   // モード単位に変えた時点で中身は読めないので、残しても意味がない。
-  var made = false;
+  var made = false, reset = {};
   var cls = ss.getSheetByName(SHEETS.CLASS);
   if (cls && cls.getLastRow() > 0) {
     var h0 = cls.getRange(1, 1, 1, cls.getLastColumn()).getValues()[0].map(String);
     var hasMode = h0.some(function (x) { return x.indexOf('mode_') === 0; });
     // 作り直したら made を立てる。キャッシュに旧形式の読み取り結果が残ったままだと、
     // 消した直後の最大60秒、公開設定を古い列のまま返し続ける。
-    if (!hasMode) { cls.clear(); made = true; }
+    if (!hasMode) {
+      cls.clear();
+      // clear() の直後に getLastRow() が0を返すとは限らない（保留中の変更が
+      // 反映される保証が無い）。見出しを書くかどうかをそこに賭けると、
+      // 見出しの無い class_config が残り、公開設定が全部オフのまま読まれる。
+      // 消したことは自分で覚えておく。
+      reset[SHEETS.CLASS] = true;
+      made = true;
+    }
   }
 
   for (var name in defs) {
     var sh = ss.getSheetByName(name);
     if (!sh) { sh = ss.insertSheet(name); made = true; }
-    if (defs[name].length && sh.getLastRow() === 0) {
+    if (defs[name].length && (reset[name] || sh.getLastRow() === 0)) {
       sh.getRange(1, 1, 1, defs[name].length).setValues([defs[name]]).setFontWeight('bold');
       sh.setFrozenRows(1);
     }
@@ -1332,6 +1407,7 @@ function ensureTriggers_() {
 /** 承認のために最初に1度だけ実行する */
 function setup() {
   PropertiesService.getScriptProperties().deleteProperty(READY_KEY);
+  cache_().remove('ready');
   ensureReady_();
   return 'セットアップ完了（シート・トリガーを確認しました）';
 }
