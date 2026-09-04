@@ -100,6 +100,7 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
       <button id="clsSave">クラス設定を保存</button>
       <button id="clsAll" class="ghost">ぜんぶオン</button>
       <button id="clsNone" class="ghost">ぜんぶオフ</button>
+      <button id="clsReload" class="ghost">いまの状態を読み直す</button>
       <span class="stat" id="clsStat"></span>
     </div>
   </div>
@@ -287,17 +288,42 @@ function collectClasses(){
   });
 }
 
-google.script.run.withSuccessHandler(function(r){
-  CLS = r;
-  document.getElementById('clsLoading').style.display = 'none';
-  document.getElementById('clsTable').style.display = '';
-  renderClasses();
-  showWhere(r.where);
-  showOrphans(r.orphans);
-  document.getElementById('clsBody').addEventListener('change', function(){ setDirty(true); });
-}).withFailureHandler(function(e){
-  document.getElementById('clsLoading').textContent = '読み込めません: ' + e.message;
-}).listClasses();
+/**
+ * シートの現状を読み込む。
+ *
+ * この画面は開いた時と保存した時にしか読まない。開いたままのタブは、
+ * シートを直接直しても、別の端末から保存しても、いつまでも古いまま残る。
+ * 「保存が効いていない」と「画面が古い」は見分けがつかないので、
+ * 読み直す手段を画面に置く。
+ */
+var clsBound = false;
+function loadClasses(){
+  google.script.run.withSuccessHandler(function(r){
+    CLS = r;
+    document.getElementById('clsLoading').style.display = 'none';
+    document.getElementById('clsTable').style.display = '';
+    renderClasses();
+    showWhere(r.where);
+    showOrphans(r.orphans);
+    setDirty(false);
+    if(!clsBound){
+      clsBound = true;
+      document.getElementById('clsBody').addEventListener('change', function(){ setDirty(true); });
+    }
+  }).withFailureHandler(function(e){
+    document.getElementById('clsLoading').textContent = '読み込めません: ' + e.message;
+    setStat('clsStat', '読み込めません: ' + e.message, true);
+  }).listClasses();
+}
+loadClasses();
+
+document.getElementById('clsReload').onclick = function(){
+  // 未保存のチェックがあるときは、押した人の操作を黙って捨てない
+  if(clsDirty && !confirm('保存していないチェックがあります。シートの内容で上書きしますか？')) return;
+  setStat('clsStat', '読み直しています…', false);
+  loadClasses();
+  setTimeout(function(){ setStat('clsStat', 'シートの内容を読み直しました', false); }, 400);
+};
 
 document.getElementById('clsSave').onclick = function(){
   var btn = this; btn.disabled = true;
