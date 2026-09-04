@@ -584,11 +584,17 @@ function rulerSVG(r){
            'font-size="'+Math.round(fs*0.95)+'" font-weight="800" fill="#E5484D">'+(mv/100)+'m</text>');
   }
 
-  // 矢印（読み取る位置）
+  // 矢印（読み取る位置）と「？」。矢印だけだと「ここが何か」を言葉にしないまま
+  // 数字を打つ児童が出る。？を添えて、問われているのがこの位置の長さだと明示する。
   var ax = padL + (r.at - r.from)*px;
   s.push('<path d="M '+ax.toFixed(1)+' '+(top-6)+' l -16 -28 l 32 0 z" fill="#35D0A5"/>');
   s.push('<line x1="'+ax.toFixed(1)+'" y1="'+(top-32)+'" x2="'+ax.toFixed(1)+'" y2="'+(top-76)+
          '" stroke="#35D0A5" stroke-width="6" stroke-linecap="round"/>');
+  // 既定は矢印の右。右端に寄って窓からはみ出す時だけ左へ回す
+  var qx = ax + 22, qAnchor = 'start';
+  if(qx + fs*0.7 > padL + innerW){ qx = ax - 22; qAnchor = 'end'; }
+  s.push('<text x="'+qx.toFixed(1)+'" y="'+(top-14)+'" text-anchor="'+qAnchor+'" '+
+         'font-size="'+Math.round(fs*1.15)+'" font-weight="800" fill="#35D0A5">?</text>');
 
   // 左端の金具（0 から始まるときだけ）
   if(r.from === 0){
