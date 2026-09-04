@@ -1163,8 +1163,15 @@ function writeWeakClass_(typeMiss, wrongCnt) {
 var READY_KEY = 'ready_schema';
 
 function ensureReady_() {
+  // 速い順に見る。キャッシュは消えるので判断の正本ではないが、
+  // 消えていない間はプロパティの読み取り（毎回100ms前後かかることがある）を省ける
+  if (cache_().get('ready') === String(SCHEMA_VERSION)) return;
+
   var props = PropertiesService.getScriptProperties();
-  if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) return;
+  if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) {
+    cache_().put('ready', String(SCHEMA_VERSION), 3600);
+    return;
+  }
 
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(0)) return;              // 誰かが準備中。待たない
@@ -1174,6 +1181,7 @@ function ensureReady_() {
     ensureSchema_();
     ensureTriggers_();
     props.setProperty(READY_KEY, String(SCHEMA_VERSION));
+    cache_().put('ready', String(SCHEMA_VERSION), 3600);
   } catch (e) {
     console.error('ensureReady_ 失敗: ' + e.message);   // 印を立てない＝次回再挑戦
   } finally {
@@ -1286,20 +1294,28 @@ function ensureSheets_() {
   // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
   // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。
   // モード単位に変えた時点で中身は読めないので、残しても意味がない。
-  var made = false;
+  var made = false, reset = {};
   var cls = ss.getSheetByName(SHEETS.CLASS);
   if (cls && cls.getLastRow() > 0) {
     var h0 = cls.getRange(1, 1, 1, cls.getLastColumn()).getValues()[0].map(String);
     var hasMode = h0.some(function (x) { return x.indexOf('mode_') === 0; });
     // 作り直したら made を立てる。キャッシュに旧形式の読み取り結果が残ったままだと、
     // 消した直後の最大60秒、公開設定を古い列のまま返し続ける。
-    if (!hasMode) { cls.clear(); made = true; }
+    if (!hasMode) {
+      cls.clear();
+      // clear() の直後に getLastRow() が0を返すとは限らない（保留中の変更が
+      // 反映される保証が無い）。見出しを書くかどうかをそこに賭けると、
+      // 見出しの無い class_config が残り、公開設定が全部オフのまま読まれる。
+      // 消したことは自分で覚えておく。
+      reset[SHEETS.CLASS] = true;
+      made = true;
+    }
   }
 
   for (var name in defs) {
     var sh = ss.getSheetByName(name);
     if (!sh) { sh = ss.insertSheet(name); made = true; }
-    if (defs[name].length && sh.getLastRow() === 0) {
+    if (defs[name].length && (reset[name] || sh.getLastRow() === 0)) {
       sh.getRange(1, 1, 1, defs[name].length).setValues([defs[name]]).setFontWeight('bold');
       sh.setFrozenRows(1);
     }
@@ -1332,6 +1348,7 @@ function ensureTriggers_() {
 /** 承認のために最初に1度だけ実行する */
 function setup() {
   PropertiesService.getScriptProperties().deleteProperty(READY_KEY);
+  cache_().remove('ready');
   ensureReady_();
   return 'セットアップ完了（シート・トリガーを確認しました）';
 }

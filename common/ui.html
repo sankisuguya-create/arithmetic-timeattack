@@ -379,6 +379,7 @@ function fatal(t){ $('msg').textContent = t; $('msg').classList.add('on'); }
  * 児童は最初の画面に戻って、もう一度押せばよい。
  */
 function busy(t){
+  var cd = $('countdown'); if(cd) cd.classList.remove('on');
   show('start');
   $('startHint').textContent = t;
 }
@@ -1142,6 +1143,9 @@ function setHelp(){
 }
 function countdown(n){
   var el = $('countdown');
+  // 開始が失敗していれば、残っている「3・2・1」の連鎖もここで畳む。
+  // 畳まないと、最初の画面に戻したあとに数字だけが浮かぶ
+  if(startAborted){ el.classList.remove('on'); return; }
   el.classList.add('on'); el.textContent = n;
   if(n > 1){ setTimeout(function(){ countdown(n-1); }, 700); return; }
   // 問題列の到着を待つ上限。これが無いと、サーバーが詰まったとき
@@ -1452,7 +1456,9 @@ function bootFetch(){
     bootTry = 0;
     applyBoot(r, true);
     bootCacheSave(r);
-    show('start');
+    // ここで show('start') を呼ばない。控えからメニューを先に描いているので、
+    // 児童は往復の前にもう始められる。応答が届いた時に画面を戻すと、
+    // 始めた直後の児童をカウントダウンごと最初の画面へ引きはがすことになる。
     setTimeout(pendFlush, Math.floor(Math.random() * 8000));   // 未送信の再送も散らす
     if(!visibleModes().length) watchNext(WATCH_EVERY);         // 公開0件のときだけ見張る
   }).withFailureHandler(function(){
