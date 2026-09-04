@@ -94,6 +94,7 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
         <tbody id="clsBody"></tbody>
       </table>
     </div>
+    <div class="stat bad" id="clsOrphan" style="display:none;line-height:1.8;margin-bottom:.8rem"></div>
     <div class="legend" id="clsLegend"></div>
     <div class="bar">
       <button id="clsSave">クラス設定を保存</button>
@@ -121,6 +122,17 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 </div>
 
 <script>
+/* いま設定している写しを名指す。名前は写しても同じになるので、ID まで出す
+   （スプレッドシートの URL の /d/ と /edit のあいだと突き合わせる） */
+function showWhere(w){
+  w = w || {};
+  if(!w.file) return;
+  document.getElementById('sub').innerHTML =
+    'このページが設定しているのは <b>' + esc(w.file) + '</b>' +
+    (w.id  ? '<br>スプレッドシート ID: <code>' + esc(w.id) + '</code>' : '') +
+    (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '');
+}
+
 function setStat(id, text, bad){
   var el = document.getElementById(id);
   el.textContent = text;
@@ -142,11 +154,7 @@ google.script.run.withSuccessHandler(function(r){
   document.getElementById('h1').textContent = u.teacherTitle || u.title || '設定・分析';
   // どの写しを操作しているかを出す。版を入れ替えた直後、古い写しと新しい写しは
   // 見た目が同じで、取り違えても画面には何も出ない（児童側が空になるだけ）
-  var w = r.where || {};
-  document.getElementById('sub').innerHTML = w.file
-    ? 'このページが設定しているのは <b>' + esc(w.file) + '</b>' +
-      (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '')
-    : '設定と分析';
+  showWhere(r.where);
   document.getElementById('tips').innerHTML = u.tips || '';
 
   // 単元が宣言した設定欄。Core も teacher.html もキーの意味を知らない。
@@ -242,6 +250,20 @@ function renderClasses(){
       : '');
 }
 
+/* class_config に行はあるのに、名簿から作られるクラスと名前が合わない場合。
+   シートには TRUE が入っているのに児童には1つも開かない、という状態が起きる。
+   どちらの画面にも出ないので、名前を並べて見せる */
+function showOrphans(list){
+  var el = document.getElementById('clsOrphan');
+  if(!list || !list.length){ el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = '<b>class_config に、名簿と対応しない行があります: ' +
+    list.map(esc).join('・') + '</b><br>' +
+    '名簿の「学年」「組」の表記と一致していません。' +
+    'この行のチェックは児童には効きません。名簿の表記をそろえてから、' +
+    'もう一度「クラス設定を保存」を押してください。';
+}
+
 /* チェックを触ったが、まだ保存していない状態。
    「クラス設定を保存」と、上の「設定を保存」は別のボタンで、
    押し間違えても今までは何も起きなかった。触った時点で見た目を変えて知らせる */
@@ -270,6 +292,8 @@ google.script.run.withSuccessHandler(function(r){
   document.getElementById('clsLoading').style.display = 'none';
   document.getElementById('clsTable').style.display = '';
   renderClasses();
+  showWhere(r.where);
+  showOrphans(r.orphans);
   document.getElementById('clsBody').addEventListener('change', function(){ setDirty(true); });
 }).withFailureHandler(function(e){
   document.getElementById('clsLoading').textContent = '読み込めません: ' + e.message;

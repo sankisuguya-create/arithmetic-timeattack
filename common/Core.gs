@@ -155,9 +155,14 @@ function classKey_(c) { return c.grade + '-' + c.cls; }
  * 「わり算9×16 だけ閉じる」ができず、`flag: null` のモードは閉じる手段が無かった。
  * 20モードのうち単独で閉じられるものが1つも無い状態だったので、モード単位にした。
  */
-function classConfig_() {
-  var hit = cache_().get('classcfg');
-  if (hit) return JSON.parse(hit);
+function classConfig_(fresh) {
+  // 教師画面は fresh で呼ぶ。設定した本人が見る画面が、
+  // 最大60秒古い写しを見せると「保存できていない」と区別がつかない。
+  // 児童側は毎回シートを読むと重いので、これまでどおりキャッシュを使う。
+  if (!fresh) {
+    var hit = cache_().get('classcfg');
+    if (hit) return JSON.parse(hit);
+  }
   var map = {};
   var sh = ss_().getSheetByName(SHEETS.CLASS);
   if (sh && sh.getLastRow() > 1) {
@@ -831,8 +836,11 @@ function resetDaily() {
  * 名前とURLを画面に出しておけば、取り違えはその場で分かる。
  */
 function where_() {
-  var out = { file: '', url: '' };
+  var out = { file: '', id: '', url: '' };
   try { out.file = ss_().getName(); } catch (e) {}
+  // 名前は写しても同じになる。取り違えを確かめられるのは ID のほうで、
+  // スプレッドシートの URL の /d/ と /edit のあいだにある文字列と突き合わせる
+  try { out.id = ss_().getId(); } catch (e) {}
   try { out.url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
   return out;
 }
@@ -863,8 +871,24 @@ function saveConfig(obj) {
 
 function listClasses() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return { classes: listClassesCore_(classConfig_()),
-           modes: UNIT.modes, hasNeeds: hasNeeds_() };
+  var over = classConfig_(true);
+  var classes = listClassesCore_(over);
+
+  /*
+   * class_config にあるのに、名簿から作られるクラスと一致しない行を拾う。
+   *
+   * 公開の判定は「学年-組」の文字列一致だけで決まる（openFor_）。
+   * 名簿の組が「1」で class_config が「1組」なら、シートには TRUE が入っているのに
+   * 児童には1つも開かない。この食い違いはどちらの画面にも出ないので、
+   * 「保存したのに反映されない」としか見えない。名前を並べて出す。
+   */
+  var known = {};
+  classes.forEach(function (c) { known[c.cls] = true; });
+  var orphans = [];
+  for (var k in over) if (!known[k]) orphans.push(k);
+
+  return { classes: classes, modes: UNIT.modes, hasNeeds: hasNeeds_(),
+           orphans: orphans, where: where_() };
 }
 
 function saveClassConfig(rows) {
@@ -894,7 +918,7 @@ function saveClassConfig(rows) {
    * 読み戻しは classConfig_ を通す。児童の公開判定が読むのと同じ経路なので、
    * ここが一致していれば「教師が見ている状態＝児童に効く状態」が保証される。
    */
-  var back = classConfig_();
+  var back = classConfig_(true);
   var bad = [];
   (rows || []).forEach(function (r) {
     var b = back[String(r.cls)];
