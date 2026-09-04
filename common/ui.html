@@ -126,11 +126,40 @@ body{
 .ruler{width:min(98%,1300px);margin:0 auto}
 .ruler svg{display:block;width:100%;height:auto}
 .rulerwrap{display:flex;flex-direction:column;align-items:center;gap:.6rem;width:100%}
-/* 巻き尺は画面いっぱいに広げるので、正答数は左上の隅に小さく逃がす */
-#play.ruler-mode .cntbox{left:auto;right:auto;top:6px;transform:none;
-  position:absolute;margin-left:8px}
+/* まきじゃく・文字盤は .eq を画面幅いっぱいに広げる。
+   .eq は既定では内容の幅までしか広がらず、SVG は幅を持たないので、
+   指定が無いと置換要素の既定（300px）まで縮む＝目盛りが読めない。 */
+#play.ruler-mode .eq{width:100%}
+/* 巻き尺は画面いっぱいに広げるので、正答数は上の隅に小さく逃がす。
+   利き手側（キーを打つ手）と反対の隅に置く：手や腕で隠れないため。 */
+#play.ruler-mode .cntbox{left:8px;right:auto;top:6px;transform:none;
+  position:absolute;margin-left:0}
+#play.ruler-mode.hand-left:not(.dial-mode) .cntbox{left:auto;right:8px}
 #play.ruler-mode .cntbox .n{font-size:clamp(1.8rem,3.6vw,2.6rem)}
 #play.ruler-mode .cntbox .l{font-size:.6rem;margin-top:.15rem}
+/* まきじゃくは高さで詰まる。児童機の画面は768pxでも、タブ・アドレス欄・
+   ブックマーク・タスクバーを引くと表示領域は600px前後しかなく、横幅いっぱいに
+   広げた図は縦がはみ出す（body は overflow:hidden なので、はみ出す＝矢印や
+   m の表示が切れる）。入る範囲でいちばん大きく描くために、高さの上限を与える。 */
+#play.ruler-mode:not(.dial-mode) .eq{height:100%}
+#play.ruler-mode:not(.dial-mode) .rulerwrap{height:100%;justify-content:center;gap:0}
+#play.ruler-mode:not(.dial-mode) .ruler{height:100%;display:flex;align-items:center;justify-content:center}
+#play.ruler-mode:not(.dial-mode) .ruler svg{max-height:100%}
+/* min-height:0 ＝ 図の大きさに合わせて stage が膨らむのを止める。既定の min-height:auto
+   では stage が中身の高さまで伸び、あふれたぶん数字キーが押しつぶされる（stage は
+   flex-basis:0 で縮まず、キー側の flex-shrink が効くため）。先に表示領域から stage の
+   高さを決め、その中で図を縮める。
+   キーの高さはめもりモードだけ3段ぶんから2段ぶんへ。数字は上端に描かれ、残りは
+   当たり判定でしかないので、見え方は変わらない。空いた高さはまきじゃくに回る。 */
+#play.ruler-mode:not(.dial-mode) .stage{padding-top:48px;min-height:0}
+#play.ruler-mode:not(.dial-mode) #pad{height:calc(clamp(3rem,8vw,4.2rem) * 2)}
+/* 答えは上の帯（中央）へ。正答数と同じ高さに置き、まきじゃくとは重ねない。
+   図の下に置くと、その行のぶんだけ図に使える高さが減る＝まきじゃくが小さくなる。
+   小さくても数字を残すのは、「めもり ぜんぶ」が Enter 確定で、打ち間違いに
+   気づく手がかりが無いと誤りに気づけないまま送信することになるため。 */
+#play.ruler-mode:not(.dial-mode) .line.ans{position:absolute;top:8px;left:50%;
+  transform:translateX(-50%);font-size:1.7rem;gap:.1em;white-space:nowrap}
+#play.ruler-mode:not(.dial-mode) .line.ans .slot{border-bottom:none;color:var(--mint);min-width:1.4ch}
 /* はかりの文字盤。.eq は既定では内容の幅までしか広がらないので、ここだけ広げる。
    文字盤は正方形で、詰まるのは横ではなく縦なので、大きさは高さで決める。
    まきじゃく側のレイアウトには触れない（すでに教室で使われているため）。 */
@@ -511,7 +540,11 @@ function rulerSVG(r){
   // 上の緑矢印は top-76 まで、下の赤いm表示は top+tapeH+88 まで伸びる。
   // 位置を上げても切れないよう viewBox の上端を負にできるようにする。
   var minY = Math.min(0, top - 86);
-  var H = (top + tapeH + 100) - minY;
+  // 下の余白は 1m・2m の赤い表示のためのもの。窓の中にその表示が無ければ要らない。
+  // 高さで詰まる画面（表示領域600px前後）では、余白のぶんだけ図が縮んで描かれるので、
+  // 「めもり きほん」（0〜85cm＝1mの表示が出ない）は、これで横いっぱいに描ける。
+  var hasM = Math.floor((r.from + r.span) / 100) * 100 >= Math.max(100, r.from);
+  var H = (top + tapeH + (hasM ? 100 : 16)) - minY;
   var s = [];
 
   s.push('<rect x="'+padL+'" y="'+top+'" width="'+innerW+'" height="'+tapeH+'" rx="4" fill="#F3E4C4"/>');
@@ -527,7 +560,14 @@ function rulerSVG(r){
     if(big){
       var isM = (v % 100 === 0) && v > 0;
       var label = isM ? (v/100)+'m' : String(v % 100);
-      s.push('<text x="'+x.toFixed(1)+'" y="'+(top+tapeH-Math.round(tapeH*0.14))+'" text-anchor="middle" '+
+      // 端に来た数字は、中央ぞろえのままだと半分がテープの外へ出る
+      // （左端は金具の下に隠れ、「0から測る」ことが読み取れない）。
+      // はみ出す時だけ内側へ寄せる。実物の巻き尺も 0 は線の右に印刷されている。
+      var w2 = fs * 0.6, anchor = 'middle', tx = x;
+      if(x - w2 < padL){ anchor = 'start'; tx = x + 6; }
+      else if(x + w2 > padL + innerW){ anchor = 'end'; tx = x - 6; }
+      s.push('<text x="'+tx.toFixed(1)+'" y="'+(top+tapeH-Math.round(tapeH*0.14))+'" '+
+             'text-anchor="'+anchor+'" '+
              'font-size="'+fs+'" font-weight="800" fill="'+(isM?'#C25A2A':'#5A4A2A')+'">'+label+'</text>');
     }
   }
@@ -904,6 +944,9 @@ function applyLayout(){
   var v = getLayout(), play = $('play');
   if(needsWide()) v = 'row';
   play.classList.remove('layout-tr','layout-tl');
+  // 利き手そのものは残す。めもりモードは横一列に切り替わって layout-tl が外れるが、
+  // 正答数をどちらの隅へ逃がすかは、キー配置ではなく利き手で決まる。
+  play.classList.toggle('hand-left', getLayout() === 'tl');
   if(v==='tr') play.classList.add('layout-tr');
   if(v==='tl') play.classList.add('layout-tl');
   if(v==='row') layoutRow(); else layoutTenkey();
