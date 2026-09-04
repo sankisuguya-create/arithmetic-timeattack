@@ -14,6 +14,10 @@ h1{font-size:1.35rem;font-weight:800;margin-bottom:.3rem}
 .sub{font-size:.82rem;color:var(--mute);margin-bottom:2rem;line-height:1.9;word-break:break-all}
 .sub b{color:var(--ink)}
 .box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.4rem;margin-bottom:1.1rem}
+/* チェックを触ってから保存するまでの間。押し忘れると児童の画面が変わらないので、
+   「まだ効いていない」ことを箱ごと見せる */
+.box.dirty{border-color:#E8A33D;box-shadow:0 0 0 3px rgba(232,163,61,.16)}
+.box.dirty #clsSave{background:#E8A33D}
 h2{font-size:.72rem;letter-spacing:.18em;color:var(--mute);font-weight:700;margin-bottom:1.1rem}
 .row{display:flex;align-items:center;gap:1rem;margin-bottom:.9rem}
 .row label{flex:1;font-size:.94rem;font-weight:600}
@@ -28,6 +32,9 @@ button.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
 button:disabled{opacity:.45;cursor:default}
 .bar{display:flex;gap:.7rem;align-items:center;margin-top:1.2rem;flex-wrap:wrap}
 .stat{font-size:.82rem;color:var(--mute);min-height:1.3rem}
+/* 失敗は目立たせる。灰色の小さい字で出していると、保存できていないことに気づかず
+   「児童側の不具合」を探しに行くことになる */
+.stat.bad{color:#C0392B;font-weight:700;font-size:.9rem}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:.76rem;color:var(--mute);padding:.4rem .3rem;font-weight:700}
 td{padding:.55rem .3rem;border-top:1.5px solid var(--line)}
@@ -74,7 +81,7 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
     </div>
   </div>
 
-  <div class="box">
+  <div class="box" id="clsBox">
     <h2>クラスごとの もーど</h2>
     <p style="font-size:.88rem;margin-bottom:.4rem">
       <b>チェックを入れたモードだけが、そのクラスの児童に表示されます。</b>
@@ -114,6 +121,12 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 </div>
 
 <script>
+function setStat(id, text, bad){
+  var el = document.getElementById(id);
+  el.textContent = text;
+  el.classList.toggle('bad', !!bad);
+}
+
 function esc(t){
   return String(t).replace(/[&<>"]/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
@@ -157,12 +170,12 @@ google.script.run.withSuccessHandler(function(r){
     if(el) el.value = c[k];
   });
 }).withFailureHandler(function(e){
-  document.getElementById('saveStat').textContent = '読み込めません: ' + e.message;
+  setStat('saveStat', '読み込めません: ' + e.message, true);
 }).getConfigForUI();
 
 document.getElementById('save').onclick = function(){
   var btn = this; btn.disabled = true;
-  document.getElementById('saveStat').textContent = '保存中…';
+  setStat('saveStat', '保存中…', false);
   var obj = {};
   var textKeys = { teachers: 1 };
   SETTINGS.forEach(function(s){ if(s.type === 'text') textKeys[s.key] = 1; });
@@ -173,22 +186,22 @@ document.getElementById('save').onclick = function(){
   });
   google.script.run.withSuccessHandler(function(){
     btn.disabled = false;
-    document.getElementById('saveStat').textContent = '保存しました（次に開いた児童から反映）';
+    setStat('saveStat', '保存しました（次に開いた児童から反映）', false);
   }).withFailureHandler(function(e){
     btn.disabled = false;
-    document.getElementById('saveStat').textContent = 'エラー: ' + e.message;
+    setStat('saveStat', '保存できませんでした: ' + e.message, true);
   }).saveConfig(obj);
 };
 
 document.getElementById('agg').onclick = function(){
   var btn = this; btn.disabled = true;
-  document.getElementById('aggStat').textContent = '集計中…';
+  setStat('aggStat', '集計中…', false);
   google.script.run.withSuccessHandler(function(m){
     btn.disabled = false;
-    document.getElementById('aggStat').textContent = m;
+    setStat('aggStat', m, false);
   }).withFailureHandler(function(e){
     btn.disabled = false;
-    document.getElementById('aggStat').textContent = 'エラー: ' + e.message;
+    setStat('aggStat', 'できませんでした: ' + e.message, true);
   }).aggregate();
 };
 
@@ -229,6 +242,17 @@ function renderClasses(){
       : '');
 }
 
+/* チェックを触ったが、まだ保存していない状態。
+   「クラス設定を保存」と、上の「設定を保存」は別のボタンで、
+   押し間違えても今までは何も起きなかった。触った時点で見た目を変えて知らせる */
+var clsDirty = false;
+function setDirty(v){
+  clsDirty = v;
+  document.getElementById('clsBox').classList.toggle('dirty', v);
+  document.getElementById('clsSave').textContent =
+    v ? 'クラス設定を保存（未保存）' : 'クラス設定を保存';
+}
+
 /* 画面のチェックを CLS に取り込む。表を描き直す前に必ず呼ぶ（未保存の操作を失わない） */
 function collectClasses(){
   var map = {};
@@ -246,20 +270,26 @@ google.script.run.withSuccessHandler(function(r){
   document.getElementById('clsLoading').style.display = 'none';
   document.getElementById('clsTable').style.display = '';
   renderClasses();
+  document.getElementById('clsBody').addEventListener('change', function(){ setDirty(true); });
 }).withFailureHandler(function(e){
   document.getElementById('clsLoading').textContent = '読み込めません: ' + e.message;
 }).listClasses();
 
 document.getElementById('clsSave').onclick = function(){
   var btn = this; btn.disabled = true;
-  document.getElementById('clsStat').textContent = '保存中…';
+  setStat('clsStat', '保存中…', false);
   collectClasses();
-  google.script.run.withSuccessHandler(function(m){
+  google.script.run.withSuccessHandler(function(r){
     btn.disabled = false;
-    document.getElementById('clsStat').textContent = m + '（次に開いた児童から反映）';
+    // サーバーは書いたあとに読み戻した内容を返す。画面はその読み戻しで描き直す。
+    // 送った内容のまま描くと、書けていない時に「オンになっている画面」が残り、
+    // 次に開いた時だけ元に戻っているように見える
+    if(r && r.classes){ CLS.classes = r.classes; renderClasses(); }
+    setDirty(false);
+    setStat('clsStat', ((r && r.msg) || r) + '（次に開いた児童から反映）', false);
   }).withFailureHandler(function(e){
     btn.disabled = false;
-    document.getElementById('clsStat').textContent = 'エラー: ' + e.message;
+    setStat('clsStat', '保存できませんでした: ' + e.message, true);
   }).saveClassConfig(CLS.classes);
 };
 
@@ -269,8 +299,9 @@ function setAll(v){
     CLS.modes.forEach(function(m){ c.modes[m.id] = v; });
   });
   renderClasses();
-  document.getElementById('clsStat').textContent =
-    (v ? 'ぜんぶオンにしました' : 'ぜんぶオフにしました') + '（保存を押すと確定）';
+  setDirty(true);
+  setStat('clsStat', (v ? 'ぜんぶオンにしました' : 'ぜんぶオフにしました') +
+                     '（保存を押すと確定）', false);
 }
 document.getElementById('clsAll').onclick  = function(){ setAll(true); };
 document.getElementById('clsNone').onclick = function(){ setAll(false); };

@@ -863,23 +863,8 @@ function saveConfig(obj) {
 
 function listClasses() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  var over = classConfig_();
-  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
-
-  var seen = {}, out = [];
-  for (var i = 1; i < v.length; i++) {
-    var grade = Number(v[i][1]), cls = String(v[i][2]).trim();
-    if (!grade || !cls) continue;
-    var ck = grade + '-' + cls;
-    if (seen[ck]) { seen[ck].n++; continue; }
-    var o = over[ck];
-    var row = { cls: ck, grade: grade, room: cls, n: 1,
-                modes: {}, seqOff: !!(o && o.seqOff) };
-    modeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
-    seen[ck] = row; out.push(row);
-  }
-  out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
-  return { classes: out, modes: UNIT.modes, hasNeeds: hasNeeds_() };
+  return { classes: listClassesCore_(classConfig_()),
+           modes: UNIT.modes, hasNeeds: hasNeeds_() };
 }
 
 function saveClassConfig(rows) {
@@ -898,7 +883,55 @@ function saveClassConfig(rows) {
   sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
   sh.setFrozenRows(1);
   cache_().remove('classcfg');
-  return '保存しました（' + (out.length - 1) + ' クラス）';
+
+  /*
+   * 書いたら読み戻して照合する。
+   *
+   * 「保存しました」とだけ返していると、書けていない時に教師は児童側を疑い、
+   * 原因のない場所を探し続けることになる（実際そうなった）。
+   * 保存が通ったかどうかは、保存の瞬間に教師の画面で分かるべきもの。
+   *
+   * 読み戻しは classConfig_ を通す。児童の公開判定が読むのと同じ経路なので、
+   * ここが一致していれば「教師が見ている状態＝児童に効く状態」が保証される。
+   */
+  var back = classConfig_();
+  var bad = [];
+  (rows || []).forEach(function (r) {
+    var b = back[String(r.cls)];
+    var same = ids.every(function (id) {
+      return !!(b && b.modes[id]) === !!(r.modes && r.modes[id]);
+    });
+    if (!same) bad.push(String(r.cls));
+  });
+  if (bad.length) {
+    throw new Error('保存できていません（' + bad.join('・') +
+                    '）。class_config シートが編集中でないか確かめてください。');
+  }
+  return { msg: '保存しました（' + (out.length - 1) + ' クラス）',
+           classes: listClassesCore_(back) };
+}
+
+/**
+ * class_config の内容を、教師画面の表と同じ形にして返す。
+ * listClasses と保存後の読み戻しで同じ組み立てを使う
+ * （別々に書くと、保存直後の表示と再読み込み後の表示がずれる）。
+ */
+function listClassesCore_(over) {
+  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
+  var seen = {}, out = [];
+  for (var i = 1; i < v.length; i++) {
+    var grade = Number(v[i][1]), cls = String(v[i][2]).trim();
+    if (!grade || !cls) continue;
+    var ck = grade + '-' + cls;
+    if (seen[ck]) { seen[ck].n++; continue; }
+    var o = over[ck];
+    var row = { cls: ck, grade: grade, room: cls, n: 1,
+                modes: {}, seqOff: !!(o && o.seqOff) };
+    modeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
+    seen[ck] = row; out.push(row);
+  }
+  out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
+  return out;
 }
 
 /* ---- 集計 ---- */
