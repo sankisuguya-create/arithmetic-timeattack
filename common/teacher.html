@@ -11,7 +11,8 @@ body{background:var(--paper);color:var(--ink);
   font-variant-numeric:tabular-nums;padding:2.2rem 1.5rem;line-height:1.6}
 .wrap{max-width:640px;margin:0 auto}
 h1{font-size:1.35rem;font-weight:800;margin-bottom:.3rem}
-.sub{font-size:.82rem;color:var(--mute);margin-bottom:2rem}
+.sub{font-size:.82rem;color:var(--mute);margin-bottom:2rem;line-height:1.9;word-break:break-all}
+.sub b{color:var(--ink)}
 .box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.4rem;margin-bottom:1.1rem}
 h2{font-size:.72rem;letter-spacing:.18em;color:var(--mute);font-weight:700;margin-bottom:1.1rem}
 .row{display:flex;align-items:center;gap:1rem;margin-bottom:.9rem}
@@ -113,6 +114,12 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 </div>
 
 <script>
+function esc(t){
+  return String(t).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
+
 var BASE_KEYS = ['limit_sec','miss_limit','slow_ms','key_gap','teachers'];
 var KEYS = BASE_KEYS.slice();
 var SETTINGS = [];
@@ -120,7 +127,13 @@ var SETTINGS = [];
 google.script.run.withSuccessHandler(function(r){
   var c = r.config, u = r.unit;
   document.getElementById('h1').textContent = u.teacherTitle || u.title || '設定・分析';
-  document.getElementById('sub').textContent = '設定と分析';
+  // どの写しを操作しているかを出す。版を入れ替えた直後、古い写しと新しい写しは
+  // 見た目が同じで、取り違えても画面には何も出ない（児童側が空になるだけ）
+  var w = r.where || {};
+  document.getElementById('sub').innerHTML = w.file
+    ? 'このページが設定しているのは <b>' + esc(w.file) + '</b>' +
+      (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '')
+    : '設定と分析';
   document.getElementById('tips').innerHTML = u.tips || '';
 
   // 単元が宣言した設定欄。Core も teacher.html もキーの意味を知らない。

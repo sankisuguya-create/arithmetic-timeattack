@@ -821,9 +821,26 @@ function resetDaily() {
  *  教師用 API
  * ============================================================ */
 
+/**
+ * いまどの写しを操作しているか。教師画面の見出しに出す。
+ *
+ * 版を入れ替えた直後は、古い写しと新しい写しが両方開ける状態になる
+ * （ゴミ箱に入れただけのスプレッドシートも、履歴やブックマークから開ける）。
+ * 教師が古い方で公開し、児童が新しい方を開いていると、
+ * 症状は「公開したのに反映されない」になり、どちらの画面を見ても原因が出ない。
+ * 名前とURLを画面に出しておけば、取り違えはその場で分かる。
+ */
+function where_() {
+  var out = { file: '', url: '' };
+  try { out.file = ss_().getName(); } catch (e) {}
+  try { out.url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+  return out;
+}
+
 function getConfigForUI() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return { config: config_(), unit: { id: UNIT.id, title: UNIT.title,
+  return { config: config_(), where: where_(),
+           unit: { id: UNIT.id, title: UNIT.title,
            modes: UNIT.modes, types: UNIT.types,
            settings: UNIT.settings || [],
            tips: UNIT.tips || '' } };
