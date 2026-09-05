@@ -160,14 +160,37 @@ body{
 #play.ruler-mode:not(.dial-mode) .line.ans{position:absolute;top:8px;left:50%;
   transform:translateX(-50%);font-size:1.7rem;gap:.1em;white-space:nowrap}
 #play.ruler-mode:not(.dial-mode) .line.ans .slot{border-bottom:none;color:var(--mint);min-width:1.4ch}
-/* はかりの文字盤。.eq は既定では内容の幅までしか広がらないので、ここだけ広げる。
-   文字盤は正方形で、詰まるのは横ではなく縦なので、大きさは高さで決める。
-   まきじゃく側のレイアウトには触れない（すでに教室で使われているため）。 */
-#play.dial-mode .eq{width:100%}
-#play.dial-mode .ruler{width:100%}
-#play.dial-mode .ruler svg{width:auto;height:100%;margin:0 auto}
-/* 文字盤の上端（0の目盛り）と正答数がぶつかるので、こちらは左端に寄せる */
-#play.dial-mode .cntbox{left:8px;right:auto;margin-left:0}
+/* ---- はかりの文字盤。上から「正答数＋式」「拡大と文字盤」「数字キー」の3段 ----
+   一周200目盛りの文字盤は、児童機（表示領域600px前後）では目盛り間が3.7pxしかなく、
+   文字盤を設定上限まで大きくしても5.9pxにしかならない。読める密度にするには画面の
+   96%相当が要り、入らない。だから文字盤とは別に、針先付近を切り取った拡大窓を並べる。
+   拡大窓を左・文字盤を右に固定するのは、拡大窓が「先に見るほう」だから。
+   利き手では入れ替えない（打つ手は下の数字キーにあり、図には掛からない）。 */
+#play.dial-mode .hud{padding:2px 12px 0}
+#play.dial-mode .hud .medal{font-size:1.2rem}
+#play.dial-mode .hud .label{font-size:.9rem}
+#play.dial-mode .stage{display:block;padding:0;min-height:0}
+#play.dial-mode .eq{width:100%;height:100%;justify-content:flex-start;gap:0;
+  font-size:clamp(1.4rem,3.4vw,2rem)}
+/* 式は上の帯へ。図の下に置くと、その行のぶんだけ図が縮む。
+   下線は残す（まきじゃくと違って Enter 確定の欄が2つあり、どちらを打っているかが要る） */
+#play.dial-mode .line.ans{flex:0 0 auto;align-items:center;min-height:46px;
+  gap:.1em;white-space:nowrap}
+#play.dial-mode .cntbox{left:8px;top:2px;right:auto;transform:none;position:absolute;margin-left:0}
+#play.dial-mode .cntbox .n{font-size:clamp(1.5rem,3vw,2.1rem)}
+#play.dial-mode .cntbox .l{font-size:.58rem;margin-top:.1rem}
+/* 図の段。高さは残りぜんぶ。拡大窓も文字盤も正方形／円なので、幅ではなく高さで決まる。
+   dial_size は上限としてのみ効く（既定では段の高さのほうが先に効く）。 */
+#play.dial-mode .dialrow{flex:1 1 auto;min-height:0;display:flex;
+  align-items:center;justify-content:center;gap:clamp(10px,2.4vw,40px)}
+#play.dial-mode .dialzoom,#play.dial-mode .dialfull{height:100%;display:flex;align-items:center}
+#play.dial-mode .dialzoom svg,#play.dial-mode .dialfull svg{height:100%;width:auto;display:block}
+/* 拡大窓。文字盤に描く枠と同じ色・同じ太さにして、どこを切り取っているかを対応させる */
+/* 窓の外（＝はかりのふちの向こう）は文字盤のクリームではなく画面の地色。
+   ここをクリームにすると、ふちの外まで文字盤が続いているように見える。 */
+#play.dial-mode .dialzoom{border:3px solid #3A4260;border-radius:6px;background:var(--ink);
+  overflow:hidden}
+#play.dial-mode #pad{height:calc(clamp(3rem,8vw,4.2rem) * 2)}
 .eq .op{color:#5C6480;margin:0 .22em}
 .eq .slot{color:var(--chalk);border-bottom:.08em solid #3A4260;min-width:2.2ch;
   display:inline-block;text-align:center;cursor:pointer}
@@ -611,19 +634,31 @@ function rulerSVG(r){
  * 「g」「kg」をここに書かないこと。まきじゃくが cm を決め打ちしているのと
  * 同じ誤りをもう一度作ることになる。単位名は宣言から受け取る。
  */
+/* 拡大窓の一辺（SVG座標）。160 は「数字の書かれた大目盛りが必ず1つ入る最小」。
+   一周200目盛りなので大目盛りは20目盛りおき。半径222の円周上で ±80 は約23目盛りぶん
+   にあたり、20をこえるので必ず1つ入る。これより小さくすると倍率は上がるが、
+   何gから数えるかを右の文字盤へ見に行くことになり、視線の往復が増える。 */
+var DIAL_ZOOM = 160;
+
+/**
+ * 全体表示と拡大窓は、まったく同じ図形を別の viewBox で見たもの。
+ * 図形を1回だけ作って両方に渡すので、2つの間で目盛りがずれることが構造的に起きない。
+ * 返り値 { full:全体（拡大枠つき）, zoom:拡大窓 }。
+ */
 function dialSVG(d){
   var W = 520, cx = 260, cy = 260, R = 222;
   var step  = Math.max(1, Number(d.step) || 1);
   var max   = Math.max(step, Number(d.max) || 1000);
   var label = Math.max(step, Number(d.label) || max);
   var at    = Number(d.at) || 0;
-  var s = [];
+  var s = [], labs = [];
 
   s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+(R+16)+'" fill="#EDEFF5" stroke="#3A4260" stroke-width="8"/>');
   s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+(R-2)+'" fill="#FBF7E8"/>');
 
+  function ang(v){ return (v / max) * Math.PI * 2 - Math.PI / 2; }   // 0 は真上、時計回り
   function pt(v, rad){
-    var th = (v / max) * Math.PI * 2 - Math.PI / 2;   // 0 は真上、時計回り
+    var th = ang(v);
     return [cx + rad * Math.cos(th), cy + rad * Math.sin(th)];
   }
   function fmt(v){
@@ -632,25 +667,78 @@ function dialSVG(d){
     return v + (d.unit || '');
   }
 
+  // 目盛りは4階層。1目もり／5目もり／10目もり／20目もり（＝数字つき）。
+  // 5目もりごとの区切りがあると、1つずつ数えなくても「5、10、13」と跳べる。
+  // 色は足さない：文字盤に3色目が入ると針の独立性が落ちる。長さと太さだけで分ける。
   for(var v = 0; v < max; v += step){
-    var isBig = (v % label === 0), isMid = (v % (label / 2) === 0);
-    var a = pt(v, R), b = pt(v, R - (isBig ? 26 : (isMid ? 17 : 10)));
+    var isBig  = (v % label === 0);
+    var isHalf = (v % (label / 2) === 0);
+    var isFif  = (v % (step * 5) === 0);
+    var len, w;
+    if(isBig)       { len = 26; w = 4; }
+    else if(isHalf) { len = 17; w = 2.5; }
+    else if(isFif)  { len = 13; w = 2; }
+    else            { len = 10; w = 1.6; }
+    var a = pt(v, R), b = pt(v, R - len);
     s.push('<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+
-           '" y2="'+b[1].toFixed(1)+'" stroke="#5A4A2A" stroke-width="'+(isBig?4:2)+'"/>');
+           '" y2="'+b[1].toFixed(1)+'" stroke="#5A4A2A" stroke-width="'+w+'"/>');
     if(isBig){
       var tp = pt(v, R - 54);
-      s.push('<text x="'+tp[0].toFixed(1)+'" y="'+(tp[1]+11).toFixed(1)+'" text-anchor="middle" '+
-             'font-size="30" font-weight="800" fill="#5A4A2A">'+fmt(v)+'</text>');
+      labs.push({ t: fmt(v), x: tp[0], y: tp[1] });
     }
   }
 
-  // 針。反対側に短い尾を出すのは実物と同じで、回転の中心が見えるほうが読みやすいため
-  var np = pt(at, R - 76), tp2 = pt(at + max / 2, 36);
-  s.push('<line x1="'+tp2[0].toFixed(1)+'" y1="'+tp2[1].toFixed(1)+'" x2="'+np[0].toFixed(1)+
-         '" y2="'+np[1].toFixed(1)+'" stroke="#E5484D" stroke-width="7" stroke-linecap="round"/>');
+  /* 数字だけは全体表示と拡大窓で別に描く。
+     目盛りと針は同じ図形をそのまま拡大するので位置は絶対にずれないが、数字は
+     2倍で描くと窓を占領し、窓の縁にかかると「100g」が「00g」に切れて別の数に読める。
+     box を渡すと、窓に入っている大目盛りの数字だけを、字が縁からはみ出さない位置に描く。
+     どの針位置でも窓には大目盛りが必ず1つ以上入るので、数える起点は窓の中で完結する。 */
+  function labels(fs, box){
+    var out = [];
+    for(var i = 0; i < labs.length; i++){
+      var L = labs[i], x = L.x, y = L.y + fs * 0.37, anc = 'middle';
+      if(box){
+        if(L.x < box.x || L.x > box.x + box.s || L.y < box.y || L.y > box.y + box.s) continue;
+        var w2 = L.t.length * fs * 0.34;
+        if(x - w2 < box.x + 4){ x = box.x + 4; anc = 'start'; }
+        else if(x + w2 > box.x + box.s - 4){ x = box.x + box.s - 4; anc = 'end'; }
+        if(y - fs < box.y) y = box.y + fs;
+        else if(y > box.y + box.s - 4) y = box.y + box.s - 4;
+      }
+      out.push('<text x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" text-anchor="'+anc+
+               '" font-size="'+fs+'" font-weight="800" fill="#5A4A2A">'+L.t+'</text>');
+    }
+    return out.join('');
+  }
+
+  // 針は目盛りの根元(R-4)まで届かせる。以前は R-76 で止まっていて、児童は針の延長線を
+  // 頭の中で引いてから目盛りを選んでいた。先端を点まで細めてあるので、目盛りに重なっても
+  // 隠さない（実物の指針と同じ形）。根元を太くしてあるぶん、針自体は前より見つけやすい。
+  var th = ang(at), dx = Math.cos(th), dy = Math.sin(th), nx = -dy, ny = dx;
+  function P(along, side){
+    return (cx + dx*along + nx*side).toFixed(1) + ',' + (cy + dy*along + ny*side).toFixed(1);
+  }
+  s.push('<polygon points="'+
+         [P(R-4,0), P(40,5.5), P(14,7), P(-38,4), P(-38,-4), P(14,-7), P(40,-5.5)].join(' ')+
+         '" fill="#E5484D"/>');
   s.push('<circle cx="'+cx+'" cy="'+cy+'" r="15" fill="#3A4260"/>');
 
-  return '<svg viewBox="0 10 '+W+' 500" xmlns="http://www.w3.org/2000/svg">'+s.join('')+'</svg>';
+  /* 拡大する範囲。針先（R-4）ではなく少し内側の R-28 を中心に取る。
+     針先を中心にすると、数字が描かれている R-54 の輪が窓から外れる。R-28 なら
+     半径方向で 114〜274 を写すので、数字（168）・目盛り（196〜222）・ふち（238）が
+     すべて入り、目盛りの輪が窓のまん中あたりに来る。 */
+  var zc = pt(at, R - 28), zh = DIAL_ZOOM / 2;
+  var box = { x: zc[0] - zh, y: zc[1] - zh, s: DIAL_ZOOM };
+  var shapes = s.join('');
+  var frame = '<rect x="'+box.x.toFixed(1)+'" y="'+box.y.toFixed(1)+'" width="'+DIAL_ZOOM+
+              '" height="'+DIAL_ZOOM+'" rx="6" fill="none" stroke="#3A4260" stroke-width="4"/>';
+  var ns = ' xmlns="http://www.w3.org/2000/svg"';
+
+  return {
+    full: '<svg viewBox="0 10 '+W+' 500"'+ns+'>'+ shapes + labels(30, null) + frame +'</svg>',
+    zoom: '<svg viewBox="'+box.x.toFixed(1)+' '+box.y.toFixed(1)+' '+DIAL_ZOOM+' '+DIAL_ZOOM+'"'+ns+'>'+
+          shapes + labels(13, box) +'</svg>'
+  };
 }
 
 function unitSpan(u){
@@ -667,19 +755,28 @@ function draw(){
            (typed[unit] || '&nbsp;')+'</span>' + unitSpan(unit);
   });
 
-  // 図（まきじゃく／はかり）を出す問題は、図の下に答えの欄を置く
-  var fig = q.ruler ? rulerSVG(q.ruler) : (q.dial ? dialSVG(q.dial) : '');
-  $('play').classList.toggle('ruler-mode', !!fig);
+  $('play').classList.toggle('ruler-mode', !!(q.ruler || q.dial));
   $('play').classList.toggle('dial-mode', !!q.dial);
-  if(fig){
+
+  if(q.dial){
+    // はかりは、拡大窓（左）と文字盤（右）を並べ、式と正答数は上の帯へ。
+    // 大きさは段の高さで決まる。dial_size は上限としてのみ効く。
+    var fig = dialSVG(q.dial);
+    var cap = Math.max(20, Math.min(70, uset_('dial_size', 64)));
     eqEl.className = 'eq';
-    // まきじゃくは横幅(%)で、はかりは高さ(vh)で大きさを決める（正方形なので縦が先に詰まる）
-    var style = q.ruler
-      ? 'width:'  + Math.max(30, Math.min(100, uset_('ruler_width', 100))) + '%'
-      : 'height:' + Math.max(20, Math.min(70,  uset_('dial_size', 44)))    + 'vh';
+    eqEl.innerHTML =
+      '<span class="line ans">'+rhs+'</span>'+
+      '<div class="dialrow" style="max-height:'+cap+'vh">'+
+        '<div class="dialzoom">'+ fig.zoom +'</div>'+
+        '<div class="dialfull">'+ fig.full +'</div>'+
+      '</div>';
+  }else if(q.ruler){
+    // まきじゃくは図の下に答えの欄を置く。横幅(%)で大きさを決める
+    eqEl.className = 'eq';
     eqEl.innerHTML =
       '<div class="rulerwrap">'+
-        '<div class="ruler" style="'+style+'">'+ fig +'</div>'+
+        '<div class="ruler" style="width:'+
+          Math.max(30, Math.min(100, uset_('ruler_width', 100)))+'%">'+ rulerSVG(q.ruler) +'</div>'+
         '<span class="line ans">'+rhs+'</span>'+
       '</div>';
   }else{
