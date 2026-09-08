@@ -42,7 +42,8 @@ var BASE_DEFAULTS = {
 
 var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
 var QN = 200;                              // 1セッションの出題数
-var SCHEMA_VERSION = 3;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示
+var SCHEMA_VERSION = 4;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示
+                                           // 4 = クラスキーを「3年1組」に（A1の注記を書き換えるため上げる）
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
 /**
  * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
@@ -149,8 +150,11 @@ function child_(mail) {
   var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
   for (var i = 1; i < v.length; i++) {
     if (String(v[i][0]).trim().toLowerCase() === mail) {
-      var c = { email: mail, grade: Number(v[i][1]), cls: String(v[i][2]),
-                no: Number(v[i][3]), name: String(v[i][4]) };
+      // 学年・組は listClassesCore_ と同じ正規化を通す。
+      // ここだけ生のまま読むと、名簿に「１年」「1組」と書かれたクラスが
+      // 教師の表には出るのに児童側のキーと一致しない、という食い違いになる
+      var c = { email: mail, grade: Number(han_(v[i][1])), cls: normCls_(v[i][2]),
+                no: Number(han_(v[i][3])), name: String(v[i][4]) };
       cache_().put(key, JSON.stringify(c), TTL.roster);
       return c;
     }
@@ -158,12 +162,69 @@ function child_(mail) {
   return null;   // 未登録はキャッシュしない（名簿追加が即反映されるように）
 }
 
-function classKey_(c) { return c.grade + '-' + c.cls; }
+/* ---- クラスキー ----
+ *
+ * class_config / daily に書くクラスの識別子。「3年1組」。
+ *
+ * 以前は「3-1」だった。スプレッドシートはセルに入る文字列を人の入力と同じに解釈するので、
+ * 「3-1」は日付（3月1日）として格納される。Apps Script の setValue / setValues /
+ * appendRow も同じ解釈を通るため、書いた瞬間に Date になる。
+ * こうなると読み戻した値は「3-1」と一致せず、
+ *   - class_config: 保存の照合が落ちて「保存できていません」になる。
+ *     通ってしまった場合は、そのクラスの全モードが誰にも開かない
+ *   - daily: 当日ベストの行が見つからず毎回行が増え、メダルが出ない（例外は出ない）
+ * という壊れ方をする。どちらも原因がクラス名の側にあることが画面から分からない。
+ *
+ * 書式を「書式なしテキスト」にして防ぐ手もあるが、シートを作り直す処理（clear）が
+ * 書式ごと消すうえ、教師が手で打ち直した瞬間にまた日付に戻る。
+ * 日付として解釈されない文字列そのものにするほうが、防ぐ場所が1つで済む。
+ * 「3年1組」は教師画面の表示（`c.grade + '年 ' + c.room + '組'`）とも一致する。
+ */
+
+/** 全角の数字と記号を半角にする。教師が手で打った class_config を拾うため */
+function han_(x) {
+  return String(x == null ? '' : x).replace(/[\uFF01-\uFF5E]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+  }).replace(/\u3000/g, ' ').trim();
+}
+
+/**
+ * 名簿の「組」を正規化する。「1組」「１」→「1」
+ * 名簿に「1組」と書く担任がいる。そのままキーにすると「3年1組組」になって
+ * 教師画面の表と一致しなくなる（この食い違いは今までも起きていた）。
+ */
+function normCls_(cls) { return han_(cls).replace(/\u7d44$/, ''); }
+
+/** 学年と組からキーを作る。ここ以外でキーを組み立てないこと */
+function ckey_(grade, cls) {
+  var g = han_(grade).replace(/\u5e74$/, ''), c = normCls_(cls);
+  if (!g || !c) return '';
+  return g + '\u5e74' + c + '\u7d44';
+}
+
+function classKey_(c) { return ckey_(c.grade, c.cls); }
+
+/**
+ * class_config のセルから読んだクラス名をキーに揃える。
+ * 旧形式「3-1」も受ける。上げた直後に、教師が保存し直すまでのあいだ
+ * 既存の公開設定が全部閉じることを避けるため。
+ * 日付になってしまった古いセル（Date）は救わない。listClasses が
+ * 「名簿と対応しない行」として教師に見せ、保存し直せば消える。
+ */
+function ckeyOf_(v) {
+  // 日付として格納されてしまった古いセル。そのまま String() にすると
+  // 「Sun Mar 01 2026 00:00:00 GMT+0900」になり、教師画面の警告が読めない
+  if (v instanceof Date) return dstr_(v);
+  var s = han_(v);
+  // 学年は1桁。「2026-03-01」のような日付の文字列を旧形式と読み違えないため
+  var m = s.match(/^([1-9])\s*[-\u2010-\u2015]\s*([^-\s]{1,4})$/);
+  return m ? ckey_(m[1], m[2]) : s;
+}
 
 /* ---- モードの解禁フラグ（学年既定 + クラスごとの上書き） ---- */
 
 /**
- * クラスごとの公開設定。{ '3-1': { modes: {1:true,2:false,...}, seqOff: false } }
+ * クラスごとの公開設定。{ '3年1組': { modes: {1:true,2:false,...}, seqOff: false } }
  *
  * 公開はモード単位で持つ。以前は「フラグ」（かけ算の拡張・計算モードなど）を単元が
  * 宣言し、複数のモードが1つのフラグを共有していた。その形では
@@ -184,7 +245,7 @@ function classConfig_(fresh) {
     var v = sh.getDataRange().getValues();
     var head = v[0].map(String);
     for (var i = 1; i < v.length; i++) {
-      var ck = String(v[i][0]).trim();
+      var ck = ckeyOf_(v[i][0]);
       if (!ck) continue;
       var row = { modes: {}, seqOff: false };
       modeIds_().forEach(function (id) {
@@ -208,7 +269,7 @@ function classConfig_(fresh) {
  * どのモードを出すかは進度の判断なので、既定で開けない側に倒す。
  */
 function openFor_(grade, cls) {
-  var over = classConfig_()[grade + '-' + cls];
+  var over = classConfig_()[ckey_(grade, cls)];
   var out = {};
   modeIds_().forEach(function (id) { out[id] = !!(over && over.modes[id]); });
   return out;
@@ -216,7 +277,7 @@ function openFor_(grade, cls) {
 
 /** そのクラスが順次開放を外しているか */
 function seqOffFor_(grade, cls) {
-  var over = classConfig_()[grade + '-' + cls];
+  var over = classConfig_()[ckey_(grade, cls)];
   return !!(over && over.seqOff);
 }
 
@@ -608,7 +669,7 @@ function submitSession(token, items) {
     if (!isPractice) rank = updateDaily_(classKey_(c), s.mode, limSec, mail, correct);
     // 索引を作り直させる。次に起動した児童が古いベストを見ないように
     cache_().remove('sumidx_' + limSec);
-    if (!isPractice) cache_().remove('top3_' + classKey_(c) + '_' + limSec);
+    if (!isPractice) cache_().remove(top3Key_(classKey_(c), limSec));
   } catch (err) {
     return { ok: false, msg: '記録に失敗しました。' };   // code 無し = 再送する
   } finally {
@@ -799,8 +860,16 @@ function updateDaily_(ck, mode, limitSec, mail, score) {
  * 児童に見えるのは自分がメダル圏内かどうかだけなので、3人ぶんで足りる。
  * summary と同じ理由で、daily の読み取りも学級で1回にまとめる。
  */
+/*
+ * キャッシュのキーはASCIIにしておく。クラスキーに「年」「組」が入ったので、
+ * そのまま連結すると CacheService に非ASCIIのキーを渡すことになる。
+ * ここが弾かれると送信のたびに例外が出て、児童には「記録に失敗しました」しか見えない。
+ * 消す側（submit）と作る側（top3_）で必ず同じ形にするため、関数にしてある。
+ */
+function top3Key_(ck, limitSec) { return 'top3_' + encodeURIComponent(ck) + '_' + limitSec; }
+
 function top3_(ck, limitSec) {
-  var key = 'top3_' + ck + '_' + limitSec;
+  var key = top3Key_(ck, limitSec);
   var hit = cache_().get(key);
   if (hit) return JSON.parse(hit);
 
@@ -906,10 +975,15 @@ function listClasses() {
   /*
    * class_config にあるのに、名簿から作られるクラスと一致しない行を拾う。
    *
-   * 公開の判定は「学年-組」の文字列一致だけで決まる（openFor_）。
-   * 名簿の組が「1」で class_config が「1組」なら、シートには TRUE が入っているのに
-   * 児童には1つも開かない。この食い違いはどちらの画面にも出ないので、
-   * 「保存したのに反映されない」としか見えない。名前を並べて出す。
+   * 公開の判定は「3年1組」の文字列一致だけで決まる（openFor_）。
+   * 名簿と表記が違う行は、シートには TRUE が入っているのに児童には1つも開かない。
+   * この食い違いはどちらの画面にも出ないので、「保存したのに反映されない」としか
+   * 見えない。名前を並べて出す。
+   *
+   * 旧「3-1」形式が日付として格納された行もここに出る（「2026-03-01」の形で見える）。
+   * ckeyOf_ は日付を元のクラス名に戻さない。戻すには月＝学年・日＝組と決め打つ必要があり、
+   * 名簿と照合せずに推測でクラスの公開設定を復活させることになる。
+   * 保存し直せばシートごと書き換わるので、教師に見せて任せる。
    */
   var known = {};
   classes.forEach(function (c) { known[c.cls] = true; });
@@ -927,8 +1001,13 @@ function saveClassConfig(rows) {
   var head = classHead_();
   var ids = modeIds_();
   var out = [head];
-  (rows || []).forEach(function (r) {
-    var line = [String(r.cls)].concat(ids.map(function (id) { return !!(r.modes && r.modes[id]); }));
+  /*
+   * 画面から来たクラス名も ckeyOf_ を通す。児童側の判定が使うキーと同じ形にしてから書く。
+   * 教師が古いタブ（旧「3-1」形式）から保存しても、ここで新しい形に揃う。
+   */
+  var keys = (rows || []).map(function (r) { return ckeyOf_(r.cls); });
+  (rows || []).forEach(function (r, i) {
+    var line = [keys[i]].concat(ids.map(function (id) { return !!(r.modes && r.modes[id]); }));
     if (hasNeeds_()) line.push(!!r.seqOff);
     out.push(line);
   });
@@ -949,12 +1028,12 @@ function saveClassConfig(rows) {
    */
   var back = classConfig_(true);
   var bad = [];
-  (rows || []).forEach(function (r) {
-    var b = back[String(r.cls)];
+  (rows || []).forEach(function (r, i) {
+    var b = back[keys[i]];
     var same = ids.every(function (id) {
       return !!(b && b.modes[id]) === !!(r.modes && r.modes[id]);
     });
-    if (!same) bad.push(String(r.cls));
+    if (!same) bad.push(keys[i]);
   });
   if (bad.length) {
     throw new Error('保存できていません（' + bad.join('・') +
@@ -973,9 +1052,9 @@ function listClassesCore_(over) {
   var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
   var seen = {}, out = [];
   for (var i = 1; i < v.length; i++) {
-    var grade = Number(v[i][1]), cls = String(v[i][2]).trim();
+    var grade = Number(han_(v[i][1])), cls = normCls_(v[i][2]);
     if (!grade || !cls) continue;
-    var ck = grade + '-' + cls;
+    var ck = ckey_(grade, cls);
     if (seen[ck]) { seen[ck].n++; continue; }
     var o = over[ck];
     var row = { cls: ck, grade: grade, room: cls, n: 1,
@@ -1091,6 +1170,15 @@ function writeMistakes_(logRows) {
   sh.clear(); sh.setConditionalFormatRules([]);
 
   var head = ['日時', '学年', '組', '番号', '氏名', 'モード', '問題型', 'もんだい', '正しい答え', 'こたえた値'];
+
+  /*
+   * 「もんだい」列は書き込む前にテキスト書式にする。
+   * わり算の出題タグは「12/3」の形で、そのまま書くと 2026/12/03 として格納される
+   * （クラスキーが「3-1」で壊れていたのと同じ理屈）。
+   * この列は読むためだけの列なので、日付になっても例外は出ず、教師が読み違えるだけになる。
+   * clear() が書式を消すので、消したあと・書く前に当てる。
+   */
+  sh.getRange(1, 8, sh.getMaxRows(), 1).setNumberFormat('@');
   var body = [];
 
   for (var i = 1; i < logRows.length; i++) {
@@ -1204,6 +1292,8 @@ function writeWeakClass_(typeMiss, wrongCnt) {
   sh.getRange(1, 1, 1, 3).setFontWeight('bold');
 
   var start = rows.length + 2;
+  // 「出題」列。mistakes の「もんだい」と同じ理由でテキスト書式にする（「12/3」が日付になる）
+  sh.getRange(1, 2, sh.getMaxRows(), 1).setNumberFormat('@');
   sh.getRange(start, 1).setValue('よくある誤答（多い順）').setFontWeight('bold');
   sh.getRange(start + 1, 1, 1, 5)
     .setValues([['問題型', '出題', '正しい答え', 'こたえた値', '回数']]).setFontWeight('bold');
@@ -1354,7 +1444,9 @@ function applyFriendlyStyling_() {
     roster: 'ここに児童を登録します（email／学年／組／番号／氏名）。\n学年・組の表記はそろえてください（「2」に統一。「2組」などを混ぜない）。',
     config: '各種設定です。通常は教師用ページ（?page=teacher）から変更してください。\n直接編集した場合、児童への反映は最大1分遅れます（教師用ページから保存すると即時）。',
     class_config: 'クラスごとに、どのモードを児童に見せるかの設定です。チェックの無いモードは表示されません。\n' +
-                  'A列は roster の「学年」「組」から作る「学年-組」と1文字も違ってはいけません（例: 3-1）。\n' +
+                  'A列は roster の「学年」「組」から作る「3年1組」の形です（例: 3年1組）。\n' +
+                  '手で書き換えるときは1文字も違えないでください。「3-1」と書くと、\n' +
+                  'スプレッドシートが日付（3月1日）として取り込んでしまい、設定が効かなくなります。\n' +
                   '通常は教師用ページ（?page=teacher）から操作してください。直接編集した場合、児童への反映は最大1分遅れます。',
     log: '1回のプレイ（1試行）を1行で記録した内部データです。直接は読まなくてよいシートです。\n個々の誤答を読みたいときは mistakes シートを、傾向を見たいときは weak_child / weak_class を見てください。',
     daily: '当日の学級内ランキングを計算するための内部データです。直接は見なくてよいシートです。',
