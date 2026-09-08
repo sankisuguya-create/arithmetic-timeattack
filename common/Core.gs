@@ -153,7 +153,7 @@ function child_(mail) {
       // 学年・組は listClassesCore_ と同じ正規化を通す。
       // ここだけ生のまま読むと、名簿に「１年」「1組」と書かれたクラスが
       // 教師の表には出るのに児童側のキーと一致しない、という食い違いになる
-      var c = { email: mail, grade: Number(han_(v[i][1])), cls: normCls_(v[i][2]),
+      var c = { email: mail, grade: gradeOf_(v[i][1]), cls: normCls_(v[i][2]),
                 no: Number(han_(v[i][3])), name: String(v[i][4]) };
       cache_().put(key, JSON.stringify(c), TTL.roster);
       return c;
@@ -181,23 +181,52 @@ function child_(mail) {
  * 「3年1組」は教師画面の表示（`c.grade + '年 ' + c.room + '組'`）とも一致する。
  */
 
-/** 全角の数字と記号を半角にする。教師が手で打った class_config を拾うため */
+/** 全角の英数字と記号を半角にし、空白を落とす。教師が手で打った class_config を拾うため */
 function han_(x) {
   return String(x == null ? '' : x).replace(/[\uFF01-\uFF5E]/g, function (ch) {
     return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
-  }).replace(/\u3000/g, ' ').trim();
+  }).replace(/[\s\u3000]/g, '');
 }
 
 /**
- * 名簿の「組」を正規化する。「1組」「１」→「1」
- * 名簿に「1組」と書く担任がいる。そのままキーにすると「3年1組組」になって
- * 教師画面の表と一致しなくなる（この食い違いは今までも起きていた）。
+ * 漢数字1文字ぶんをアラビア数字にする。「三」→「3」「十二」→「12」
+ * 「三年一組」と書く担任がいる。学年も組も2桁までなので、一般の漢数字パーサは要らない。
+ * 漢数字だけでできていない文字列はそのまま返す（「三角」を「3角」にしない）。
  */
-function normCls_(cls) { return han_(cls).replace(/\u7d44$/, ''); }
+function jnum_(x) {
+  var D = { '\u3007': 0, '\u96f6': 0, '\u4e00': 1, '\u4e8c': 2, '\u4e09': 3, '\u56db': 4,
+            '\u4e94': 5, '\u516d': 6, '\u4e03': 7, '\u516b': 8, '\u4e5d': 9 };
+  var s = String(x == null ? '' : x);
+  if (!s) return s;
+  var m = s.match(/^([\u3007\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d])?(\u5341)?([\u3007\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d])?$/);
+  if (!m || (!m[1] && !m[2] && !m[3])) return s;
+  if (!m[2]) return (m[1] != null && m[3] == null) ? String(D[m[1]]) : s;   // 十が無ければ1桁だけ
+  return String((m[1] ? D[m[1]] : 1) * 10 + (m[3] ? D[m[3]] : 0));
+}
+
+/*
+ * 表記ゆれの吸収。名簿にも class_config にも、担任が手で打った文字列が入る。
+ * 「3年1組」「３年１組」「3ねん1くみ」「三年一組」は同じクラスを指す。
+ * ここで吸収しないと、シートには TRUE が入っているのに児童には1つも開かない、
+ * という沈黙した食い違いになる（どちらの画面にも出ない）。
+ */
+
+/** 学年の表記を数字だけにする。「３年」「三」→「3」 */
+function normGrade_(g) {
+  return jnum_(han_(g).replace(/(?:\u5e74|\u306d\u3093|\u30cd\u30f3)$/, ''));
+}
+
+/** 組の表記を短い識別子にする。「１組」「一くみ」→「1」／「ａ」→「A」 */
+function normCls_(cls) {
+  return jnum_(han_(cls).replace(/(?:\u7d44|\u304f\u307f|\u3050\u307f|\u30af\u30df)$/, '')).toUpperCase();
+}
+
+/** 名簿の学年を数値で読む。読めなければ NaN（呼び出し側がその行を捨てる） */
+function gradeOf_(g) { return Number(normGrade_(g)); }
 
 /** 学年と組からキーを作る。ここ以外でキーを組み立てないこと */
 function ckey_(grade, cls) {
-  var g = han_(grade).replace(/\u5e74$/, ''), c = normCls_(cls);
+  var g = normGrade_(grade), c = normCls_(cls);
   if (!g || !c) return '';
   return g + '\u5e74' + c + '\u7d44';
 }
@@ -206,19 +235,34 @@ function classKey_(c) { return ckey_(c.grade, c.cls); }
 
 /**
  * class_config のセルから読んだクラス名をキーに揃える。
- * 旧形式「3-1」も受ける。上げた直後に、教師が保存し直すまでのあいだ
- * 既存の公開設定が全部閉じることを避けるため。
- * 日付になってしまった古いセル（Date）は救わない。listClasses が
- * 「名簿と対応しない行」として教師に見せ、保存し直せば消える。
+ *
+ * 受けるのは「3年1組」「３年１組」「三年一組」「3ねん1くみ」「3年1」と、旧形式の
+ * 「3-1」（全角ハイフン・長音記号「ー」を含む）。教師がシートを直接編集したときに、
+ * 表記が1文字違うだけで公開設定が効かなくなるのを避ける。
+ *
+ * 学年1桁・組4文字までに収まらないものはキーにせず、読んだ文字列をそのまま返す。
+ * 「2026-03-01」や「2026年3月1日」をクラス名と読み違えると、実在しないクラスの
+ * 行ができて教師の警告が意味を失う。そのまま返せば「名簿と対応しない行」に出る。
+ *
+ * 日付になってしまった古いセル（Date）は救わない。月＝学年・日＝組と決め打つ必要があり、
+ * 名簿と照合せずに推測で公開設定を復活させることになる。保存し直せば消える。
  */
 function ckeyOf_(v) {
   // 日付として格納されてしまった古いセル。そのまま String() にすると
   // 「Sun Mar 01 2026 00:00:00 GMT+0900」になり、教師画面の警告が読めない
   if (v instanceof Date) return dstr_(v);
   var s = han_(v);
-  // 学年は1桁。「2026-03-01」のような日付の文字列を旧形式と読み違えないため
-  var m = s.match(/^([1-9])\s*[-\u2010-\u2015]\s*([^-\s]{1,4})$/);
-  return m ? ckey_(m[1], m[2]) : s;
+  if (!s) return '';
+
+  // 「3年1組」「3ねん1くみ」「3年1」
+  var m = s.match(/^(.+?)(?:\u5e74|\u306d\u3093|\u30cd\u30f3)(.+?)(?:\u7d44|\u304f\u307f|\u3050\u307f|\u30af\u30df)?$/);
+  // 旧形式「3-1」。ハイフンの打ち間違い（長音記号）も受ける
+  if (!m) m = s.match(/^(.+?)[-\u2010-\u2015\u30fc\uff70](.+)$/);
+  if (!m) return s;
+
+  var g = normGrade_(m[1]), c = normCls_(m[2]);
+  if (!/^[1-9]$/.test(g) || !c || c.length > 4) return s;
+  return ckey_(g, c);
 }
 
 /* ---- モードの解禁フラグ（学年既定 + クラスごとの上書き） ---- */
@@ -1052,7 +1096,7 @@ function listClassesCore_(over) {
   var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
   var seen = {}, out = [];
   for (var i = 1; i < v.length; i++) {
-    var grade = Number(han_(v[i][1])), cls = normCls_(v[i][2]);
+    var grade = gradeOf_(v[i][1]), cls = normCls_(v[i][2]);
     if (!grade || !cls) continue;
     var ck = ckey_(grade, cls);
     if (seen[ck]) { seen[ck].n++; continue; }
@@ -1444,9 +1488,10 @@ function applyFriendlyStyling_() {
     roster: 'ここに児童を登録します（email／学年／組／番号／氏名）。\n学年・組の表記はそろえてください（「2」に統一。「2組」などを混ぜない）。',
     config: '各種設定です。通常は教師用ページ（?page=teacher）から変更してください。\n直接編集した場合、児童への反映は最大1分遅れます（教師用ページから保存すると即時）。',
     class_config: 'クラスごとに、どのモードを児童に見せるかの設定です。チェックの無いモードは表示されません。\n' +
-                  'A列は roster の「学年」「組」から作る「3年1組」の形です（例: 3年1組）。\n' +
-                  '手で書き換えるときは1文字も違えないでください。「3-1」と書くと、\n' +
-                  'スプレッドシートが日付（3月1日）として取り込んでしまい、設定が効かなくなります。\n' +
+                  'A列は roster の「学年」「組」から作る「3年1組」の形です。\n' +
+                  '手で書くときの表記ゆれは吸収します（「３年１組」「三年一組」「3ねん1くみ」「3年1」はすべて 3年1組）。\n' +
+                  'ただし「3-1」とだけ書くのは避けてください。この形はスプレッドシートが\n' +
+                  '日付（3月1日）として取り込むことがあり、そうなると設定が効かなくなります。\n' +
                   '通常は教師用ページ（?page=teacher）から操作してください。直接編集した場合、児童への反映は最大1分遅れます。',
     log: '1回のプレイ（1試行）を1行で記録した内部データです。直接は読まなくてよいシートです。\n個々の誤答を読みたいときは mistakes シートを、傾向を見たいときは weak_child / weak_class を見てください。',
     daily: '当日の学級内ランキングを計算するための内部データです。直接は見なくてよいシートです。',
