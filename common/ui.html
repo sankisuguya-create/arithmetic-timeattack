@@ -113,9 +113,16 @@ body{
 .cntbox .n.bump{animation:bump .18s ease-out}
 @keyframes bump{0%{transform:translateY(0)}40%{transform:translateY(-6px)}100%{transform:translateY(0)}}
 
-/* 式：数字は大きく、単位はやや小さく落ち着かせる */
-.eq{font-size:clamp(2.2rem,7.5vw,4.6rem);font-weight:800;line-height:1.15;
-  display:flex;flex-direction:column;align-items:center;gap:.12em}
+/* 式：数字は大きく、単位はやや小さく落ち着かせる。
+
+   font-weight は 700。system-ui は ChromeOS では Roboto に解決し、800 を指定すると
+   Black(900) が選ばれる。Black は字面が太く、ふところ（6 と 8、1 と 7 の空き）が
+   潰れるので、数字が並ぶほど読み分けにくくなる。Bold(700) は太さを保ったまま空きが残る。
+   Webフォントは読み込まない。差し替わった瞬間に行送りが動くと、出題からの経過時間
+   （tk・ms）に読み込み待ちが混ざり、主指標そのものが汚れるため。 */
+.eq{font-size:clamp(2.2rem,7.5vw,4.6rem);font-weight:700;line-height:1.15;
+  display:flex;flex-direction:column;align-items:center;gap:.12em;
+  letter-spacing:.015em}
 .eq .line{display:flex;align-items:baseline;gap:.06em;white-space:nowrap}
 .eq .line.ans{gap:.06em}
 /* 長い数や文章は、二段表示でトークンの境目を折り返す。 */
@@ -124,6 +131,10 @@ body{
 .eq.oneline{flex-direction:row;align-items:baseline}
 .eq.oneline .line{display:contents}
 .eq .u{font-size:.62em;color:#8C93AC;margin-right:.22em;margin-left:.02em}
+/* 4桁ごとのわずかな隙間。数そのものは1語のまま扱い、途中で改行させない
+   （まとまりの切れ目と行の切れ目が重なると、位を数え直すことになる） */
+.eq .num{white-space:nowrap}
+.eq .num .g + .g{margin-left:.2em}
 
 /* まきじゃく */
 .ruler{width:min(98%,1300px);margin:0 auto}
@@ -753,6 +764,24 @@ function unitSpan(u){
   return '<span class="u"'+(c ? ' style="color:'+c+'"' : '')+'>'+u+'</span>';
 }
 
+/**
+ * 5桁以上の数字は4桁ずつに区切って描く。
+ *
+ * 区切り記号は入れず間隔だけで切る。児童がノートに書き写すときに
+ * 余計な記号まで写してしまうため。3桁のカンマを使わないのは、
+ * 万進法の区切りが4桁で、3桁区切りは4年の学習内容ではないから。
+ *
+ * 単元名も問題型も見ない。数字だけのトークンかどうかで決めるので、
+ * 4桁以下しか出ない単元（九九・長さ・おもさ）では何も起きない。
+ */
+function numTok(tok){
+  if(!/^\d{5,}$/.test(tok)) return '<span>'+tok+'</span>';
+  var g = [], i = tok.length;
+  while(i > 0){ g.unshift(tok.slice(Math.max(0, i - 4), i)); i -= 4; }
+  return '<span class="num">'+
+    g.map(function(s){ return '<span class="g">'+s+'</span>'; }).join('')+'</span>';
+}
+
 function draw(){
   var q = queue[qi];
 
@@ -791,7 +820,7 @@ function draw(){
     q.q.forEach(function(tok){
       if(UNITS.hasOwnProperty(tok)) lhs += unitSpan(tok);
       else if(OPS.hasOwnProperty(tok)) lhs += '<span class="op">'+OPS[tok]+'</span>';
-      else lhs += '<span>'+tok+'</span>';
+      else lhs += numTok(tok);
     });
     // 式が長いときは「＝」以下を2段目に落とす。
     var oneHtml = '<span class="line">'+lhs+'<span class="op">=</span>'+rhs+'</span>';
