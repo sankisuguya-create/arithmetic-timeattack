@@ -37,6 +37,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 | `apps/weight` | g と kg の換算・加減計算、はかりの読み取り | 3年 |
 | `apps/divmod` | あまりのあるわり算（九九さがし→誤答判別→わり算） | 3年 |
 | `apps/bignum` | 大きな数（万・億・兆、位取り、いくつ分、10倍・100倍と逆算） | 万を学習後〜億・兆を学習後 |
+| `apps/decimal` | 小数（0.1・0.01のいくつ分、位取り、10倍・100倍と逆算） | 3〜4年 |
 
 ## 構成
 
@@ -51,6 +52,7 @@ apps/
   weight/Unit.gs おもさの出題定義
   divmod/Unit.gs あまりのあるわり算の出題定義
   bignum/Unit.gs 大きな数の出題定義（詳細: apps/bignum/README.md）
+  decimal/Unit.gs 小数の出題定義
   hub/           ハブ（Code.gs / index.html / teacher.html）
 docs/
   ARCHITECTURE.md  設計の考え方
