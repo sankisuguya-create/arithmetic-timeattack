@@ -39,6 +39,17 @@ button.pill{padding:.32rem .8rem;border-radius:999px;font-size:.8rem;
 button.pill.on{background:var(--mint);border-color:var(--mint);color:#052A1F}
 button.pill.busy{opacity:.5}
 
+/* 各単元の教師ページへの入口。リンクに登録済みの URL から組み立てるので、
+   ここに新しく URL を控える欄は作らない（二重管理を避ける） */
+.units{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.6rem}
+.unit{display:flex;align-items:center;gap:.6rem;padding:.7rem .85rem;background:#fff;
+  border:1.5px solid var(--line);border-radius:11px;text-decoration:none;
+  color:var(--ink);font-size:.9rem;font-weight:700}
+.unit:hover{border-color:var(--ink)}
+.unit .dot{width:.85rem;height:.85rem;border-radius:4px;flex:0 0 auto;border:1px solid rgba(0,0,0,.12)}
+.unit .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.unit .flag{flex:0 0 auto;font-size:.72rem;color:var(--mute)}
+
 .item{border:1.5px solid var(--line);border-radius:12px;padding:.9rem;margin-bottom:.8rem;background:#fff}
 .item.off{opacity:.5}
 .item .row1{display:flex;gap:.6rem;align-items:center;margin-bottom:.7rem}
@@ -61,6 +72,15 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
   <h1>リンク集 設定</h1>
   <div class="golinks" id="golinks"></div>
   <div class="sub" id="sub">児童のホーム画面に出す単元サイトを管理します</div>
+
+  <div class="box">
+    <h2>各単元の教師ページ</h2>
+    <div class="units" id="units"></div>
+    <div class="hint" style="margin-top:.9rem">
+      下の「リンク」に登録した URL に <code>?page=teacher</code> を付けた先を開きます。
+      非公開の単元も並びます（設定は公開前から触れます）。
+    </div>
+  </div>
 
   <div class="box">
     <h2>ぜんたい</h2>
@@ -111,7 +131,35 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function $(id){ return document.getElementById(id); }
 
+/* 単元サイトの教師ページ URL。児童用 URL に page=teacher を足すだけ。
+   各単元の doGet が同じ約束で分岐しているので、ハブが URL を別に持つ必要はない */
+function unitTeacherUrl(u){
+  u = String(u==null?'':u).trim();
+  if(!u) return '';
+  var hash = '', at = u.indexOf('#');
+  if(at>=0){ hash = u.slice(at); u = u.slice(0,at); }
+  if(/[?&]page=teacher(&|$)/.test(u)) return u + hash;
+  return u + (u.indexOf('?')>=0 ? '&' : '?') + 'page=teacher' + hash;
+}
+
+/* 別タブで開く。設定の途中でも、このページを閉じずに単元側を見に行ける */
+function renderUnits(){
+  $('units').innerHTML = LINKS.map(function(l){
+    var url = unitTeacherUrl(l.url);
+    if(!url) return '';
+    var c = COLORS[l.color] || {bg:'#ccc'};
+    return '<a class="unit" href="'+esc(url)+'" target="_blank" rel="noopener">'+
+      '<span class="dot" style="background:'+c.bg+'"></span>'+
+      '<span class="nm">'+(esc(l.title)||'（名前なし）')+'</span>'+
+      (l.visible?'':'<span class="flag">非公開</span>')+
+    '</a>';
+  }).join('') ||
+  '<div class="hint">URL を登録したリンクがまだありません。'+
+  '下の「リンク」で URL を入れると、ここに入口が出ます。</div>';
+}
+
 function render(){
+  renderUnits();
   $('list').innerHTML = LINKS.map(function(l, i){
     var sel = String(l.grades||'').split(',').map(function(s){return s.trim();});
     var chips = GRADES.map(function(g){
@@ -156,6 +204,7 @@ document.addEventListener('input', function(e){
   var t = e.target, f = t.dataset.f, i = t.dataset.i;
   if(f===undefined || i===undefined) return;
   LINKS[+i][f] = t.value;
+  if(f==='url') renderUnits();   // 打ちながら入口も更新される。再描画は上の一覧に及ばない
 });
 document.addEventListener('change', function(e){
   if(e.target.dataset.f==='color') render();
