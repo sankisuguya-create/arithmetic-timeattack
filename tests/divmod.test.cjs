@@ -80,7 +80,7 @@ function check(item, mode) {
 /** ④ひとつなぎ。2段組みと覆いの宣言が、式としても手続きとしても筋が通っているか */
 function checkChain(item) {
   const n = Number(item.q[0]), a = Number(item.q[2]);
-  const b = item.ans['しょう'], p = item.ans['つみ'], r = item.ans['あまり'];
+  const b = item.ans['しょう'], p = item.ans['つみ'], r = item.ans['のこり'];
   assert.equal(a * b, p);
   assert.equal(p + r, n);
   assert.ok(r >= 1 && r < a);
@@ -103,6 +103,11 @@ function checkChain(item) {
   // 覆いの向こうにあるのは、1段目の答えを使って書いた式であること。
   // ここが緩むと、1段目を飛ばしても答えが出る問題になる
   assert.equal(Number(item.rows[2][2]), item.ans['つみ']);
+
+  // 目立たせるのは商とあまり＝そのまま答えになる2つだけ。途中の積は素のまま
+  same(Object.keys(unit.slotColor).sort(), ['しょう', 'のこり']);
+  assert.equal(unit.slotColor['しょう'], unit.slotColor['のこり'], '答えの2欄は同じ色');
+  assert.equal(unit.slotColor['つみ'], undefined, '途中の積は目立たせない');
 }
 
 let count = 0;
@@ -128,6 +133,15 @@ unit.modes.forEach((m, i) => {
   assert.ok(order.includes(String(m.needs.mode)));
 });
 
+// 目立たせる欄の宣言。⑤⑥の欄キー（'あまり' と ''）とぶつかっていないこと。
+// ぶつかると、④のつもりの色が⑤⑥の商の欄に出る
+Object.keys(unit.slotColor).forEach(k => {
+  assert.ok(/^#[0-9A-Fa-f]{6}$/.test(unit.slotColor[k]), '色の形: ' + k);
+  ['Jo', 'Jx', 'R', 'K', 'P', 'D'].forEach(t => {
+    assert.ok(!unit.fieldsByType[t].includes(k), `欄キー ${k} が型 ${t} と衝突`);
+  });
+});
+
 // 字形の宣言。数字を引き当てるだけの表で、答えは含まない
 same(unit.glyph['しょう'], ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']);
 
@@ -145,11 +159,12 @@ const ui = read('common/ui.html');
 function loadUi(extra) {
   const c = vm.createContext(Object.assign({
     DIGITCAP: unit.digitCap, SCALE: {}, GLYPH: unit.glyph || {}, UNITS: unit.units || {},
+    SLOTCOLOR: unit.slotColor || {},
     SLOT: '_', performance: { now: () => 100 },
     paintSlots() {}, locked: false, ready: true, practice: false, firstKeyAt: 0
   }, extra));
   for (const name of ['digitCap_', 'valOf', 'currentAns', 'isRight', 'handleInput',
-                      'moveField', 'capField_', 'glyph_']) {
+                      'moveField', 'capField_', 'glyph_', 'slotSpan_']) {
     const m = ui.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?^\\}', 'm'));
     assert.ok(m, name); vm.runInContext(m[0], c);
   }
@@ -213,7 +228,36 @@ gate.submit = () => { submits.push(gate.isRight()); };
   assert.equal(c.capField_(item, 2), 2, '覆いが外れたあとは通す');
 }
 
-// 4) 字形。宣言した欄だけ漢数字になり、他の欄と他の単元は素の数字のまま
+// 4) 目立たせる欄。色と、下線を太くする class の両方が付くこと。
+//    色だけに意味を持たせないための二重化なので、片方だけでは通さない
+{
+  const c = loadUi();
+  const item = unit.gen(ctx.rng_(31), 7);
+  c.queue = [item]; c.qi = 0; c.fi = 0;
+  c.typed = { 'しょう': '5', 'つみ': '', 'のこり': '' };
+  const html = [0, 1, 2].map(i => c.slotSpan_(item, i));
+  assert.match(html[0], /class="slot accent cur"/, '商: 強調＋いま打っている欄');
+  assert.match(html[0], /style="--slotc:#C9A0FF"/);
+  assert.equal(/accent/.test(html[1]), false, '積は強調しない');
+  assert.match(html[2], /class="slot accent"/, 'あまり: 強調');
+  assert.match(html[2], /style="--slotc:#C9A0FF"/);
+  // class 名が画面キーボードとぶつかっていないこと。ぶつかると鍵盤の見た目を拾い、
+  // クリックの closest('.key') にも引っかかる
+  html.forEach(h => assert.equal(h.indexOf('key') >= 0, false, '.key を使わない'));
+  // 強調は共通画面の仕組みなので、宣言の無い型には出ない
+  const plain = loadUi();
+  const r = unit.gen(ctx.rng_(32), 3);
+  plain.queue = [r]; plain.qi = 0; plain.fi = 0;
+  plain.typed = Object.fromEntries(r.f.map(f => [f, '']));
+  assert.equal(/accent/.test(plain.slotSpan_(r, 0)), false, '⑥の欄には出ない');
+  // style に入るのは色の形をしたものだけ
+  const bad = loadUi({ SLOTCOLOR: { 'しょう': 'red;position:fixed' } });
+  bad.queue = [item]; bad.qi = 0; bad.fi = 0;
+  bad.typed = { 'しょう': '', 'つみ': '', 'のこり': '' };
+  assert.equal(/style=/.test(bad.slotSpan_(item, 0)), false, '色の形をしていない宣言は捨てる');
+}
+
+// 5) 字形。宣言した欄だけ漢数字になり、他の欄と他の単元は素の数字のまま
 {
   const c = loadUi();
   assert.equal(c.glyph_('しょう', '9'), '九');

@@ -416,7 +416,9 @@ function boot() {
             scale: UNIT.scale || {},
             // 欄ごとの数字の字形（九九の「八九72」を漢数字で見せるなど）。
             // digitCap と同じく「宣言」であって、答えは含まない
-            glyph: UNIT.glyph || {} },
+            glyph: UNIT.glyph || {},
+            // 目立たせる欄の色。これも宣言で、答えは含まない
+            slotColor: UNIT.slotColor || {} },
     settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
