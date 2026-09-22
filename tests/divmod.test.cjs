@@ -87,20 +87,22 @@ function checkChain(item) {
   assert.ok(p >= 10 && p <= 81, '積は2桁（つみ欄の宣言が2桁のため）');
   assert.ok(b >= 2 && b <= 9);
 
+  // 0段目：解いている式。欄が無いので覆いはかからない
+  same(item.rows[0], [String(n), '÷', String(a), '=']);
   // 1段目：わる数（漢数字）＋ 商の欄 ＋ 積の欄
-  same(item.rows[0], [ctx.DM_KANJI[a], '_', '_']);
+  same(item.rows[1], [ctx.DM_KANJI[a], '_', '_']);
   // 2段目：わられる数 − 積 ＝ あまりの欄
-  same(item.rows[1], [String(n), '-', String(p), '=', '_']);
-  assert.equal(item.rows.length, 2);
+  same(item.rows[2], [String(n), '-', String(p), '=', '_']);
+  assert.equal(item.rows.length, 3);
 
-  // 覆いは「2番目以降の欄」＝2段目にかかる。1段目にはかからない
+  // 覆いは「2番目以降の欄」＝2段目にかかる。0段目と1段目にはかからない
   assert.equal(item.veil, 2);
   const slots = [];
   item.rows.forEach((row, ri) => row.forEach(t => { if (t === '_') slots.push(ri); }));
-  same(slots, [0, 0, 1], '欄は1段目に2つ、2段目に1つ');
+  same(slots, [1, 1, 2], '欄は1段目に2つ、2段目に1つ。0段目には無い');
   // 覆いの向こうにあるのは、1段目の答えを使って書いた式であること。
   // ここが緩むと、1段目を飛ばしても答えが出る問題になる
-  assert.equal(Number(item.rows[1][2]), item.ans['つみ']);
+  assert.equal(Number(item.rows[2][2]), item.ans['つみ']);
 }
 
 let count = 0;
