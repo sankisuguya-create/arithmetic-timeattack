@@ -14,7 +14,7 @@ const seen = new Set();
 const same = (a, b, msg) => assert.equal(JSON.stringify(a), JSON.stringify(b), msg);
 
 // 型ごとの打鍵数。モードの中では揃っていなければならない（所要msに打鍵差を乗せない）。
-const STROKES = { K: 1, P: 2, D: 1, C: 4, Jo: 2, Jx: 2, R: 2 };
+const STROKES = { K: 1, P: 3, D: 1, C: 4, Jo: 2, Jx: 2, R: 2 };
 
 function check(item, mode) {
   assert.ok(unit.types[item.t], 'unknown type ' + item.t); seen.add(item.t);
@@ -34,17 +34,35 @@ function check(item, mode) {
   }
   assert.equal(strokes, STROKES[item.t], JSON.stringify(item));
 
+  // rows を使う型は、並べ方の中の '_' の数と欄の数が合っていること。
+  // ずれると slotSpan_ が無い欄を描くか、打てない欄が残る
+  if (item.rows) {
+    const n = item.rows.reduce((a, row) => a + row.filter(t => t === '_').length, 0);
+    assert.equal(n, item.f.length, '欄の数と _ の数: ' + JSON.stringify(item));
+  }
+
   if (item.t === 'K') {
-    // 「4のだん　32」→ だん × 答え が示された積になる
-    const a = Number(item.q[0]), p = Number(item.q[2]);
-    assert.equal(a * item.ans[''], p);
+    // 「四□32」→ 九九の となえの2字目が欄。だん × 答え が示された積になる
+    assert.equal(item.rows.length, 1);
+    const a = ctx.DM_KANJI.indexOf(item.rows[0][0]), p = Number(item.rows[0][2]);
+    same(item.rows[0], [ctx.DM_KANJI[a], '_', String(p)]);
+    assert.ok(a >= 2 && a <= 9, 'だんは漢数字2〜9: ' + JSON.stringify(item));
+    assert.equal(a * item.ans['かける'], p);
     assert.ok(p >= 10 && p <= 81);
+    assert.equal(item.veil, undefined, '覆う段は無い');
   } else if (item.t === 'P') {
-    // 「6のだん　29まで」→ こえない最大の倍数。基準数は倍数そのものにしない
-    const a = Number(item.q[0]), n = Number(item.q[2]), ans = item.ans[''];
-    assert.equal(ans % a, 0);
-    assert.ok(ans <= n && n - ans < a && n % a !== 0);
-    assert.ok(ans >= 10 && ans <= 81);
+    // 「64まで ／ 七□□」→ こえない最大の九九。基準数は倍数そのものにしない
+    assert.equal(item.rows.length, 2);
+    const n = Number(item.rows[0][0]), a = ctx.DM_KANJI.indexOf(item.rows[1][0]);
+    const b = item.ans['かける'], p = item.ans['つみ'];
+    same(item.rows[0], [String(n), 'まで']);
+    same(item.rows[1], [ctx.DM_KANJI[a], '_', '_']);
+    assert.ok(a >= 2 && a <= 9, 'だんは漢数字2〜9: ' + JSON.stringify(item));
+    assert.equal(a * b, p);
+    assert.ok(b >= 2 && b <= 9, 'かける数は1桁（積を2桁に絞ってある）');
+    assert.ok(p <= n && n - p < a && n % a !== 0);
+    assert.ok(p >= 10 && p <= 81);
+    assert.equal(item.veil, undefined, '覆う段は無い');
   } else if (item.t === 'D') {
     // 「73−72」→ 差は 1〜8。④⑤に実際に出る組であること（引く数はその段の倍数）
     const n = Number(item.q[0]), m = Number(item.q[2]);
@@ -144,10 +162,17 @@ Object.keys(unit.slotColor).forEach(k => {
 
 // 字形の宣言。数字を引き当てるだけの表で、答えは含まない
 same(unit.glyph['しょう'], ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']);
+same(unit.glyph['かける'], unit.glyph['しょう'], '①②の唱えの欄も④の商と同じ表');
+// 欄キー '' に宣言すると、③⑤⑥のあまりの欄まで漢数字になる
+assert.equal(unit.glyph[''], undefined, "欄キー '' に字形を宣言しないこと");
 
-// 配信の形。rows と veil が7・8番目に載り、載せない単元では null のまま
+// 配信の形。rows と veil が7・8番目に載り、載せない型では null のまま
 const packed = ctx.packQueue_(ctx.genQueue_(7, 7, 3));
 packed.forEach(x => { assert.equal(x.length, 8); assert.ok(x[6]); assert.equal(x[7], 2); });
+// ①②も並べ方を持つ（欄が式の途中に入るため）が、覆いは要らない
+[5, 1].forEach(m => ctx.packQueue_(ctx.genQueue_(7, m, 3)).forEach(x => {
+  assert.equal(x.length, 8); assert.ok(x[6]); assert.equal(x[7], null);
+}));
 ctx.packQueue_(ctx.genQueue_(7, 3, 3)).forEach(x => {
   assert.equal(x[6], null); assert.equal(x[7], null);
 });
@@ -261,9 +286,26 @@ gate.submit = () => { submits.push(gate.isRight()); };
 {
   const c = loadUi();
   assert.equal(c.glyph_('しょう', '9'), '九');
+  assert.equal(c.glyph_('かける', '9'), '九');
   assert.equal(c.glyph_('つみ', '72'), '72');
   assert.equal(c.glyph_('', '8'), '8');
   assert.equal(c.glyph_('しょう', ''), '');
+}
+
+// 6) ①②の欄。唱えの位置は漢数字で描き、強調の色は付かない。
+//    ここに色が出ると、④の紫（途中の積と最終の答えを分ける）が読めなくなる
+{
+  for (const mode of [5, 1]) {
+    const c = loadUi();
+    const item = unit.gen(ctx.rng_(55 + mode), mode);
+    c.queue = [item]; c.qi = 0; c.fi = 0;
+    c.typed = Object.fromEntries(item.f.map(f => [f, '']));
+    c.typed['かける'] = String(item.ans['かける']);
+    const html = item.f.map((f, i) => c.slotSpan_(item, i));
+    assert.match(html[0], />九<|>[一二三四五六七八九]</, '唱えの欄は漢数字: ' + html[0]);
+    assert.equal(ctx.DM_KANJI[item.ans['かける']], html[0].replace(/^.*>([^<]*)<.*$/, '$1'));
+    html.forEach(h => assert.equal(/accent/.test(h), false, '①②の欄は強調しない'));
+  }
 }
 
 console.log(`${count} generated questions: arithmetic, digit caps, types, rows/veil, mode gating and server scoring passed.`);
