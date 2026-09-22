@@ -345,11 +345,19 @@ function genQueue_(seed, mode, n) {
   return out;
 }
 
-/** 送信用に切り詰める: [出題トークン, 欄, 答え, まきじゃく, 問題型, はかりの文字盤] */
+/**
+ * 送信用に切り詰める:
+ * [出題トークン, 欄, 答え, まきじゃく, 問題型, はかりの文字盤, 並べ方, 覆い]
+ *
+ * 並べ方（rows）と覆い（veil）を問題ごとに載せるのは、まきじゃくや文字盤と同じ理由。
+ * 単元が「この問題はこう並べる」と決められないと、共通画面が単元ごとの形を
+ * 知ることになり、依存が逆流する。
+ */
 function packQueue_(q) {
   return q.map(function (x) {
     return [x.q, x.f, x.f.map(function (k) { return x.ans[k]; }),
-            x.ruler || null, x.t, x.dial || null];
+            x.ruler || null, x.t, x.dial || null,
+            x.rows || null, (x.veil == null ? null : x.veil)];
   });
 }
 
@@ -405,7 +413,10 @@ function boot() {
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
             // 合計で判定するときの換算率。ui.html が単位名を決め打ちしないために渡す
-            scale: UNIT.scale || {} },
+            scale: UNIT.scale || {},
+            // 欄ごとの数字の字形（九九の「八九72」を漢数字で見せるなど）。
+            // digitCap と同じく「宣言」であって、答えは含まない
+            glyph: UNIT.glyph || {} },
     settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
@@ -467,7 +478,8 @@ function nextPracticeItem(mode, type) {
   return {
     ok: true, q: it.q, f: it.f,
     ans: it.f.map(function (k) { return it.ans[k]; }),
-    ruler: it.ruler || null, t: it.t || null, dial: it.dial || null
+    ruler: it.ruler || null, t: it.t || null, dial: it.dial || null,
+    rows: it.rows || null, veil: (it.veil == null ? null : it.veil)
   };
 }
 

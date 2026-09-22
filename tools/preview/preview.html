@@ -110,7 +110,8 @@ async function main() {
     "  var m = practice ? pMode : mode;\n" +           // 練習は pMode。mode は本番用で更新されない
     "  var it = UNIT.gen(Math.random, m);\n" +
     "  if(pType){ for(var i=0;i<60 && it.t!==pType;i++) it = UNIT.gen(Math.random, m); }\n" +
-    "  return {q:it.q, f:it.f, ans:it.ans, ruler:it.ruler||null, t:it.t||null, dial:it.dial||null};\n" +
+    "  return {q:it.q, f:it.f, ans:it.ans, ruler:it.ruler||null, t:it.t||null, dial:it.dial||null,\n" +
+    "          rows:it.rows||null, veil:(it.veil == null ? null : it.veil)};\n" +
     "}";
 
   var newElseBlock =
@@ -120,6 +121,7 @@ async function main() {
     "  UNITS = UNIT.units || {};\n" +
     "  DIGITCAP = UNIT.digitCap || {};\n" +   // 実機の boot() と同じものを同じ変数に入れる
     "  SCALE = UNIT.scale || {};\n" +
+    "  GLYPH = UNIT.glyph || {};\n" +
     "  TYPES = UNIT.types || {};\n" +
     // 型の一覧は Core.gs と同じく gen を回して導出する
     "  TYPES_BY_MODE = {};\n" +

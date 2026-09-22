@@ -199,6 +199,13 @@ body{
   display:inline-block;text-align:center;cursor:pointer}
 .eq .slot.cur{border-bottom-color:var(--mint)}
 .eq.reveal .slot{color:var(--amber);border-bottom-color:var(--amber)}
+/* 覆い。前の段が通るまで、次の段を読ませない。
+   中身は消さずに visibility で隠す。表示を消すと外れた瞬間に式の幅が変わり、
+   児童は同じ式をもう一度読み直すことになる */
+.eq .line.veiled{position:relative}
+.eq .line.veiled > *{visibility:hidden}
+.eq .line.veiled::after{content:'';position:absolute;inset:-.06em -.18em;border-radius:.12em;
+  background:#1E2740;border:.06em dashed #3A4260}
 .footnote{text-align:center;padding-bottom:.8rem;font-size:.82rem;color:#4A5270;
   font-weight:600;height:1.2rem}
 #missline{position:absolute;left:20%;right:20%;bottom:calc(clamp(3rem,8vw,4.2rem) * 3 + 1.6rem);
@@ -380,6 +387,12 @@ var UNITS = {};
 var DIGITCAP = {};
 /* 欄キー → 合計で判定するときの換算率。Unit.gs が決める（例 {km:1000, m:100, cm:1}） */
 var SCALE = {};
+/* 欄キー → 数字の字形。Unit.gs が決める（例 {'しょう':['','一','二',…,'九']}）。
+   宣言された欄だけ、打った数字をこの表の字で描く。九九の「八九72」のように、
+   数字より漢数字のほうが唱え方に近い場面があるため。画面は意味を知らない */
+var GLYPH = {};
+/* 問題が自分の並べ方（rows）を持つとき、欄の位置を表すトークン */
+var SLOT = '_';
 /* 演算子トークン → 表示記号。四則は全単元共通なのでここに置く */
 var OPS = {'+':'+', '-':'−', '×':'×', '÷':'÷', '=':'='};
 
@@ -748,6 +761,45 @@ function dialSVG(d){
   };
 }
 
+/* 打った数字を、その欄の字形で描く。宣言が無い欄はそのまま返す */
+function glyph_(unit, sv){
+  var g = GLYPH[unit];
+  if(!g || !sv) return sv || '';
+  var out = '';
+  for(var i=0;i<sv.length;i++){ var d = g[+sv[i]]; out += (d === undefined ? sv[i] : d); }
+  return out;
+}
+
+/* 答えの欄ひとつ。既定の並べ方でも rows でも、欄はここだけで作る */
+function slotSpan_(q, i){
+  var unit = q.f[i];
+  return '<span class="slot'+(i===fi?' cur':'')+'" id="slot'+i+'" data-fi="'+i+'">'+
+         (glyph_(unit, typed[unit]) || '&nbsp;')+'</span>';
+}
+
+/**
+ * 覆う段かどうか。
+ * q.veil は「この番号以降の欄は、そこに着くまで見せない」という宣言で、
+ * 段の中に入っている欄の番号で判定する。欄の無い段は覆わない。
+ */
+function rowVeiled_(q, ri){
+  if(!q.rows || q.veil == null || fi >= q.veil) return false;
+  var si = 0, hit = false;
+  for(var r=0;r<q.rows.length;r++){
+    for(var c=0;c<q.rows[r].length;c++){
+      if(q.rows[r][c] !== SLOT) continue;
+      if(r === ri && si >= q.veil) hit = true;
+      si++;
+    }
+  }
+  return hit;
+}
+
+/* 覆いの向こうの欄へは行かせない。タップでも矢印でも同じ */
+function capField_(q, i){
+  return (q.veil != null && fi < q.veil && i >= q.veil) ? q.veil - 1 : i;
+}
+
 function unitSpan(u){
   var c = UNITS[u];
   return '<span class="u"'+(c ? ' style="color:'+c+'"' : '')+'>'+u+'</span>';
@@ -757,10 +809,7 @@ function draw(){
   var q = queue[qi];
 
   var rhs = '';
-  q.f.forEach(function(unit, i){
-    rhs += '<span class="slot'+(i===fi?' cur':'')+'" id="slot'+i+'" data-fi="'+i+'">'+
-           (typed[unit] || '&nbsp;')+'</span>' + unitSpan(unit);
-  });
+  q.f.forEach(function(unit, i){ rhs += slotSpan_(q, i) + unitSpan(unit); });
 
   $('play').classList.toggle('ruler-mode', !!(q.ruler || q.dial));
   $('play').classList.toggle('dial-mode', !!q.dial);
@@ -786,6 +835,27 @@ function draw(){
           Math.max(30, Math.min(100, uset_('ruler_width', 100)))+'%">'+ rulerSVG(q.ruler) +'</div>'+
         '<span class="line ans">'+rhs+'</span>'+
       '</div>';
+  }else if(q.rows){
+    /*
+     * 問題が自分の並べ方を持つ場合。'_' の位置に答えの欄が入る。
+     *
+     * 既定の経路は「式 ＝ 欄」に固定されていて、欄は必ず右端にまとまる。
+     * 「□＝4×8」のように答えが左に来る形も、
+     * 「八 □ □ ／ 73−72＝□」のように段をまたいで欄が散る形も、そこでは作れない。
+     * rows はその制約を外すためだけのもので、中身の意味は単元が持つ。
+     */
+    var si = 0;
+    eqEl.className = 'eq';
+    eqEl.innerHTML = q.rows.map(function(row, ri){
+      var inner = row.map(function(tok){
+        if(tok === SLOT) return slotSpan_(q, si++);
+        if(UNITS.hasOwnProperty(tok)) return unitSpan(tok);
+        if(OPS.hasOwnProperty(tok)) return '<span class="op">'+OPS[tok]+'</span>';
+        return '<span>'+tok+'</span>';
+      }).join('');
+      return '<span class="line'+(rowVeiled_(q, ri) ? ' veiled' : '')+'" data-row="'+ri+'">'+
+             inner+'</span>';
+    }).join('');
   }else{
     var lhs = '';
     q.q.forEach(function(tok){
@@ -822,9 +892,15 @@ function paintSlots(){
   q.f.forEach(function(unit, i){
     var el = $('slot'+i);
     if(!el) return;
-    el.innerHTML = typed[unit] || '&nbsp;';
+    el.innerHTML = glyph_(unit, typed[unit]) || '&nbsp;';
     el.classList.toggle('cur', i===fi);
   });
+  if(q.rows && q.veil != null){
+    var rows = eqEl.querySelectorAll('.line[data-row]');
+    for(var i=0;i<rows.length;i++){
+      rows[i].classList.toggle('veiled', rowVeiled_(q, +rows[i].dataset.row));
+    }
+  }
 }
 function clearTyped(){
   typed = {}; fi = 0;
@@ -931,7 +1007,8 @@ function submit(){
     fi = q.f.length - 1;
     paintSlots();
     eqEl.classList.add('reveal');
-    $('footnote').textContent = 'こたえは ' + q.f.map(function(u){ return q.ans[u]+u; }).join(' ');
+    $('footnote').textContent = 'こたえは ' +
+      q.f.map(function(u){ return glyph_(u, String(q.ans[u])) + u; }).join(' ');
     setTimeout(function(){
       locked = false;
       setHelp();
@@ -953,12 +1030,13 @@ function moveField(d){
   var q = queue[qi];
   if(!q) return;
   var n = q.f.length;
-  fi = Math.max(0, Math.min(n-1, fi + d));
+  fi = Math.max(0, Math.min(n-1, capField_(q, fi + d)));
   paintSlots();
 }
 function setField(i){
   var q = queue[qi];
   if(!q || locked) return;
+  i = capField_(q, i);
   if(i >= 0 && i < q.f.length){ fi = i; paintSlots(); }
 }
 
@@ -983,7 +1061,16 @@ function handleInput(k){
       // 前の欄 → 次の欄 への移動。正解と一致したら移る。
       // 一致しなくても、その欄の上限桁まで打てば移る。
       var lead = declared || ((q.ruler || q.dial) ? 1 : 2); // めもりの上位欄は1桁、他は最大2桁
-      if(parseInt(typed[unit],10) === q.ans[unit] || typed[unit].length >= lead){
+      var right = parseInt(typed[unit],10) === q.ans[unit];
+      // 覆いより手前の欄は、正解でないと次へ進めない。
+      // 埋めただけで越えられると、誤った値のまま次の段が開き、
+      // その段の式（前の段の答えを使って書いてある）と画面の中で食い違う。
+      // 打ち切っても越えられないので、そこで1回のまちがいとして数える。
+      if(q.veil != null && fi < q.veil && !right){
+        if(typed[unit].length >= lead) submit();
+        return;
+      }
+      if(right || typed[unit].length >= lead){
         fi++; paintSlots();
       }
     }else{
@@ -1141,7 +1228,8 @@ function pFetch(){
       pFail = 0;
       var a = {};
       r.f.forEach(function(u, i){ a[u] = r.ans[i]; });
-      pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null};
+      pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
+              rows:r.rows||null, veil:(r.veil == null ? null : r.veil)};
     }else{ pFail++; }
   }).withFailureHandler(function(){ pFetching = false; pFail++; })
     .nextPracticeItem(pMode, pType);
@@ -1191,7 +1279,8 @@ function beginPractice(timed){
       queue = r.qs.map(function(x){
         var a = {};
         x[1].forEach(function(u, i){ a[u] = x[2][i]; });
-        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null};
+        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null,
+                rows:x[6]||null, veil:(x[7] == null ? null : x[7])};
       });
       qi = 0; clearTyped(); ready = true;
     }).withFailureHandler(function(){
@@ -1274,7 +1363,8 @@ function begin(m){
       queue = r.qs.map(function(x){
         var a = {};
         x[1].forEach(function(u, i){ a[u] = x[2][i]; });
-        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null};
+        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null,
+                rows:x[6]||null, veil:(x[7] == null ? null : x[7])};
       });
       ready = true; clearTyped();
     }).withFailureHandler(function(){
@@ -1519,6 +1609,7 @@ function applyBoot(r, live){
   UNITS = r.unit.units || {};
   DIGITCAP = r.unit.digitCap || {};    // 古い localStorage の控えには無いので {} に落とす
   SCALE = r.unit.scale || {};
+  GLYPH = r.unit.glyph || {};          // 古い localStorage の控えには無いので {} に落とす
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);
