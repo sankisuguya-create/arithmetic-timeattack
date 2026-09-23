@@ -127,7 +127,7 @@ body{
 .ghost.sp{gap:.3em}
 @keyframes ghostup{
   0%{opacity:.9;transform:translate(-50%,0)}
-  100%{opacity:0;transform:translate(-50%,-.55em)}
+  100%{opacity:0;transform:translate(-50%,-1.15em)}
 }
 .ghost .u{font-size:.62em;color:var(--mint);opacity:.7;margin-right:.22em;margin-left:.02em}
 
@@ -837,15 +837,16 @@ function ghostHtml_(q){
 /**
  * 答えの残像を1枚置く。次の問題の描画より前に呼ぶこと（欄がまだ画面にある）。
  *
- * **式の上に置く。** 欄のあった場所から立ち上げると、次の問題の1段目を
- * 通り抜けることになる（②なら「64まで」の行）。主指標は提示から初打鍵までで、
- * そこは次の問題を読んでいる最中なので、読む場所に大きな字を重ねてはいけない。
- * 式の箱の上の余白へ出せば、重ならずに、目を動かさずに見える。
+ * **欄のあった場所から出す。** 最後の打鍵の瞬間、児童の視線は答えの欄にある。
+ * 式の外の余白に出すと次の問題と重ならないが、そこまで視線が動かないので
+ * 結局見られない。見えないものを描くのは無駄なので、次の問題と重なることを
+ * 承知で、視線のある場所から立ち上げる。
  *
- * 横は欄の真ん中に合わせる（答えが左に来る単元でも、答えの真上に出る）。
- * 縦は bottom で留める。上へ伸びるので、残像自身の高さを測らなくてよい。
- * まきじゃく・はかりは図が画面いっぱいなので、上の余白が足りなければ
- * 画面の上端で止める（stage からはみ出させない）。
+ * 重なるのは次の問題の上の段で、そこが最初に読まれる場所でもある。
+ * そのぶん ease-out で最初の数フレームに動きを寄せ、.42秒で消し切る。
+ *
+ * 横は欄の真ん中、縦は欄の上端に合わせる。既定の並べ方・rows・まきじゃく・
+ * はかりで答えの居場所が違うので、式の箱ではなく欄の矩形を見れば全部の経路で合う。
  *
  * 消すのは setTimeout。animationend は、動きを減らす設定で発火しない。
  */
@@ -854,9 +855,8 @@ function ghostAnswer_(q){
   var a = $('slot0'), b = $('slot'+(q.f.length-1));
   if(!stage || !a || !b) return;
   var sr = stage.getBoundingClientRect();
-  var er = eqEl.getBoundingClientRect();
   var ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
-  if(!sr.width || !er.height) return;
+  if(!sr.width || !ar.height) return;
 
   if(ghostEl){ ghostEl.remove(); ghostEl = null; }
   clearTimeout(ghostTimer);
@@ -867,9 +867,7 @@ function ghostAnswer_(q){
   var fs = parseFloat(getComputedStyle(eqEl).fontSize) || 40;
   g.style.fontSize = fs + 'px';                        // 式と同じ大きさで抜ける
   g.style.left = (((ar.left + br.right) / 2) - sr.left) + 'px';
-  // 式の上端より .12em 上に、残像の下端を置く。上端は stage の中に留める
-  g.style.bottom = Math.min(sr.bottom - er.top + fs * 0.12,
-                            sr.height - fs * 1.35) + 'px';
+  g.style.top = (Math.min(ar.top, br.top) - sr.top) + 'px';
   g.innerHTML = ghostHtml_(q);
   stage.appendChild(g);
   ghostEl = g;
