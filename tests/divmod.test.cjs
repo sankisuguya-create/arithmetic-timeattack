@@ -189,7 +189,7 @@ function loadUi(extra) {
     paintSlots() {}, locked: false, ready: true, practice: false, firstKeyAt: 0
   }, extra));
   for (const name of ['digitCap_', 'valOf', 'currentAns', 'isRight', 'handleInput',
-                      'moveField', 'capField_', 'glyph_', 'slotSpan_']) {
+                      'moveField', 'capField_', 'glyph_', 'slotSpan_', 'unitSpan', 'ghostHtml_']) {
     const m = ui.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?^\\}', 'm'));
     assert.ok(m, name); vm.runInContext(m[0], c);
   }
@@ -310,3 +310,41 @@ gate.submit = () => { submits.push(gate.isRight()); };
 
 console.log(`${count} generated questions: arithmetic, digit caps, types, rows/veil, mode gating and server scoring passed.`);
 console.log(`${accepted} answers passed through the shared UI key handler in ${keys} keystrokes; the veil gate, field caps and glyphs passed.`);
+
+/* ============================================================
+ *  7) 打ち終えた答えの残像（ghostHtml_）
+ *
+ *  自動確定は最後の打鍵と同時に次の問題を描くので、児童は自分の答えを見られない。
+ *  残像に出すのは「画面に出ていたのと同じ字」であること＝別経路の作り直しでないこと。
+ * ============================================================ */
+{
+  const c = loadUi();
+  for (const mode of MODES) {
+    const rand = ctx.rng_(880 + mode);
+    for (let i = 0; i < 200; i++) {
+      const item = unit.gen(rand, mode);
+      const html = c.ghostHtml_(item);
+
+      // 欄の値が、欄の順に、宣言どおりの字で出ていること
+      const shown = html.match(/<span>([^<]*)<\/span>/g).map(x => x.replace(/<\/?span>/g, ''));
+      same(shown, item.f.map(f => c.glyph_(f, String(item.ans[f]))), JSON.stringify(item));
+      assert.equal(shown.length, item.f.length);
+
+      if (item.rows) {
+        // rows の問題では欄キーは画面に出ない名前（かける／つみ／しょう／のこり）。
+        // 単位ラベルを足すと「9かける63」と読めない字が流れる
+        assert.equal(/class="u"/.test(html), false, '並べ方を持つ問題に単位ラベルを足さない: ' + html);
+        item.f.forEach(f => assert.equal(html.indexOf('>' + f + '<'), -1, '欄キーが漏れている: ' + html));
+      } else {
+        // 既定の並べ方は draw() と同じく単位ラベルを足す（「3あまり5」）
+        assert.equal((html.match(/class="u"/g) || []).length, item.f.length, html);
+      }
+    }
+  }
+  // 唱えの欄は漢数字、あまりは素の数字（残像でも画面と同じ）
+  const k = unit.gen(ctx.rng_(4), 5), r = unit.gen(ctx.rng_(4), 3);
+  assert.equal(c.ghostHtml_(k), '<span>' + ctx.DM_KANJI[k.ans['かける']] + '</span>');
+  assert.match(c.ghostHtml_(r), new RegExp('^<span>' + r.ans['あまり'] + '</span><span class="u">あまり</span>'));
+}
+
+console.log('the answer ghost renders the same glyphs the screen showed, with unit labels only on the default layout.');
