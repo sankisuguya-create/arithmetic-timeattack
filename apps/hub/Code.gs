@@ -47,8 +47,11 @@ function domainOf_(mail) {
 }
 function isTeacherDomain_(mail) { return domainOf_(mail) === TEACHER_DOMAIN; }
 
-/** 名簿になくても開ける（記録しない）。教師ドメインだけ */
-function isGuest_(mail) { return isTeacherDomain_(mail); }
+/**
+ * 名簿になくても開ける（記録しない）。教師ドメインに限らず、ログインしている全員。
+ * 名簿にない児童にも全リンクを出す（学年不明＝全部表示）。
+ */
+function isGuest_(mail) { return !!mail; }
 function toBool_(x) {
   if (x === true) return true;
   if (x === false || x === '' || x == null) return false;
@@ -106,7 +109,11 @@ function child_(mail) {
   var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
   for (var i = 1; i < v.length; i++) {
     if (String(v[i][0]).trim().toLowerCase() === mail) {
-      var c = { email: mail, grade: Number(v[i][1]), cls: String(v[i][2]), name: String(v[i][4] || '') };
+      // 氏名の無い登録は名簿扱いしない（単元側の記録・分析の対象外と同じ条件）。
+      // 本人はゲストとして全リンクを使える
+      var name = String(v[i][4] || '').trim();
+      if (!name) continue;
+      var c = { email: mail, grade: Number(v[i][1]), cls: String(v[i][2]), name: name };
       cache_().put(key, JSON.stringify(c), TTL.roster);
       return c;
     }

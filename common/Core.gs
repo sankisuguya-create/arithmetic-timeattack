@@ -42,7 +42,7 @@ var BASE_DEFAULTS = {
 
 var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
 var QN = 200;                              // 1セッションの出題数
-var SCHEMA_VERSION = 3;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示
+var SCHEMA_VERSION = 4;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし）
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
 /**
  * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
@@ -104,8 +104,13 @@ function domainOf_(mail) {
 
 function isTeacherDomain_(mail) { return domainOf_(mail) === TEACHER_DOMAIN; }
 
-/** 名簿になくても試用できる（記録しない）。教師ドメインだけ */
-function isGuest_(mail) { return isTeacherDomain_(mail); }
+/**
+ * 名簿になくても試用できる（記録しない＝分析の対象にもならない）。
+ * 教師ドメインに限らず、ログインしている全員。
+ * 名簿にない児童は「おためし」として全モードを使える。記録されないので、
+ * 転入直後や他学年の児童が触っても分析は濁らない。
+ */
+function isGuest_(mail) { return !!mail; }
 
 function toBool_(x) {
   if (x === true) return true;
@@ -149,13 +154,32 @@ function child_(mail) {
   var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
   for (var i = 1; i < v.length; i++) {
     if (String(v[i][0]).trim().toLowerCase() === mail) {
+      // 氏名の無い登録は記録・分析の対象にしない。本人はゲストとして使える
+      var name = String(v[i][4] || '').trim();
+      if (!name) continue;
       var c = { email: mail, grade: Number(v[i][1]), cls: String(v[i][2]),
-                no: Number(v[i][3]), name: String(v[i][4]) };
+                no: Number(v[i][3]), name: name };
       cache_().put(key, JSON.stringify(c), TTL.roster);
       return c;
     }
   }
   return null;   // 未登録はキャッシュしない（名簿追加が即反映されるように）
+}
+
+/**
+ * 名簿に email と氏名の両方がある児童のメール集合。{ mail: true }
+ * 記録が書き込めるのはこの児童だけだが、集計側でも同じ条件で絞る。
+ * 名簿から氏名を消した児童の過去分まで weak_child に残ると、
+ * 「分析の対象は名簿にある児童だけ」という約束が画面上で破れるため。
+ */
+function namedMails_() {
+  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
+  var set = {};
+  for (var i = 1; i < v.length; i++) {
+    var mail = String(v[i][0]).trim().toLowerCase();
+    if (mail && String(v[i][4] || '').trim()) set[mail] = true;
+  }
+  return set;
 }
 
 function classKey_(c) { return c.grade + '-' + c.cls; }
@@ -1018,6 +1042,7 @@ function aggregateCore_() {
   var cfg = config_();
   var v = sh_(SHEETS.LOG).getDataRange().getValues();
   var child = {}, typeMiss = {}, wrongCnt = {};
+  var named = namedMails_();   // 分析の対象は、名簿に email と氏名の両方がある児童だけ
 
   function slot(mail, row) {
     if (!child[mail]) {
@@ -1033,7 +1058,7 @@ function aggregateCore_() {
 
   for (var i = 1; i < v.length; i++) {
     var mail = String(v[i][1]).toLowerCase();
-    if (!mail) continue;
+    if (!mail || !named[mail]) continue;
     var row = v[i];
 
     if (cutoff) {
@@ -1073,7 +1098,7 @@ function aggregateCore_() {
 
   writeWeakChild_(child, cfg);
   writeWeakClass_(typeMiss, wrongCnt);
-  writeMistakes_(v);
+  writeMistakes_(v, named);
 
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
   var span = days > 0 ? ('直近' + days + '日') : '全期間';
@@ -1099,8 +1124,9 @@ function fmtByType_(type, joined) {
  * 誰が・どの問題を・何と間違えたかを1行1件で並べる。
  * log の wrong_items を展開する。新しい記録ほど上に来る。直近2000件まで。
  * 旧形式（型｜出題｜誤答 の3分割）にも後方互換で対応する（正答欄は空欄になる）。
+ * named が渡されたときは、その集合に無い児童の記録を除く（名簿外は分析対象外）。
  */
-function writeMistakes_(logRows) {
+function writeMistakes_(logRows, named) {
   var sh = ss_().getSheetByName('mistakes') || ss_().insertSheet('mistakes');
   sh.clear(); sh.setConditionalFormatRules([]);
 
@@ -1109,6 +1135,7 @@ function writeMistakes_(logRows) {
 
   for (var i = 1; i < logRows.length; i++) {
     var row = logRows[i];
+    if (named && !named[String(row[1] || '').toLowerCase()]) continue;
     var wrongStr = String(row[14] || '');
     if (!wrongStr) continue;
     wrongStr.split(',').forEach(function (entry) {
@@ -1365,7 +1392,7 @@ function applyFriendlyStyling_() {
   });
 
   var notes = {
-    roster: 'ここに児童を登録します（email／学年／組／番号／氏名）。\n学年・組の表記はそろえてください（「2」に統一。「2組」などを混ぜない）。',
+    roster: 'ここに児童を登録します（email／学年／組／番号／氏名）。\n学年・組の表記はそろえてください（「2」に統一。「2組」などを混ぜない）。\n記録・分析（weak_child など）の対象になるのは、email と氏名の両方が入っている児童だけです。\n名簿にないアカウントも「おためし」として全モードを使えますが、記録は一切されません。',
     config: '各種設定です。通常は教師用ページ（?page=teacher）から変更してください。\n直接編集した場合、児童への反映は最大1分遅れます（教師用ページから保存すると即時）。',
     class_config: 'クラスごとに、どのモードを児童に見せるかの設定です。チェックの無いモードは表示されません。\n' +
                   'A列は roster の「学年」「組」から作る「学年-組」と1文字も違ってはいけません（例: 3-1）。\n' +
