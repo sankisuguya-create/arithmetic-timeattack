@@ -173,7 +173,7 @@ function doGet(e) {
       .setTitle('リンク集 設定')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
-  return HtmlService.createHtmlOutputFromFile('index')
+  return HtmlService.createHtmlOutputFromFile('links')
     .setTitle(config_().title)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }

@@ -52,7 +52,7 @@ assert.equal(seen.size, Object.keys(unit.types).length);
 assert.throws(() => unit.gen(() => 0, 7));
 
 // Exercise the actual shared numeric-key handler, including automatic field movement.
-const ui = read('common/ui.html');
+const ui = read('common/index.html');
 const input = vm.createContext({
   DIGITCAP: unit.digitCap, SCALE: {}, performance: { now: () => 100 },
   paintSlots() {}, locked: false, ready: true, practice: false, firstKeyAt: 0

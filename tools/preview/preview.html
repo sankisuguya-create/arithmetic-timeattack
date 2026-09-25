@@ -22,7 +22,7 @@
 <script>
 /**
  * apps/<unit>/Unit.gs を、Google Apps Script にデプロイせずブラウザだけで見るための開発ツール。
- * common/ui.html は改変しない（このファイルが fetch した内容をその場で加工するだけ）。
+ * common/index.html は改変しない（このファイルが fetch した内容をその場で加工するだけ）。
  *
  * 使い方: このファイルを静的サーバーで配信し、
  *   .../tools/preview/preview.html?unit=weight のように unit= で単元idを指定して開く。
@@ -34,15 +34,15 @@
  * 何をしているか:
  *   1. common/Core.gs から ri_ / pick_（Unit.gs が使う補助関数。docs/ADD_UNIT.md 参照）を取り出す
  *   2. apps/<unit>/Unit.gs をそのまま実行して UNIT を得る（出題ロジックは一切書き直さない）
- *   3. common/ui.html を取得し、GAS の外で動かすための2箇所だけを汎用の実装に差し替える
+ *   3. common/index.html を取得し、GAS の外で動かすための2箇所だけを汎用の実装に差し替える
  *      - previewItem()  … ダミーの代わりに UNIT.gen(Math.random, mode) を呼ぶ
  *      - 起動時の else 分岐 … MODES / UNITS / CFG.open を UNIT.modes / UNIT.units から組み立てる
  *   4. 1〜3を1つの HTML として iframe に流し込む
  *
  * 単元を追加してもこのファイルは変更不要（UNIT.gen / UNIT.modes / UNIT.units を読むだけの汎用実装のため）。
  *
- * 自動確定の桁数は、実機の boot() と同じく DIGITCAP に入れて ui.html に渡す。
- * ui.html 側の経路を実機と共有しているので、digitCap の宣言ミスはここで再現する。
+ * 自動確定の桁数は、実機の boot() と同じく DIGITCAP に入れて index.html に渡す。
+ * index.html 側の経路を実機と共有しているので、digitCap の宣言ミスはここで再現する。
  */
 
 var KNOWN_UNITS = ['kuku', 'length', 'weight', 'divmod', 'bignum', 'decimal'];
@@ -80,7 +80,7 @@ async function main() {
   var results = await Promise.allSettled([
     fetch(base + 'common/Core.gs').then(function (r) { if (!r.ok) throw new Error('Core.gs: ' + r.status); return r.text(); }),
     fetch(base + 'apps/' + unit + '/Unit.gs').then(function (r) { if (!r.ok) throw new Error('apps/' + unit + '/Unit.gs: ' + r.status); return r.text(); }),
-    fetch(base + 'common/ui.html').then(function (r) { if (!r.ok) throw new Error('ui.html: ' + r.status); return r.text(); })
+    fetch(base + 'common/index.html').then(function (r) { if (!r.ok) throw new Error('index.html: ' + r.status); return r.text(); })
   ]);
 
   var errs = results.filter(function (r) { return r.status === 'rejected'; }).map(function (r) { return r.reason.message; });
@@ -101,7 +101,7 @@ async function main() {
   // どちらの形でも同じ else 分岐を捕まえる
   var elseBlockRe = /(?<=(?:\.boot\(\)|bootFetch\(\));\s{0,20})\}else\{[\s\S]*?renderMenu\(\);\s*show\('start'\);\s*\}/;
   if (!previewItemRe.test(uiText) || !elseBlockRe.test(uiText)) {
-    fail('common/ui.html の想定していた箇所（previewItem / 起動時の else 分岐）が見つかりませんでした。ui.html の構造が変わった可能性があります。');
+    fail('common/index.html の想定していた箇所（previewItem / 起動時の else 分岐）が見つかりませんでした。index.html の構造が変わった可能性があります。');
     return;
   }
 

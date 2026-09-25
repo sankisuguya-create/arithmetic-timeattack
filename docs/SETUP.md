@@ -14,10 +14,10 @@
 | Apps Script 上の名前 | 中身 |
 |---|---|
 | `コード.gs`（既定） | `apps/hub/Code.gs` |
-| `index`（HTML） | `apps/hub/index.html` |
+| `links`（HTML） | `apps/hub/links.html` |
 | `teacher`（HTML） | `apps/hub/teacher.html` |
 
-HTML は `ファイル > + > HTML` で追加。**拡張子は入力しない**（`index` とだけ）。
+HTML は `ファイル > + > HTML` で追加。**拡張子は入力しない**（`links` とだけ）。
 
 4. 関数 `setup` を1回実行して承認する
 5. `roster` シートに児童を入力する
@@ -45,7 +45,7 @@ HTML は `ファイル > + > HTML` で追加。**拡張子は入力しない**�
 |---|---|
 | `Core`（.gs） | `common/Core.gs` |
 | `Unit`（.gs） | `apps/<単元>/Unit.gs` |
-| `index`（HTML） | `common/ui.html` |
+| `index`（HTML） | `common/index.html` |
 | `teacher`（HTML） | `common/teacher.html` |
 
 3. `setup` を1回実行して承認する

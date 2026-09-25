@@ -16,7 +16,7 @@ clasp login
 build/kuku/
   Core.gs        ← common/Core.gs のコピー
   Unit.gs        ← apps/kuku/Unit.gs のコピー
-  index.html     ← common/ui.html のコピー
+  index.html     ← common/index.html のコピー
   teacher.html   ← common/teacher.html のコピー
   appsscript.json
   .clasp.json    ← scriptId を書く
@@ -29,7 +29,7 @@ build/kuku/
 mkdir -p build/kuku
 cp common/Core.gs        build/kuku/Core.gs
 cp apps/kuku/Unit.gs     build/kuku/Unit.gs
-cp common/ui.html        build/kuku/index.html
+cp common/index.html     build/kuku/index.html
 cp common/teacher.html   build/kuku/teacher.html
 cd build/kuku && clasp push
 ```

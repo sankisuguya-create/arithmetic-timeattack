@@ -180,7 +180,7 @@ ctx.packQueue_(ctx.genQueue_(7, 3, 3)).forEach(x => {
 /* ============================================================
  *  共通画面のキー処理を実際に通す
  * ============================================================ */
-const ui = read('common/ui.html');
+const ui = read('common/index.html');
 function loadUi(extra) {
   const c = vm.createContext(Object.assign({
     DIGITCAP: unit.digitCap, SCALE: {}, GLYPH: unit.glyph || {}, UNITS: unit.units || {},
