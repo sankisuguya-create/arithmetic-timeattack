@@ -44,7 +44,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 ```
 common/
   Core.gs        共通エンジン。認証・出題配信・再採点・記録・ランキング・分析
-  ui.html        共通の児童画面（レイアウト・キー配置・タイマー・送信）
+  index.html     共通の児童画面（レイアウト・キー配置・タイマー・送信）
   teacher.html   共通の教師画面（設定・クラスごとの公開モード・集計）
 apps/
   kuku/Unit.gs   九九の出題定義
@@ -53,7 +53,7 @@ apps/
   divmod/Unit.gs あまりのあるわり算の出題定義
   bignum/Unit.gs 大きな数の出題定義（詳細: apps/bignum/README.md）
   decimal/Unit.gs 小数の出題定義
-  hub/           ハブ（Code.gs / index.html / teacher.html）
+  hub/           ハブ（Code.gs / links.html / teacher.html）
 docs/
   ARCHITECTURE.md  設計の考え方
   SETUP.md         設置手順

@@ -420,7 +420,7 @@ function boot() {
   var c = child_(mail);
 
   // 単元が UNIT.settings で宣言した設定だけを児童画面に渡す。
-  // Core はキーの意味を知らない（何に使うかは単元と ui.html の描画側の取り決め）。
+  // Core はキーの意味を知らない（何に使うかは単元と index.html の描画側の取り決め）。
   var uset = {};
   (UNIT.settings || []).forEach(function (s) {
     var v = cfg[s.key];
@@ -430,13 +430,13 @@ function boot() {
   var base = {
     ok: true,
     // digitCap は「宣言」なので、そのままクライアントへ渡してよい（答えは含まない）。
-    // 渡さないと ui.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
+    // 渡さないと index.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
-            // 合計で判定するときの換算率。ui.html が単位名を決め打ちしないために渡す
+            // 合計で判定するときの換算率。index.html が単位名を決め打ちしないために渡す
             scale: UNIT.scale || {},
             // 欄ごとの数字の字形（九九の「八九72」を漢数字で見せるなど）。
             // digitCap と同じく「宣言」であって、答えは含まない

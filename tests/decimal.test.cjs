@@ -71,7 +71,7 @@ assert.equal(seen.size, Object.keys(unit.types).length);
 assert.throws(() => unit.gen(() => 0, 6));
 
 // 共通UIの数字入力で、各問題が宣言桁数どおりに確定することも通す。
-const ui = read('common/ui.html');
+const ui = read('common/index.html');
 const input = vm.createContext({
   DIGITCAP: unit.digitCap, SCALE: {}, performance: { now: () => 100 },
   paintSlots() {}, locked: false, ready: true, practice: false, firstKeyAt: 0
