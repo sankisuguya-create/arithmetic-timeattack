@@ -42,7 +42,7 @@ var BASE_DEFAULTS = {
 
 var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
 var QN = 200;                              // 1セッションの出題数
-var SCHEMA_VERSION = 4;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし）
+var SCHEMA_VERSION = 5;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし） / 5 = 年度ロールオーバー用トリガー
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
 
 /**
@@ -918,6 +918,41 @@ function medals_(ck, mail, limitSec) {
     out[m] = k >= 0 ? ['🥇', '🥈', '🥉'][k] : '';
   });
   return out;
+}
+
+/**
+ * 年度替わり（4/1）の名簿引き継ぎ。毎朝のトリガーから呼び、4/1だけ動く。
+ * roster の中身を roster_<前年度> に「値」で退避（IMPORTRANGEの結果を固める）し、
+ * roster は新年度用に戻す。A1に式（IMPORTRANGE）があれば式を戻すので、
+ * ハブ側が新年度になれば名簿はそのまま流れ替わる。
+ * roster_<前年度> がすでにあれば何もしない（冪等）。
+ */
+function rolloverRoster(now) {
+  now = (now instanceof Date) ? now : new Date();   // トリガー呼び出しはイベントobjが来る
+  var tz = Session.getScriptTimeZone();
+  if (Utilities.formatDate(now, tz, 'MMdd') !== '0401') return;
+  var ss = ss_();
+  var rs = ss.getSheetByName(SHEETS.ROSTER);
+  if (!rs) return;
+  var archName = 'roster_' + (Number(Utilities.formatDate(now, tz, 'yyyy')) - 1);   // 4/1の年度は新年度。残すのは1つ前
+  if (ss.getSheetByName(archName)) return;             // 済み
+
+  var v = rs.getDataRange().getValues();
+  var hasKids = v.some(function (r) { return String(r[0]).indexOf('@') >= 0; });
+  if (!hasKids) return;                                // 空の名簿は残さない（初めての年度など）
+
+  var arch = ss.insertSheet(archName);
+  arch.getRange(1, 1, v.length, v[0].length).setValues(v);   // 値だけ（式は残さない）
+  arch.setTabColor('#93C47D');
+
+  var a1 = rs.getRange(1, 1).getFormula();
+  var head = rs.getRange(1, 1, 1, 5).getValues()[0];
+  rs.clearContents();
+  if (a1) {
+    rs.getRange(1, 1).setFormula(a1);                  // IMPORTRANGEを戻す
+  } else {
+    rs.getRange(1, 1, 1, 5).setValues([head[0] ? head : ['email', '学年', '組', '番号', '氏名']]);
+  }
 }
 
 /** 時間主導トリガー。前日以前の行を落とすだけ */
@@ -1934,7 +1969,7 @@ function ensureSheets_() {
 }
 
 function ensureTriggers_() {
-  var want = { nightlyAggregate: 23, resetDaily: 1 }, have = {};
+  var want = { nightlyAggregate: 23, rolloverRoster: 2, resetDaily: 3 }, have = {};
   ScriptApp.getProjectTriggers().forEach(function (t) { have[t.getHandlerFunction()] = true; });
   for (var fn in want) {
     if (!have[fn]) ScriptApp.newTrigger(fn).timeBased().atHour(want[fn]).everyDays(1).create();
