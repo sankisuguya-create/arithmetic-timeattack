@@ -11,21 +11,39 @@ const ROOT = path.resolve(__dirname, '..', '..');
 function read(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
 
 /**
- * Core.gs と apps/<name>/Unit.gs を1つの vm コンテキストに読み込んで返す。
+ * 単元の置き場は apps/grade<学年>/<id>/。id から置き場を引く（id は学年をまたいで一意）。
+ * 返り値は ROOT からの相対パス（例 'apps/grade3/kuku'）。
+ */
+function unitDir(id) {
+  const apps = path.join(ROOT, 'apps');
+  const hits = fs.readdirSync(apps).filter(g => /^grade[1-6]$/.test(g))
+    .filter(g => fs.existsSync(path.join(apps, g, id, 'Unit.gs')));
+  if (hits.length !== 1) throw new Error(`単元 ${id} の置き場が ${hits.length} 件あります（apps/grade*/${id}）`);
+  return `apps/${hits[0]}/${id}`;
+}
+
+/**
+ * Core.gs と <置き場>/Unit.gs を1つの vm コンテキストに読み込んで返す。
  * ctx.UNIT で宣言を、ctx.genQueue_ / ctx.typesInMode_ / ctx.match_ 等で
  * エンジン側の関数をそのまま叩ける。
  */
 function loadUnit(name) {
   const ctx = {};
   vm.createContext(ctx);
-  vm.runInContext(read('common/Core.gs') + '\n' + read(`apps/${name}/Unit.gs`), ctx);
+  vm.runInContext(read('common/Core.gs') + '\n' + read(`${unitDir(name)}/Unit.gs`), ctx);
   return ctx;
 }
 
-/** apps/ 直下で Unit.gs を持つ単元名の一覧（hub のような非単元アプリは含まない） */
+/** apps/grade<学年>/ の下で Unit.gs を持つ単元 id の一覧（hub のような非単元アプリは含まない） */
 function unitNames() {
-  return fs.readdirSync(path.join(ROOT, 'apps'))
-    .filter(d => fs.existsSync(path.join(ROOT, 'apps', d, 'Unit.gs')));
+  const apps = path.join(ROOT, 'apps');
+  const out = [];
+  fs.readdirSync(apps).filter(g => /^grade[1-6]$/.test(g)).forEach(g => {
+    fs.readdirSync(path.join(apps, g))
+      .filter(d => fs.existsSync(path.join(apps, g, d, 'Unit.gs')))
+      .forEach(d => out.push(d));
+  });
+  return out;
 }
 
 /**
@@ -50,4 +68,4 @@ function uiContext(unit, extraNames) {
   return ctx;
 }
 
-module.exports = { ROOT, read, loadUnit, unitNames, uiContext };
+module.exports = { ROOT, read, unitDir, loadUnit, unitNames, uiContext };

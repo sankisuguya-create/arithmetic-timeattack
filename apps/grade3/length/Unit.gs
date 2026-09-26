@@ -5,6 +5,7 @@
 
 var UNIT = {
   id: 'length',
+  grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '長さのたんい タイムアタック！',
   teacherTitle: '長さのたんい 設定・分析',
 

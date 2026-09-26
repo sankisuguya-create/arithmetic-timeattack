@@ -1,6 +1,7 @@
 /** 大きな数TA。万・億・兆の位取りを、各欄4桁以内で練習する。 */
 var UNIT = {
   id: 'bignum',
+  grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '大きな数 タイムアタック！',
   teacherTitle: '大きな数 設定・分析',
   defaults: { slow_ms: 5000 },

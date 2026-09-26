@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const ctx = vm.createContext({});
-vm.runInContext(read('common/Core.gs') + '\n' + read('apps/bignum/Unit.gs'), ctx);
+vm.runInContext(read('common/Core.gs') + '\n' + read(require('./lib/kit.cjs').unitDir('bignum') + '/Unit.gs'), ctx);
 const unit = ctx.UNIT;
 const scales = { '': 1n, '万': 10000n, '億': 100000000n, '兆': 1000000000000n };
 const seen = new Set();

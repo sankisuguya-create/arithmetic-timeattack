@@ -44,7 +44,7 @@ HTML は `ファイル > + > HTML` で追加。**拡張子は入力しない**�
 | Apps Script 上の名前 | 中身 |
 |---|---|
 | `Core`（.gs） | `common/Core.gs` |
-| `Unit`（.gs） | `apps/<単元>/Unit.gs` |
+| `Unit`（.gs） | `apps/grade<学年>/<単元>/Unit.gs` |
 | `index`（HTML） | `common/index.html` |
 | `teacher`（HTML） | `common/teacher.html` |
 
