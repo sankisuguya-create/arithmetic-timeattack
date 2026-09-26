@@ -12,12 +12,24 @@
   #bar .lbl{opacity:.6;font-size:.8rem;margin-left:auto}
   #frame{width:100%;height:calc(100% - 46px);border:0;background:#101420}
   #msg{color:#f3b3b3;font-family:monospace;white-space:pre-wrap;padding:1rem}
+  /* 単元メニュー（?unit= なしで開いたとき）。ハブと同じく、カードから各単元へ飛ぶ */
+  #menu{display:none;padding:1.2rem;max-width:1100px;margin:0 auto;color:#eee}
+  #menu h1{font-size:1.1rem;margin:.2rem 0 1rem;opacity:.8}
+  #menu .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.8rem}
+  #menu a.card{display:block;background:#252b3b;border:2px solid #3a4260;border-radius:12px;
+    padding:.8rem 1rem;color:#eee;text-decoration:none}
+  #menu a.card:hover,#menu a.card:focus{border-color:#9fd8c2;outline:none}
+  #menu .t{font-weight:800;font-size:1.05rem}
+  #menu .id{font-family:monospace;font-size:.78rem;opacity:.55;margin-left:.4rem}
+  #menu .m{font-size:.8rem;opacity:.75;margin-top:.4rem;line-height:1.5}
+  #menu .err{color:#f3b3b3}
 </style>
 </head>
 <body>
 <div id="bar">
   <span style="font-weight:800">プレビュー</span>
 </div>
+<div id="menu"><h1>単元を えらぶ</h1><div class="grid" id="grid"></div></div>
 <iframe id="frame"></iframe>
 <script>
 /**
@@ -51,19 +63,60 @@ function q(name) {
   return new URLSearchParams(location.search).get(name);
 }
 
-function buildBar(current) {
+/**
+ * 上の帯。単元を開いているときは「← メニュー」と単元名だけを置く。
+ * 単元が増えると横一列のリンクは帯からあふれるので、切り替えはメニューに任せる。
+ */
+function buildBar(current, title) {
   var bar = document.getElementById('bar');
-  KNOWN_UNITS.forEach(function (id) {
-    var a = document.createElement('a');
-    a.href = '?unit=' + id;
-    a.textContent = id;
-    if (id === current) a.className = 'on';
-    bar.appendChild(a);
-  });
+  if (!current) return;
+  var back = document.createElement('a');
+  back.href = '?';
+  back.textContent = '← メニュー';
+  bar.appendChild(back);
+  var name = document.createElement('span');
+  name.style.fontWeight = '800';
+  name.textContent = title || current;
+  bar.appendChild(name);
   var lbl = document.createElement('span');
   lbl.className = 'lbl';
   lbl.textContent = 'apps/' + current + '/Unit.gs のプレビュー（GAS未デプロイ）';
   bar.appendChild(lbl);
+}
+
+/**
+ * 単元メニュー。KNOWN_UNITS の各 Unit.gs を読み、タイトルとモード名をカードにする。
+ * 単元の一覧を自動で集めないのは、serve.ps1 がディレクトリの一覧を返さないため。
+ * 単元を足したら KNOWN_UNITS に id を1つ足す（カードの中身は Unit.gs から取るので、ここは書かない）。
+ */
+async function showMenu() {
+  document.getElementById('frame').style.display = 'none';
+  document.getElementById('menu').style.display = 'block';
+  var grid = document.getElementById('grid');
+  var texts = await Promise.allSettled(KNOWN_UNITS.map(function (id) {
+    return fetch('../../apps/' + id + '/Unit.gs', NOCACHE).then(function (r) {
+      if (!r.ok) throw new Error(r.status); return r.text();
+    });
+  }));
+  KNOWN_UNITS.forEach(function (id, i) {
+    var a = document.createElement('a');
+    a.className = 'card'; a.href = '?unit=' + id;
+    var title = id, modes = '', err = '';
+    try {
+      if (texts[i].status !== 'fulfilled') throw new Error('読み込めません（' + texts[i].reason.message + '）');
+      // gen は呼ばない（宣言を読むだけ）。ri_ / pick_ が無くても UNIT の定義までは通る
+      var U = new Function(texts[i].value + '\n;return UNIT;')();
+      title = (U.title || id).replace(/\s*タイムアタック！?\s*$/, '');
+      modes = (U.modes || []).map(function (m) { return m.id + ' ' + m.name; }).join('　');
+    } catch (e) { err = String(e.message || e); }
+    a.innerHTML = '<div><span class="t"></span><span class="id"></span></div><div class="m"></div>';
+    a.querySelector('.t').textContent = title;
+    a.querySelector('.id').textContent = id;
+    var m = a.querySelector('.m');
+    m.textContent = err || modes;
+    if (err) m.className = 'm err';
+    grid.appendChild(a);
+  });
 }
 
 function fail(msg) {
@@ -77,8 +130,8 @@ function fail(msg) {
 var NOCACHE = { cache: 'no-store' };
 
 async function main() {
-  var unit = q('unit') || 'length';
-  buildBar(unit);
+  var unit = q('unit');
+  if (!unit) { buildBar(null); showMenu(); return; }
 
   var base = '../../';
   var results = await Promise.allSettled([
@@ -89,10 +142,13 @@ async function main() {
 
   var errs = results.filter(function (r) { return r.status === 'rejected'; }).map(function (r) { return r.reason.message; });
   if (errs.length) {
+    buildBar(unit);
     fail('読み込みに失敗しました。静的サーバーがリポジトリのルートを配信しているか確認してください。\n\n' + errs.join('\n'));
     return;
   }
   var coreText = results[0].value, unitText = results[1].value, uiText = results[2].value;
+  var tm = unitText.match(/title:\s*'([^']+)'/);
+  buildBar(unit, tm ? tm[1] : unit);
 
   var riMatch = coreText.match(/function ri_\([^)]*\)\s*\{[^}]*\}/);
   var pickMatch = coreText.match(/function pick_\([^)]*\)\s*\{[^}]*\}/);
