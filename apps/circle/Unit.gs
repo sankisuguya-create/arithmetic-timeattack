@@ -117,10 +117,9 @@ function ciCircle_(cx, cy, r, stroke, width) {
 function ciDot_(p) {
   return '<circle cx="' + ciR_(p[0]) + '" cy="' + ciR_(p[1]) + '" r="6" fill="' + CI_INK + '"/>';
 }
-function ciSeg_(p, q, dash) {
+function ciSeg_(p, q) {
   return '<line x1="' + ciR_(p[0]) + '" y1="' + ciR_(p[1]) + '" x2="' + ciR_(q[0]) + '" y2="' + ciR_(q[1]) +
-         '" stroke="' + CI_INK + '" stroke-width="6" stroke-linecap="round"' +
-         (dash ? ' stroke-dasharray="10 8"' : '') + '/>';
+         '" stroke="' + CI_INK + '" stroke-width="6" stroke-linecap="round"/>';
 }
 function ciText_(x, y, s, size) {
   return '<text x="' + ciR_(x) + '" y="' + ciR_(y) + '" font-size="' + (size || 30) +
@@ -256,6 +255,30 @@ function ciSphere_(rand) {
   return { t: t, q: ask, f: ['cm'], ans: { cm: ans }, tag: t + ':' + label, fig: ciSvg_(W, H, body) };
 }
 
+/**
+ * p から q までの長さを示す括弧（｛ を横倒しにした形）。side は括弧の張り出す向き（+1/-1、
+ * p→q の進行方向に対して右が +1）。返り値の tip は括弧の先端（字を置く位置の手前）。
+ *
+ * 点線（線分）で示すと、図の中の半径・直径の線と同じ「線」に見え、
+ * 「箱の辺に線が引いてある＝その線の長さ」と、長さを線そのものと取り違えさせる。
+ * 括弧は「ここからここまで」という範囲の記号で、線分の仲間に見えない。
+ * 色も選ぶ対象の線（白）と分けて、番号・長さと同じ色にする。
+ */
+function ciBrace_(p, q, side) {
+  var dx = q[0] - p[0], dy = q[1] - p[1], L = Math.sqrt(dx * dx + dy * dy);
+  var ux = dx / L, uy = dy / L, nx = -uy * side, ny = ux * side, k = 14;
+  function pt(t, o) { return ciR_(p[0] + ux * t + nx * o) + ' ' + ciR_(p[1] + uy * t + ny * o); }
+  var m = L / 2;
+  var d = 'M' + pt(0, 0) + ' Q' + pt(0, k) + ' ' + pt(k, k) +
+          ' L' + pt(m - k, k) + ' Q' + pt(m, k) + ' ' + pt(m, 2 * k) +
+          ' Q' + pt(m, k) + ' ' + pt(m + k, k) +
+          ' L' + pt(L - k, k) + ' Q' + pt(L, k) + ' ' + pt(L, 0);
+  return {
+    svg: '<path d="' + d + '" fill="none" stroke="' + CI_LABEL + '" stroke-width="4" stroke-linejoin="round"/>',
+    tip: [p[0] + ux * m + nx * 2 * k, p[1] + uy * m + ny * 2 * k]
+  };
+}
+
 /* ============================================================
  *  ⑤ ならんだ まる（箱に入ったボール）
  * ============================================================ */
@@ -268,7 +291,7 @@ function ciSphere_(rand) {
 function ciBox_(rows, cols, d, give, ask, boxLen) {
   // ボール1こ分を120画素に固定し、図の外枠を中身に合わせて切る。
   // 外枠を固定幅にすると、ボールが少ない図ほど余白ばかりになり、表示が縮んで長さの字が読めない
-  var u = 120, pad = 70;
+  var u = 120, pad = 90;
   var bw = u * cols, bh = u * rows, x0 = pad, y0 = pad;
   var W = bw + pad * 2, H = bh + pad * 2;
   var body = '<rect x="' + ciR_(x0) + '" y="' + ciR_(y0) + '" width="' + ciR_(bw) + '" height="' + ciR_(bh) +
@@ -283,12 +306,15 @@ function ciBox_(rows, cols, d, give, ask, boxLen) {
   } else if (give === 'r') {
     body += ciSeg_(c, [x0 + u, c[1]]) + ciDot_(c) + ciText_(c[0] + u / 4, c[1] - 26, (d / 2) + 'cm', 34);
   } else if (give === 'box') {
-    body += ciSeg_([x0, y0 - 18], [x0 + bw, y0 - 18], true) + ciText_(x0 + bw / 2, y0 - 44, boxLen + 'cm', 36);
+    var bt = ciBrace_([x0, y0 - 6], [x0 + bw, y0 - 6], -1);   // 箱の上、上へ張り出す
+    body += bt.svg + ciText_(bt.tip[0], bt.tip[1] - 22, boxLen + 'cm', 36);
   }
   if (ask === 'w') {
-    body += ciSeg_([x0, y0 + bh + 18], [x0 + bw, y0 + bh + 18], true) + ciText_(x0 + bw / 2, y0 + bh + 46, '？', 38);
+    var bw_ = ciBrace_([x0, y0 + bh + 6], [x0 + bw, y0 + bh + 6], 1);   // 箱の下、下へ
+    body += bw_.svg + ciText_(bw_.tip[0], bw_.tip[1] + 24, '？', 38);
   } else if (ask === 'h') {
-    body += ciSeg_([x0 + bw + 18, y0], [x0 + bw + 18, y0 + bh], true) + ciText_(x0 + bw + 48, y0 + bh / 2, '？', 38);
+    var bh_ = ciBrace_([x0 + bw + 6, y0], [x0 + bw + 6, y0 + bh], -1);   // 箱の右、右へ
+    body += bh_.svg + ciText_(bh_.tip[0] + 24, bh_.tip[1], '？', 38);
   }
   return ciSvg_(W, H, body);
 }
