@@ -158,6 +158,39 @@ function forGrade_(list, grade) {
   });
 }
 
+/**
+ * 児童に見せる学年タブの集合。{ 3: true, 4: true } の形。
+ * config の tabs_<学年>（カンマ区切り）を読む。未設定や空なら自分の学年だけ。
+ * 自分の学年は必ず含める（設定で外しても外れない）。
+ */
+function tabSet_(cfg, grade) {
+  var set = {};
+  String(cfg['tabs_' + grade] || '').split(',').forEach(function (s) {
+    var g = Number(s.trim());
+    if (g) set[g] = true;
+  });
+  set[grade] = true;
+  return set;
+}
+
+/** リンクがタブ集合のどれかに出るか */
+function inTabs_(l, set) {
+  if (!l.grades || l.grades.toLowerCase() === 'all') return true;   // 全学年リンクはどのタブにも出る
+  return l.grades.split(',').some(function (s) { return !!set[Number(s.trim())]; });
+}
+
+/** リンクに出てくる学年の一覧（教師のプレビュー用） */
+function linkGrades_() {
+  var set = {};
+  links_().forEach(function (l) {
+    String(l.grades || '').split(',').forEach(function (s) {
+      var g = Number(s.trim());
+      if (g) set[g] = true;
+    });
+  });
+  return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+}
+
 /* ============================================================
  *  ルーティング
  * ============================================================ */
@@ -191,18 +224,36 @@ function boot() {
   }
   var grade = c ? c.grade : 0;
   var teacher = isTeacher_(mail);
+  var cfg = config_();
+
+  // 名簿にある児童は「見せるタブ」の設定で絞る（自分の学年は必ず含む）。
+  // 名簿にないゲストは学年が分からないのでタブなし全表示（従来どおり）。
+  // 名簿にない教師は全タブを見せておく（児童画面のプレビューになる）。
+  var tabs = null, links;
+  if (c) {
+    var set = tabSet_(cfg, grade);
+    tabs = Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+    links = links_().filter(function (l) { return l.visible && l.url && inTabs_(l, set); });
+  } else if (teacher) {
+    tabs = linkGrades_();
+    links = links_().filter(function (l) { return l.visible && l.url; });
+  } else {
+    links = forGrade_(links_(), 0);
+  }
+
   return {
     ok: true,
     // 教師が児童画面から設定画面へ移れるようにする。
     // 児童のアカウントではこの2つが入らないので、リンク自体が描かれない
     teacher: teacher,
     teacherUrl: teacher ? teacherUrl_() : '',
-    title: config_().title,
+    title: cfg.title,
     name: c ? c.name : '',
     grade: grade,
+    tabs: tabs,          // null ならタブなし（従来どおりの一覧）
     colors: COLORS,
-    links: forGrade_(links_(), grade).map(function (l) {
-      return { title: l.title, subtitle: l.subtitle, url: l.url, color: l.color };
+    links: links.map(function (l) {
+      return { title: l.title, subtitle: l.subtitle, url: l.url, color: l.color, grades: l.grades };
     })
   };
 }
@@ -278,6 +329,10 @@ function saveHubConfig(obj) {
 /** 名簿にある学年の一覧（学年フィルタの選択肢に使う） */
 function listGrades() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
+  return rosterGrades_();
+}
+
+function rosterGrades_() {
   var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
   var set = {};
   for (var i = 1; i < v.length; i++) {
@@ -285,6 +340,28 @@ function listGrades() {
     if (g) set[g] = true;
   }
   return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+}
+
+/** 名簿の全行。管理画面の学年別ビュー用 */
+function listRoster() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < v.length; i++) {
+    var mail = String(v[i][0] || '').trim();
+    if (!mail || mail.indexOf('@') < 0) continue;    // 縦積みしたヘッダ行を除く
+    out.push({
+      mail: mail,
+      grade: Number(v[i][1]) || 0,
+      cls: String(v[i][2] || '').trim(),
+      no: Number(v[i][3]) || 0,
+      name: String(v[i][4] || '').trim()
+    });
+  }
+  out.sort(function (a, b) {
+    return a.grade - b.grade || (a.cls < b.cls ? -1 : a.cls > b.cls ? 1 : 0) || a.no - b.no;
+  });
+  return out;
 }
 
 /* ============================================================
