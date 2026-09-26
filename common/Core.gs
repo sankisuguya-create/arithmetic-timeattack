@@ -1270,6 +1270,186 @@ function writeWeakClass_(typeMiss, wrongCnt) {
   sh.setTabColor('#93C47D');
 }
 
+/* ---- 教師画面「ぶんせき」タブ ----
+ * weak_child / weak_class と同じ期間窓（window_days）と名簿条件で
+ * log を1回だけ読み、クラス別・児童別・日別の集計をまとめて返す。
+ * シートには書き込まない（weak_* は従来どおり nightly 集計が作る）。
+ */
+function getAnalysis(fresh) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var key = 'analysis';
+  if (!fresh) {
+    var hit = cache_().get(key);
+    if (hit) return JSON.parse(hit);
+  }
+  var out = buildAnalysis_();
+  var json = JSON.stringify(out);
+  if (json.length < 90000) cache_().put(key, json, 120);
+  return out;
+}
+
+/**
+ * 型ごとの想起時間の畳み込み。{ ntk, tk, tk2 } → { n, ms, cv }
+ * ms は平均（初打鍵まで）、cv は標準偏差÷平均（%）。
+ * weak_child の行計算と同じ式。画面用に丸めた値を返す。
+ */
+function recallOut_(acc, miss) {
+  if (!acc || !acc.ntk) return { n: 0, ms: 0, cv: 0, miss: miss || 0 };
+  var mean = acc.tk / acc.ntk;
+  var vr = acc.tk2 / acc.ntk - mean * mean;
+  var cv = mean > 0 ? Math.round((vr > 0 ? Math.sqrt(vr) : 0) / mean * 100) : 0;
+  return { n: acc.ntk, ms: Math.round(mean), cv: cv, miss: miss || 0 };
+}
+
+function buildAnalysis_() {
+  var cfg = config_();
+  var days = Number(cfg.window_days) || 0;
+  var cutoff = days > 0 ? (Date.now() - days * 86400000) : 0;
+  var named = namedMails_();
+  var order = typeOrder_();
+  var slowTk = Number(cfg.slow_tk_ms) || Math.round(Number(cfg.slow_ms) * 0.7);
+  var wobble = Number(cfg.wobble_pct) || 40;
+
+  // 名簿。記録・分析の対象は email と氏名の両方がある児童だけ（namedMails_ と同じ口）
+  var rv = sh_(SHEETS.ROSTER).getDataRange().getValues();
+  var roster = {}, classes = {};
+  for (var i = 1; i < rv.length; i++) {
+    var mail = String(rv[i][0]).trim().toLowerCase();
+    if (!mail || !named[mail]) continue;
+    var g = Number(rv[i][1]), room = String(rv[i][2]).trim();
+    var ck = g + '-' + room;
+    roster[mail] = { ck: ck, no: Number(rv[i][3]), name: String(rv[i][4]).trim() };
+    if (!classes[ck]) classes[ck] = { cls: ck, label: g + '年' + room + '組', grade: g, room: room, n: 0, trials: 0 };
+    classes[ck].n++;
+  }
+
+  // ck -> { trials, types: {t: {ntk,tk,tk2,miss}}, daily: {date: n}, wrong: {entry: n}, kids: {mail: stu} }
+  var perCls = {};
+  function bag(ck) {
+    var b = perCls[ck];
+    if (!b) b = perCls[ck] = { trials: 0, types: {}, daily: {}, wrong: {}, kids: {} };
+    return b;
+  }
+
+  var v = sh_(SHEETS.LOG).getDataRange().getValues();
+  for (var i2 = 1; i2 < v.length; i2++) {
+    var row = v[i2], m = String(row[1]).toLowerCase();
+    var rc = roster[m];
+    if (!rc) continue;
+    if (cutoff) { var ts = rowTime_(row[0]); if (ts && ts < cutoff) continue; }
+
+    var b = bag(rc.ck);
+    b.trials++;
+    if (classes[rc.ck]) classes[rc.ck].trials++;
+    var d = dstr_(row[0]);
+    b.daily[d] = (b.daily[d] || 0) + 1;
+
+    var st = b.kids[m];
+    if (!st) st = b.kids[m] = { name: rc.name, no: rc.no, tries: 0, miss: 0, t: {} };
+    st.tries++;
+
+    // type_stats … "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2"
+    String(row[13] || '').split(',').forEach(function (e) {
+      var p = e.split(':');
+      if (p.length < 6 || !p[0]) return;      // 初打鍵の無い古い行は想起の集計に入れない
+      var ty = p[0];
+      var acc = b.types[ty] || (b.types[ty] = { ntk: 0, tk: 0, tk2: 0, miss: 0 });
+      var sa = st.t[ty] || (st.t[ty] = { ntk: 0, tk: 0, tk2: 0 });
+      var ntk = Number(p[3]) || 0, tk = Number(p[4]) || 0, tk2 = Number(p[5]) || 0;
+      acc.ntk += ntk; acc.tk += tk; acc.tk2 += tk2;
+      sa.ntk += ntk; sa.tk += tk; sa.tk2 += tk2;
+    });
+
+    String(row[11] || '').split(',').forEach(function (e) {
+      if (!e) return;
+      var ty = e.split(':')[0];
+      if (!ty) return;
+      var acc = b.types[ty] || (b.types[ty] = { ntk: 0, tk: 0, tk2: 0, miss: 0 });
+      acc.miss++;
+      st.miss++;
+    });
+
+    String(row[14] || '').split(',').forEach(function (e) {
+      if (!e || e.indexOf('|') < 0) return;
+      b.wrong[e] = (b.wrong[e] || 0) + 1;
+    });
+  }
+
+  // 「全体」= 全クラスの合算。クラス別と同じ形にして画面側の分岐を減らす
+  var all = { trials: 0, types: {}, daily: {}, wrong: {} };
+  Object.keys(perCls).forEach(function (ck) {
+    var b = perCls[ck];
+    all.trials += b.trials;
+    Object.keys(b.types).forEach(function (ty) {
+      var a = all.types[ty] || (all.types[ty] = { ntk: 0, tk: 0, tk2: 0, miss: 0 });
+      var x = b.types[ty];
+      a.ntk += x.ntk; a.tk += x.tk; a.tk2 += x.tk2; a.miss += x.miss;
+    });
+    Object.keys(b.daily).forEach(function (dd) { all.daily[dd] = (all.daily[dd] || 0) + b.daily[dd]; });
+    Object.keys(b.wrong).forEach(function (k) { all.wrong[k] = (all.wrong[k] || 0) + b.wrong[k]; });
+  });
+
+  function scopeOut(b) {
+    var types = {}, wrongTop = [];
+    order.forEach(function (ty) { types[ty] = recallOut_(b.types[ty], b.types[ty] ? b.types[ty].miss : 0); });
+    Object.keys(b.wrong).forEach(function (k) {
+      var p = k.split('|'), ty = p[0];
+      wrongTop.push({
+        t: ty, tag: p[1] || '',
+        ok: p.length >= 4 ? fmtByType_(ty, p[2]) : '',
+        ng: fmtByType_(ty, p.length >= 4 ? p[3] : p[2]),   // 旧形式（正答なし）は3分割
+        n: b.wrong[k]
+      });
+    });
+    wrongTop.sort(function (a, z) { return z.n - a.n; });
+    var daily = Object.keys(b.daily).sort().map(function (dd) { return [dd, b.daily[dd]]; });
+    return { trials: b.trials, types: types, wrongTop: wrongTop.slice(0, 12), daily: daily };
+  }
+
+  var scopes = { all: scopeOut(all) };
+  Object.keys(perCls).forEach(function (ck) { scopes[ck] = scopeOut(perCls[ck]); });
+
+  // 児童別。名簿の児童は記録がなくても行を出す（「まだやっていない」が見えるように）。
+  // ただし期間内の記録が1件も無いクラスは除く（そのクラスの全員が空行になるだけなので）
+  var students = {};
+  Object.keys(perCls).forEach(function (ck) {
+    var b = perCls[ck], kids = [];
+    Object.keys(roster).forEach(function (m) {
+      if (roster[m].ck !== ck) return;
+      var st = b.kids[m] || { name: roster[m].name, no: roster[m].no, tries: 0, miss: 0, t: {} };
+      var wMax = 0, wType = '', t = {};
+      order.forEach(function (ty) {
+        var o = recallOut_(st.t[ty]);
+        if (!o.n) return;
+        t[ty] = { n: o.n, ms: o.ms, cv: o.cv };
+        // 試行が少ないとばらつきが不安定なので、weak_child と同じく5回以上の型だけ候補にする
+        if (o.n >= 5 && o.cv > wMax) { wMax = o.cv; wType = ty; }
+      });
+      kids.push({ no: st.no, name: st.name, tries: st.tries, miss: st.miss,
+                  wobble: wMax, wobbleType: wType ? (UNIT.types[wType] || wType) : '', t: t });
+    });
+    kids.sort(function (a, z) { return a.no - z.no; });
+    students[ck] = kids;
+  });
+
+  var clsList = Object.keys(classes).map(function (k) { return classes[k]; })
+    .sort(function (a, b) {
+      return a.grade - b.grade ||
+        (a.room < b.room ? -1 : a.room > b.room ? 1 : 0);
+    });
+
+  return {
+    span: days > 0 ? '直近' + days + '日' : '全期間',
+    days: days,
+    at: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M/d H:mm'),
+    slowTk: slowTk, wobble: wobble,
+    order: order, types: UNIT.types,
+    classes: clsList,
+    scopes: scopes,
+    students: students
+  };
+}
+
 /* ============================================================
  *  自動セットアップ（手動実行は不要）
  * ============================================================ */
