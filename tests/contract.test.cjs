@@ -55,3 +55,19 @@ for (const name of unitNames()) {
   });
 }
 console.log(`${unitNames().length} units passed the contract checks (warns: ${totalWarns}).`);
+
+// 単元が足す色は、別学年の色のうち使ってよいもの（GRADE_EXTRA_）に限る。
+// 3年にからし（5年）を足すと、ミントと1型の見え方で色差16になり弾かれること
+{
+  const ctx = loadUnit('weight');
+  ctx.UNIT.units.kg = '#D4D454';
+  const probs = ctx.validateUnit_();
+  assert.ok(probs.some(p => p.indexOf('units.kg の色 #D4D454 は 3年で使えません') === 0), JSON.stringify(probs));
+  // 全学年の色は背景・赤と組にして定義されている
+  assert.deepEqual(Object.keys(ctx.GRADE_ACCENT_), ['1', '2', '3', '4', '5', '6']);
+  Object.keys(ctx.GRADE_EXTRA_).forEach(g => {
+    assert.ok(!ctx.GRADE_EXTRA_[g].includes(ctx.GRADE_ACCENT_[g]), g + '年の追加色に自分の色が入っている');
+    ctx.GRADE_EXTRA_[g].forEach(c => assert.ok(Object.values(ctx.GRADE_ACCENT_).includes(c), c + ' は学年の色ではない'));
+  });
+}
+console.log('palette rules passed.');

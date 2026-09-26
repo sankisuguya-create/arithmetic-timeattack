@@ -38,7 +38,7 @@ var UNIT = {
   ],
 
   /** 出題に出る単位と、その表示色（空文字は既定のグレー） */
-  units: { km: '#FFC53D', m: '', cm: '#6FA8FF' },
+  units: { km: '#F1B1E4', m: '', cm: '#8A6CE5' },
 
   modes: [
     { id: 1, name: 'かんさん きほん',   desc: '3km=□m ／ 7000m=□km' },

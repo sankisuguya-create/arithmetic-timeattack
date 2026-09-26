@@ -7,7 +7,8 @@
 <style>
 :root{
   --paper:#F7F7F4; --ink:#101728; --chalk:#FFFFFF;
-  --mint:#35D0A5; --red:#FF5B5B; --amber:#FFC53D;
+  /* --acc は学年の進みの色。boot で Core.gs の GRADE_ACCENT_ から上書きする（既定は3年） */
+  --acc:#35D0A5; --alert:#FF1A30;
   --mute:#9AA0B0; --line:#DFDFD8;
 }
 *{margin:0;padding:0;box-sizing:border-box}
@@ -24,7 +25,7 @@ body{
 /* ---------- 開始 ---------- */
 #start{align-items:center;justify-content:center;gap:1.4rem;padding:1.3rem}
 .apptitle{font-size:clamp(1.3rem,4.5vw,1.9rem);font-weight:800;letter-spacing:.02em}
-.timelede{font-size:clamp(1.5rem,5.5vw,2.3rem);font-weight:800;color:var(--mint);margin-top:-.6rem}
+.timelede{font-size:clamp(1.5rem,5.5vw,2.3rem);font-weight:800;color:var(--acc);margin-top:-.6rem}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;width:min(760px,96vw)}
 /* モード名は必ず1段に収める。折り返すと、どのモードを選んでいるかが読み取りにくい。
    そのために上段＝番号＋モード名、下段＝記号とベストの2段組にしてある。 */
@@ -41,7 +42,7 @@ body{
   padding-left:2.65rem;min-height:1.6rem}
 /* 学級内＝絵文字のメダル、個人内＝ミントの★n。記号の種類で区別する */
 .card .medal{font-size:1.25rem;line-height:1.2}
-.card .star{font-size:.9rem;font-weight:800;color:var(--mint);line-height:1.4;
+.card .star{font-size:.9rem;font-weight:800;color:var(--acc);line-height:1.4;
   letter-spacing:.02em;white-space:nowrap}
 .pbest{font-size:.62rem;color:var(--mute);font-weight:700;margin-top:.2rem}
 .card .hsbox{margin-left:auto;display:flex;align-items:baseline;gap:.35rem}
@@ -96,8 +97,12 @@ body{
 
 /* ---------- プレイ ---------- */
 #play{background:var(--ink);color:var(--chalk)}
-#bar{height:28px;background:var(--mint);width:100%;transform-origin:left center;will-change:transform}
-#bar.low{background:var(--amber)}
+#bar{height:28px;background:var(--acc);width:100%;transform-origin:left center;will-change:transform}
+/* のこり時間が少ないとき：色を変えず、しま模様にする（色覚に関係なく変化が見える）。
+   赤の「のこり ○びょう」を同時に出す（#lowLbl） */
+#bar.low{background:repeating-linear-gradient(135deg,var(--acc) 0 14px,var(--ink) 14px 24px)}
+.hud .lowlbl{font-size:1.05rem;font-weight:800;color:var(--alert);visibility:hidden}
+.hud .lowlbl.on{visibility:visible}
 #bar.hidden{visibility:hidden}
 .hud{display:flex;justify-content:space-between;align-items:center;padding:.6rem 1.5rem .1rem}
 .hud .medal{font-size:1.7rem;line-height:1}
@@ -106,7 +111,7 @@ body{
 
 /* 正答数は式の左上、Enterと同じミント */
 .cntbox{position:absolute;left:12.7%;top:calc(50% - clamp(3rem,8vw,4.2rem));
-  transform:translate(-50%,-50%);text-align:center;color:var(--mint);font-weight:800;
+  transform:translate(-50%,-50%);text-align:center;color:var(--acc);font-weight:800;
   line-height:.85;pointer-events:none}
 .cntbox .n{display:block;font-size:clamp(3rem,7vw,5.6rem)}
 .cntbox .l{font-size:.8rem;color:#6E7690;font-weight:700;letter-spacing:.14em;margin-top:.35rem}
@@ -116,9 +121,9 @@ body{
 /* 打ち終えた答えの残像。自動確定は最後の打鍵と同時に次の問題を描くので、
    児童は自分が書いた答えを1フレームも見られない。次の問題は遅らせずに描き、
    答えだけを別の層に写して上へ抜けさせる（止める時間はゼロ）。
-   色は mint。同じ瞬間に跳ねる「せいかい」の数と同じ色で、新しい色は足さない。
+   色は学年の色（--acc）。同じ瞬間に跳ねる「せいかい」の数と同じ色で、新しい色は足さない。
    色だけに意味を持たせない：上へ動くことと薄れることが同時に起きている */
-.ghost{position:absolute;pointer-events:none;z-index:2;color:var(--mint);
+.ghost{position:absolute;pointer-events:none;z-index:2;color:var(--acc);
   font-weight:800;line-height:1.15;white-space:nowrap;
   display:flex;align-items:baseline;
   transform:translate(-50%,0);animation:ghostup .42s ease-out forwards}
@@ -129,7 +134,7 @@ body{
   0%{opacity:.9;transform:translate(-50%,0)}
   100%{opacity:0;transform:translate(-50%,-.55em)}
 }
-.ghost .u{font-size:.62em;color:var(--mint);opacity:.7;margin-right:.22em;margin-left:.02em}
+.ghost .u{font-size:.62em;color:var(--acc);opacity:.7;margin-right:.22em;margin-left:.02em}
 
 /* 式：数字は大きく、単位はやや小さく落ち着かせる */
 .eq{font-size:clamp(2.2rem,7.5vw,4.6rem);font-weight:800;line-height:1.15;
@@ -193,7 +198,7 @@ body{
    気づく手がかりが無いと誤りに気づけないまま送信することになるため。 */
 #play.ruler-mode:not(.dial-mode) .line.ans{position:absolute;top:8px;left:50%;
   transform:translateX(-50%);font-size:1.7rem;gap:.1em;white-space:nowrap}
-#play.ruler-mode:not(.dial-mode) .line.ans .slot{border-bottom:none;color:var(--mint);min-width:1.4ch}
+#play.ruler-mode:not(.dial-mode) .line.ans .slot{border-bottom:none;color:var(--acc);min-width:1.4ch}
 /* ---- はかりの文字盤。上から「正答数＋式」「拡大と文字盤」「数字キー」の3段 ----
    一周200目盛りの文字盤は、児童機（表示領域600px前後）では目盛り間が3.7pxしかなく、
    文字盤を設定上限まで大きくしても5.9pxにしかならない。読める密度にするには画面の
@@ -235,8 +240,9 @@ body{
 .eq .slot.accent{color:var(--slotc);border-bottom-color:var(--slotc);border-bottom-width:.16em;
   background:transparent;background:color-mix(in srgb, var(--slotc) 20%, transparent);
   border-radius:.1em .1em 0 0;padding:0 .06em}
-.eq .slot.cur{border-bottom-color:var(--mint)}
-.eq.reveal .slot{color:var(--amber);border-bottom-color:var(--amber)}
+.eq .slot.cur{border-bottom-color:var(--acc)}
+/* 正しい答えの表示は白い字を白い枠で囲む（色ではなく枠で示す。学年の色と赤を避ける） */
+.eq.reveal .slot{color:var(--chalk);border-bottom-color:var(--chalk);outline:3px solid var(--chalk);outline-offset:.08em;border-radius:.08em}
 /* 覆い。前の段が通るまで、次の段を読ませない。
    中身は消さずに visibility で隠す。表示を消すと外れた瞬間に式の幅が変わり、
    児童は同じ式をもう一度読み直すことになる */
@@ -247,7 +253,10 @@ body{
 .footnote{text-align:center;padding-bottom:.8rem;font-size:.82rem;color:#4A5270;
   font-weight:600;height:1.2rem}
 #missline{position:absolute;left:20%;right:20%;bottom:calc(clamp(3rem,8vw,4.2rem) * 3 + 1.6rem);
-  height:3px;background:var(--red);border-radius:2px;opacity:0;pointer-events:none}
+  height:3px;background:var(--alert);border-radius:2px;opacity:0;pointer-events:none}
+/* まちがいは赤い「×」を線の上に出す（赤は必ず形と一緒に使う） */
+#missline::after{content:'×';position:absolute;left:50%;bottom:6px;transform:translateX(-50%);
+  color:var(--alert);font-size:2.4rem;font-weight:800;line-height:1}
 #missline.on{opacity:.9;transition:opacity .18s ease-out}
 #countdown{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
   background:var(--ink);color:var(--chalk);font-size:clamp(6rem,22vw,12rem);font-weight:800;z-index:5}
@@ -291,7 +300,7 @@ body{
 .stat{text-align:center}
 .stat b{display:block;font-size:1.7rem;font-weight:800}
 .stat span{font-size:.75rem;color:var(--mute);font-weight:700;letter-spacing:.08em}
-.best{color:var(--mint)}
+.best{color:var(--acc)}
 .saving{font-size:.72rem;color:var(--mute);margin-top:.9rem;height:1rem}
 body.practice-result .stats,body.practice-result .rank{display:none}
 
@@ -373,6 +382,7 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   <div id="bar"></div>
   <div class="hud">
     <div class="medal" id="playMedal"></div>
+    <div class="lowlbl" id="lowLbl"></div>
     <div class="label" id="playLabel"></div>
   </div>
   <div class="stage">
@@ -445,7 +455,7 @@ var ghostEl = null, ghostTimer = 0;
 /* 欄キー → その欄を目立たせる色。Unit.gs が決める。
    色だけに意味を持たせないため、色を宣言した欄は下線も太くし、薄く塗る（共通画面が束ねる）。
    色覚型によっては色相が潰れるので、太さと塗りのほうが最後まで残る手がかりになる。
-   塗りが要るのは、いま打っている欄では下線が mint に変わって色が消えるため。
+   塗りが要るのは、いま打っている欄では下線が学年の色に変わって色が消えるため。
    空欄のあいだも「ここは答えになる欄だ」が出ていないと、意味が伝わらない */
 var SLOTCOLOR = {};
 /* 演算子トークン → 表示記号。四則は全単元共通なのでここに置く */
@@ -485,6 +495,13 @@ function pendFlush(){
     }
     else if(r.code==='gone' || r.code==='bad'){ pendClear(); }
   }).withFailureHandler(function(){}).submitSession(p.token, p.items);
+}
+
+/** 学年の色を画面に入れる。値は Core.gs（GRADE_ACCENT_）が正本で、ここは受け取るだけ */
+function setPalette_(accent, alert){
+  var ok = function(c){ return /^#[0-9A-Fa-f]{6}$/.test(c || ''); };
+  if(ok(accent)) document.documentElement.style.setProperty('--acc', accent);
+  if(ok(alert))  document.documentElement.style.setProperty('--alert', alert);
 }
 
 /* ============================================================
@@ -681,14 +698,14 @@ function rulerSVG(r){
   // 矢印（読み取る位置）と「？」。矢印だけだと「ここが何か」を言葉にしないまま
   // 数字を打つ児童が出る。？を添えて、問われているのがこの位置の長さだと明示する。
   var ax = padL + (r.at - r.from)*px;
-  s.push('<path d="M '+ax.toFixed(1)+' '+(top-6)+' l -16 -28 l 32 0 z" fill="#35D0A5"/>');
+  s.push('<path d="M '+ax.toFixed(1)+' '+(top-6)+' l -16 -28 l 32 0 z" style="fill:var(--acc)"/>');
   s.push('<line x1="'+ax.toFixed(1)+'" y1="'+(top-32)+'" x2="'+ax.toFixed(1)+'" y2="'+(top-76)+
-         '" stroke="#35D0A5" stroke-width="6" stroke-linecap="round"/>');
+         '" style="stroke:var(--acc)" stroke-width="6" stroke-linecap="round"/>');
   // 既定は矢印の右。右端に寄って窓からはみ出す時だけ左へ回す
   var qx = ax + 22, qAnchor = 'start';
   if(qx + fs*0.7 > padL + innerW){ qx = ax - 22; qAnchor = 'end'; }
   s.push('<text x="'+qx.toFixed(1)+'" y="'+(top-14)+'" text-anchor="'+qAnchor+'" '+
-         'font-size="'+Math.round(fs*1.15)+'" font-weight="800" fill="#35D0A5">?</text>');
+         'font-size="'+Math.round(fs*1.15)+'" font-weight="800" style="fill:var(--acc)">?</text>');
 
   // 左端の金具（0 から始まるときだけ）
   if(r.from === 0){
@@ -1311,9 +1328,9 @@ function renderKeyset(){
   var cur = getLayout();
   $('keysetGrid').innerHTML = LAYOUTS.map(function(v, i){
     var on = v===cur;
-    return '<div class="card" data-layout="'+v+'" style="'+(on?'border-color:var(--mint);':'')+'">'+
+    return '<div class="card" data-layout="'+v+'" style="'+(on?'border-color:var(--acc);':'')+'">'+
       '<div class="k">'+(i+1)+'</div><div><div class="t">'+LAYOUT_LABEL[v]+'</div>'+
-      (on?'<div class="s" style="color:var(--mint)">いま これ</div>':'')+'</div></div>';
+      (on?'<div class="s" style="color:var(--acc)">いま これ</div>':'')+'</div></div>';
   }).join('');
   var wrap = $('keysetSize');
   if(cur === 'row'){ wrap.style.display='none'; return; }
@@ -1321,7 +1338,7 @@ function renderKeyset(){
   var cs = getSize();
   $('keysetSizeGrid').innerHTML = SIZES.map(function(v, i){
     var on = v===cs;
-    return '<div class="szbtn" data-size="'+v+'" style="'+(on?'border-color:var(--mint);color:var(--mint)':'')+'">'+
+    return '<div class="szbtn" data-size="'+v+'" style="'+(on?'border-color:var(--acc);color:var(--acc)':'')+'">'+
       '<span class="k2">'+(i+4)+'</span>'+SIZE_LABEL[v]+'</div>';
   }).join('');
 }
@@ -1339,7 +1356,12 @@ function tick(){
   if(left <= 0){ practice ? finishPractice() : finish(); return; }
   var p = left / (CFG.limitSec*1000);
   barEl.style.transform = 'scaleX('+p+')';
-  if(p < 0.17) barEl.classList.add('low');
+  if(p < 0.17){
+    barEl.classList.add('low');
+    var ll = $('lowLbl'), txt = 'のこり ' + Math.ceil(left/1000) + 'びょう';
+    if(ll.textContent !== txt) ll.textContent = txt;
+    ll.classList.add('on');
+  }
   raf = requestAnimationFrame(tick);
 }
 
@@ -1430,7 +1452,7 @@ function beginPractice(timed){
   show('play');
   setHelp();
   if(pTimed){
-    barEl.classList.remove('hidden','low');
+    barEl.classList.remove('hidden','low'); $('lowLbl').classList.remove('on');
     barEl.style.transform='scaleX(1)';
     eqEl.innerHTML='';
     countdown(3);
@@ -1515,7 +1537,7 @@ function begin(m){
   qi=0; correct=0; attempts=0; miss=0; locked=false; items=[]; curAns=[];
   countEl.textContent='0';
   $('playMedal').textContent = MEDAL[m] || '';
-  barEl.classList.remove('low'); barEl.style.transform='scaleX(1)';
+  barEl.classList.remove('low'); $('lowLbl').classList.remove('on'); barEl.style.transform='scaleX(1)';
   eqEl.innerHTML='';
   applyLayout();
   show('play');
@@ -1747,6 +1769,7 @@ function applyBoot(r, live){
   SCALE = r.unit.scale || {};
   GLYPH = r.unit.glyph || {};          // 古い localStorage の控えには無いので {} に落とす
   SLOTCOLOR = r.unit.slotColor || {};
+  setPalette_(r.unit.accent, r.unit.alert);   // 古い控えには無いので既定（3年）のまま
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);

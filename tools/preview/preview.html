@@ -181,6 +181,8 @@ async function main() {
 
   var riMatch = coreText.match(/function ri_\([^)]*\)\s*\{[^}]*\}/);
   var pickMatch = coreText.match(/function pick_\([^)]*\)\s*\{[^}]*\}/);
+  // 学年の色（正本は Core.gs）。実機は boot の返り値で受け取るので、プレビューでは Core.gs から抜き出す
+  var accMatch = coreText.match(/var GRADE_ACCENT_ = \{[^}]*\};/), alertMatch = coreText.match(/var ALERT_COLOR_ = '[^']*';/);
   if (!riMatch || !pickMatch) { fail('common/Core.gs から ri_ / pick_ を抽出できませんでした（実装が変わった可能性があります）。'); return; }
 
   var previewItemRe = /function\s+previewItem\s*\(\)\s*\{[\s\S]*?\n\}/;
@@ -212,6 +214,7 @@ async function main() {
     "  SCALE = UNIT.scale || {};\n" +
     "  GLYPH = UNIT.glyph || {};\n" +
     "  SLOTCOLOR = UNIT.slotColor || {};\n" +
+    "  setPalette_(GRADE_ACCENT_[UNIT.grade], ALERT_COLOR_);\n" +
     "  TYPES = UNIT.types || {};\n" +
     // 型の一覧は Core.gs と同じく gen を回して導出する
     "  TYPES_BY_MODE = {};\n" +
@@ -234,6 +237,8 @@ async function main() {
   var helperScript =
     '<script>\n' +
     riMatch[0] + '\n' +
+    (accMatch ? accMatch[0] : 'var GRADE_ACCENT_ = {};') + '\n' +
+    (alertMatch ? alertMatch[0] : "var ALERT_COLOR_ = '';") + '\n' +
     pickMatch[0] + '\n' +
     unitText + '\n' +
     '<' + '/script>\n';
