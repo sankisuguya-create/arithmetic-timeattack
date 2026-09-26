@@ -153,14 +153,35 @@ function isTeacher_(mail) {
   return false;
 }
 
+/** いまの年度（4月始まり）を返す */
+function curSchoolYear_() {
+  var now = new Date(), tz = Session.getScriptTimeZone();
+  var cy = Number(Utilities.formatDate(now, tz, 'yyyy'));
+  return Number(Utilities.formatDate(now, tz, 'M')) >= 4 ? cy : cy - 1;
+}
+
 /**
  * 名簿の行を正規化して返す。{ mail, grade, cls, no, name } の配列。
+ *
+ * fy を省略すると現在年度（roster シート）。fy を渡すとその年度の名簿:
+ *   - fy === 現在年度      → roster（ライブ。新しい児童がすぐ乗る）
+ *   - 過去年度で roster_<fy> あり → そのシート（年度アーカイブ）
+ *   - 過去年度で roster_<fy> なし → []（呼び出し側が log の行から組み立てる）
+ *
  * 学年ごとのハブから複数の IMPORTRANGE を縦積みで取り込むと、
  * 各ソースのヘッダ行が途中に混ざるので、'@' を含まない行（ヘッダ・空行）を除く。
  * 氏名の有無はここでは見ない（見るのは呼び出し側）。
  */
-function rosterRows_() {
-  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
+function rosterRows_(fy) {
+  if (fy === undefined) fy = curSchoolYear_();
+  var s;
+  if (fy === curSchoolYear_()) {
+    s = sh_(SHEETS.ROSTER);                    // 現在年度は常にライブの roster
+  } else {
+    s = ss_().getSheetByName('roster_' + fy); // 過去年度は年度名簿だけ（無ければ無い）
+    if (!s) return [];
+  }
+  var v = s.getDataRange().getValues();
   var out = [], seen = {};
   for (var i = 1; i < v.length; i++) {
     var mail = String(v[i][0] || '').trim().toLowerCase();
@@ -1362,12 +1383,9 @@ function buildAnalysis_(fyear) {
   var cfg = config_();
   var days = Number(cfg.window_days) || 0;
 
-  var now = new Date();
-  var tz = Session.getScriptTimeZone();
-  var cy = Number(Utilities.formatDate(now, tz, 'yyyy'));
-  var cm = Number(Utilities.formatDate(now, tz, 'M'));
-  var curFy = cm >= 4 ? cy : cy - 1;
+  var curFy = curSchoolYear_();
   var viewFy = (fyear > 0 && fyear < curFy) ? fyear : curFy;
+  var now = new Date();
 
   var cutoff, until = 0, span;
   if (viewFy === curFy) {
@@ -1383,17 +1401,20 @@ function buildAnalysis_(fyear) {
     span = viewFy + '年度';
   }
 
-  var named = namedMails_();
   var order = typeOrder_();
   var typeSet = {};
   order.forEach(function (t) { typeSet[t] = true; });
   var slowTk = Number(cfg.slow_tk_ms) || Math.round(Number(cfg.slow_ms) * 0.7);
   var wobble = Number(cfg.wobble_pct) || 40;
 
-  // 名簿。記録・分析の対象は email と氏名の両方がある児童だけ（namedMails_ と同じ口）
-  var roster = {}, classes = {};
-  rosterRows_().forEach(function (rr) {
-    if (!named[rr.mail]) return;
+  // 名簿。記録・分析の対象は email と氏名の両方がある児童だけ。
+  // 表示年度の名簿を読む（過去年度は roster_<年度>。無ければ空で、
+  // log 行が持つ「記録時点の学年・組・氏名」からその年度の名簿を組み立てる——
+  // 進級した児童が旧年度で新しいクラスに混ざるのを防ぐ）
+  var roster = {}, classes = {}, hasYearRoster = false;
+  rosterRows_(viewFy).forEach(function (rr) {
+    if (!rr.name) return;
+    hasYearRoster = true;
     var ck = rr.grade + '-' + rr.cls;
     roster[rr.mail] = { ck: ck, no: rr.no, name: rr.name };
     if (!classes[ck]) classes[ck] = { cls: ck, label: rr.grade + '年' + rr.cls + '組', grade: rr.grade, room: rr.cls, n: 0, trials: 0 };
@@ -1412,12 +1433,23 @@ function buildAnalysis_(fyear) {
   var minTs = 0;   // 年度選択肢を出すための最古の記録時刻
   for (var i2 = 1; i2 < v.length; i2++) {
     var row = v[i2], m = String(row[1]).toLowerCase();
-    var rc = roster[m];
-    if (!rc) continue;
     var ts = rowTime_(row[0]);
     if (!ts) continue;
-    if (!minTs || ts < minTs) minTs = ts;
+    // 年度選択肢のために最古の記録を追う。記録が残っていれば、卒業した児童の
+    // 分（現行名簿に無い）も年度リストに出せる。氏名の無い行は対象外
+    if (String(row[5] || '').trim() && (!minTs || ts < minTs)) minTs = ts;
     if (ts < cutoff || (until && ts >= until)) continue;
+
+    var rc = roster[m];
+    if (!rc && !hasYearRoster && String(row[5] || '').trim()) {
+      // 年度名簿が無い過去年度: log 行の所属（その時点の学年・組）を名簿にする
+      var g = Number(row[2]), rm = String(row[3]).trim();
+      var ck = g + '-' + rm;
+      rc = roster[m] = { ck: ck, no: Number(row[4]), name: String(row[5]).trim() };
+      if (!classes[ck]) classes[ck] = { cls: ck, label: g + '年' + rm + '組', grade: g, room: rm, n: 0, trials: 0 };
+      classes[ck].n++;
+    }
+    if (!rc) continue;
 
     var b = bag(rc.ck);
     b.trials++;
@@ -1522,9 +1554,9 @@ function buildAnalysis_(fyear) {
   var years = [curFy];
   if (minTs) {
     var md = new Date(minTs);
-    var firstFy = Number(Utilities.formatDate(md, tz, 'M')) >= 4
-      ? Number(Utilities.formatDate(md, tz, 'yyyy'))
-      : Number(Utilities.formatDate(md, tz, 'yyyy')) - 1;
+    var firstFy = Number(Utilities.formatDate(md, Session.getScriptTimeZone(), 'M')) >= 4
+      ? Number(Utilities.formatDate(md, Session.getScriptTimeZone(), 'yyyy'))
+      : Number(Utilities.formatDate(md, Session.getScriptTimeZone(), 'yyyy')) - 1;
     for (var y = curFy - 1; y >= firstFy; y--) years.push(y);
   }
 
