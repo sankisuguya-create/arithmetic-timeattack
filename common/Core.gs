@@ -371,7 +371,7 @@ function genQueue_(seed, mode, n) {
 
 /**
  * 送信用に切り詰める:
- * [出題トークン, 欄, 答え, まきじゃく, 問題型, はかりの文字盤, 並べ方, 覆い]
+ * [出題トークン, 欄, 答え, まきじゃく, 問題型, はかりの文字盤, 並べ方, 覆い, 図]
  *
  * 並べ方（rows）と覆い（veil）を問題ごとに載せるのは、まきじゃくや文字盤と同じ理由。
  * 単元が「この問題はこう並べる」と決められないと、共通画面が単元ごとの形を
@@ -381,7 +381,7 @@ function packQueue_(q) {
   return q.map(function (x) {
     return [x.q, x.f, x.f.map(function (k) { return x.ans[k]; }),
             x.ruler || null, x.t, x.dial || null,
-            x.rows || null, (x.veil == null ? null : x.veil)];
+            x.rows || null, (x.veil == null ? null : x.veil), x.fig || null];
   });
 }
 
@@ -505,7 +505,8 @@ function nextPracticeItem(mode, type) {
     ok: true, q: it.q, f: it.f,
     ans: it.f.map(function (k) { return it.ans[k]; }),
     ruler: it.ruler || null, t: it.t || null, dial: it.dial || null,
-    rows: it.rows || null, veil: (it.veil == null ? null : it.veil)
+    rows: it.rows || null, veil: (it.veil == null ? null : it.veil),
+    fig: it.fig || null
   };
 }
 
