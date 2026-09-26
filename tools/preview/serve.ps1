@@ -32,6 +32,7 @@ try {
       $bytes = [System.IO.File]::ReadAllBytes($filePath)
       $ext = [System.IO.Path]::GetExtension($filePath)
       if ($mime.ContainsKey($ext)) { $response.ContentType = $mime[$ext] } else { $response.ContentType = 'application/octet-stream' }
+      $response.Headers.Add('Cache-Control', 'no-store')   # 書き換えた直後の古い版を出さない
       $response.ContentLength64 = $bytes.Length
       $response.OutputStream.Write($bytes, 0, $bytes.Length)
     } else {

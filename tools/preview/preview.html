@@ -72,15 +72,19 @@ function fail(msg) {
   );
 }
 
+// 読むのは開発中に書き換わるファイルなので、ブラウザのキャッシュを使わない。
+// 古い index.html が残ると、新しい Unit.gs の機能（例: 図 fig）だけが描かれず、原因が見えない
+var NOCACHE = { cache: 'no-store' };
+
 async function main() {
   var unit = q('unit') || 'length';
   buildBar(unit);
 
   var base = '../../';
   var results = await Promise.allSettled([
-    fetch(base + 'common/Core.gs').then(function (r) { if (!r.ok) throw new Error('Core.gs: ' + r.status); return r.text(); }),
-    fetch(base + 'apps/' + unit + '/Unit.gs').then(function (r) { if (!r.ok) throw new Error('apps/' + unit + '/Unit.gs: ' + r.status); return r.text(); }),
-    fetch(base + 'common/index.html').then(function (r) { if (!r.ok) throw new Error('index.html: ' + r.status); return r.text(); })
+    fetch(base + 'common/Core.gs', NOCACHE).then(function (r) { if (!r.ok) throw new Error('Core.gs: ' + r.status); return r.text(); }),
+    fetch(base + 'apps/' + unit + '/Unit.gs', NOCACHE).then(function (r) { if (!r.ok) throw new Error('apps/' + unit + '/Unit.gs: ' + r.status); return r.text(); }),
+    fetch(base + 'common/index.html', NOCACHE).then(function (r) { if (!r.ok) throw new Error('index.html: ' + r.status); return r.text(); })
   ]);
 
   var errs = results.filter(function (r) { return r.status === 'rejected'; }).map(function (r) { return r.reason.message; });
