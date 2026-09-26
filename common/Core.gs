@@ -1296,14 +1296,15 @@ function splitCellItems_(cell, typeSet) {
   });
   return out;
 }
-function getAnalysis(fresh) {
+function getAnalysis(fresh, fyear) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  var key = 'analysis';
+  var fy = Number(fyear) || 0;
+  var key = 'analysis_' + fy;
   if (!fresh) {
     var hit = cache_().get(key);
     if (hit) return JSON.parse(hit);
   }
-  var out = buildAnalysis_();
+  var out = buildAnalysis_(fy);
   var json = JSON.stringify(out);
   if (json.length < 90000) cache_().put(key, json, 120);
   return out;
@@ -1322,19 +1323,35 @@ function recallOut_(acc, miss) {
   return { n: acc.ntk, ms: Math.round(mean), cv: cv, miss: miss || 0 };
 }
 
-function buildAnalysis_() {
+/**
+ * fyear: 参照したい年度の開始年（2025年度なら2025）。0/未指定で今年度。
+ * 今年度は「window_days 日前」と年度始まり（4/1）の遅い方を窓の下端にする。
+ * 過去年度はその年度の4/1〜翌3/31の全体を参考用に集計する。
+ */
+function buildAnalysis_(fyear) {
   var cfg = config_();
   var days = Number(cfg.window_days) || 0;
-  var cutoff = days > 0 ? (Date.now() - days * 86400000) : 0;
 
-  // 年度（4月始まり）の切り替わりで分析をリセットする。4/1以降の記録だけが対象。
-  // 進級・編入で所属が変わった児童の過去分が新クラスに混ざるのを防ぐ。
   var now = new Date();
-  var fy = Number(Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy'));
-  var fm = Number(Utilities.formatDate(now, Session.getScriptTimeZone(), 'M'));
-  var fyStart = new Date(fm >= 4 ? fy : fy - 1, 3, 1).getTime();
-  var reset = fyStart > cutoff;
-  if (reset) cutoff = fyStart;
+  var tz = Session.getScriptTimeZone();
+  var cy = Number(Utilities.formatDate(now, tz, 'yyyy'));
+  var cm = Number(Utilities.formatDate(now, tz, 'M'));
+  var curFy = cm >= 4 ? cy : cy - 1;
+  var viewFy = (fyear > 0 && fyear < curFy) ? fyear : curFy;
+
+  var cutoff, until = 0, span;
+  if (viewFy === curFy) {
+    // 今年度: 年度の切り替わりでリセット。進級・編入で所属が変わった児童の
+    // 過去分が新クラスに混ざるのを防ぐ（log の行は履歴として残る）
+    var win = days > 0 ? (now.getTime() - days * 86400000) : 0;
+    var fyStart = new Date(curFy, 3, 1).getTime();
+    cutoff = Math.max(win, fyStart);
+    span = win > fyStart ? ('直近' + days + '日') : '4/1以降';
+  } else {
+    cutoff = new Date(viewFy, 3, 1).getTime();
+    until = new Date(viewFy + 1, 3, 1).getTime();
+    span = viewFy + '年度';
+  }
 
   var named = namedMails_();
   var order = typeOrder_();
@@ -1365,11 +1382,15 @@ function buildAnalysis_() {
   }
 
   var v = sh_(SHEETS.LOG).getDataRange().getValues();
+  var minTs = 0;   // 年度選択肢を出すための最古の記録時刻
   for (var i2 = 1; i2 < v.length; i2++) {
     var row = v[i2], m = String(row[1]).toLowerCase();
     var rc = roster[m];
     if (!rc) continue;
-    if (cutoff) { var ts = rowTime_(row[0]); if (ts && ts < cutoff) continue; }
+    var ts = rowTime_(row[0]);
+    if (!ts) continue;
+    if (!minTs || ts < minTs) minTs = ts;
+    if (ts < cutoff || (until && ts >= until)) continue;
 
     var b = bag(rc.ck);
     b.trials++;
@@ -1470,8 +1491,20 @@ function buildAnalysis_() {
         (a.room < b.room ? -1 : a.room > b.room ? 1 : 0);
     });
 
+  // 年度選択肢: 最古の記録が属する年度から今年度まで（記録がなければ今年度のみ）
+  var years = [curFy];
+  if (minTs) {
+    var md = new Date(minTs);
+    var firstFy = Number(Utilities.formatDate(md, tz, 'M')) >= 4
+      ? Number(Utilities.formatDate(md, tz, 'yyyy'))
+      : Number(Utilities.formatDate(md, tz, 'yyyy')) - 1;
+    for (var y = curFy - 1; y >= firstFy; y--) years.push(y);
+  }
+
   return {
-    span: reset ? '4/1以降' : (days > 0 ? '直近' + days + '日' : '全期間'),
+    span: span,
+    fy: viewFy,
+    years: years,
     days: days,
     at: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M/d H:mm'),
     slowTk: slowTk, wobble: wobble,
