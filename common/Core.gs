@@ -1274,7 +1274,28 @@ function writeWeakClass_(typeMiss, wrongCnt) {
  * weak_child / weak_class と同じ期間窓（window_days）と名簿条件で
  * log を1回だけ読み、クラス別・児童別・日別の集計をまとめて返す。
  * シートには書き込まない（weak_* は従来どおり nightly 集計が作る）。
+ * 年度替わり（4/1）を越える記録は分析に混ぜない。クラス替えの履歴が
+ * 新しいクラスに混入するのを防ぐためで、log の行自体は履歴として残る。
  */
+
+/**
+ * miss_items / wrong_items は ',' 区切りだが、円と球ではタグ自体に ',' が入る
+ * （例 'B:chord,rad,short,off'）。「既知の型名 + ':' または '|'」で始まる断片だけを
+ * 新しい要素として切り、それ以外は直前の要素のタグの続きとして連結して戻す。
+ */
+function splitCellItems_(cell, typeSet) {
+  var out = [];
+  String(cell || '').split(',').forEach(function (f) {
+    if (!f) return;
+    var c0 = f.indexOf(':'), c1 = f.indexOf('|');
+    var cut = c0 < 0 ? c1 : (c1 < 0 ? c0 : Math.min(c0, c1));
+    var head = cut < 0 ? '' : f.slice(0, cut);
+    if (head && typeSet[head]) out.push(f);
+    else if (out.length) out[out.length - 1] += ',' + f;
+    else out.push(f);   // 先頭が壊れていても落とさない（見落としを避ける）
+  });
+  return out;
+}
 function getAnalysis(fresh) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var key = 'analysis';
@@ -1305,8 +1326,20 @@ function buildAnalysis_() {
   var cfg = config_();
   var days = Number(cfg.window_days) || 0;
   var cutoff = days > 0 ? (Date.now() - days * 86400000) : 0;
+
+  // 年度（4月始まり）の切り替わりで分析をリセットする。4/1以降の記録だけが対象。
+  // 進級・編入で所属が変わった児童の過去分が新クラスに混ざるのを防ぐ。
+  var now = new Date();
+  var fy = Number(Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy'));
+  var fm = Number(Utilities.formatDate(now, Session.getScriptTimeZone(), 'M'));
+  var fyStart = new Date(fm >= 4 ? fy : fy - 1, 3, 1).getTime();
+  var reset = fyStart > cutoff;
+  if (reset) cutoff = fyStart;
+
   var named = namedMails_();
   var order = typeOrder_();
+  var typeSet = {};
+  order.forEach(function (t) { typeSet[t] = true; });
   var slowTk = Number(cfg.slow_tk_ms) || Math.round(Number(cfg.slow_ms) * 0.7);
   var wobble = Number(cfg.wobble_pct) || 40;
 
@@ -1360,8 +1393,7 @@ function buildAnalysis_() {
       sa.ntk += ntk; sa.tk += tk; sa.tk2 += tk2;
     });
 
-    String(row[11] || '').split(',').forEach(function (e) {
-      if (!e) return;
+    splitCellItems_(row[11], typeSet).forEach(function (e) {
       var ty = e.split(':')[0];
       if (!ty) return;
       var acc = b.types[ty] || (b.types[ty] = { ntk: 0, tk: 0, tk2: 0, miss: 0 });
@@ -1369,8 +1401,8 @@ function buildAnalysis_() {
       st.miss++;
     });
 
-    String(row[14] || '').split(',').forEach(function (e) {
-      if (!e || e.indexOf('|') < 0) return;
+    splitCellItems_(row[14], typeSet).forEach(function (e) {
+      if (e.indexOf('|') < 0) return;
       b.wrong[e] = (b.wrong[e] || 0) + 1;
     });
   }
@@ -1410,13 +1442,13 @@ function buildAnalysis_() {
   Object.keys(perCls).forEach(function (ck) { scopes[ck] = scopeOut(perCls[ck]); });
 
   // 児童別。名簿の児童は記録がなくても行を出す（「まだやっていない」が見えるように）。
-  // ただし期間内の記録が1件も無いクラスは除く（そのクラスの全員が空行になるだけなので）
+  // 期間内の記録が1件も無いクラスも同じ形で出す（未実施児童が全員 '–' の表になる）。
   var students = {};
-  Object.keys(perCls).forEach(function (ck) {
-    var b = perCls[ck], kids = [];
+  Object.keys(classes).forEach(function (ck) {
+    var bk = (perCls[ck] || { kids: {} }).kids, kids = [];
     Object.keys(roster).forEach(function (m) {
       if (roster[m].ck !== ck) return;
-      var st = b.kids[m] || { name: roster[m].name, no: roster[m].no, tries: 0, miss: 0, t: {} };
+      var st = bk[m] || { name: roster[m].name, no: roster[m].no, tries: 0, miss: 0, t: {} };
       var wMax = 0, wType = '', t = {};
       order.forEach(function (ty) {
         var o = recallOut_(st.t[ty]);
@@ -1439,7 +1471,7 @@ function buildAnalysis_() {
     });
 
   return {
-    span: days > 0 ? '直近' + days + '日' : '全期間',
+    span: reset ? '4/1以降' : (days > 0 ? '直近' + days + '日' : '全期間'),
     days: days,
     at: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M/d H:mm'),
     slowTk: slowTk, wobble: wobble,
