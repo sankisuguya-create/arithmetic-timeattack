@@ -9,15 +9,24 @@
 body{background:var(--paper);color:var(--ink);
   font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans",sans-serif;
   padding:2rem 1.3rem 4rem;line-height:1.6}
-.wrap{max-width:820px;margin:0 auto}
+.wrap{max-width:860px;margin:0 auto}
 h1{font-size:1.35rem;font-weight:800;margin-bottom:.2rem}
-.sub{font-size:.82rem;color:var(--mute);margin-bottom:1.8rem;line-height:1.9;word-break:break-all}
+.sub{font-size:.82rem;color:var(--mute);margin-bottom:1rem;line-height:1.9;word-break:break-all}
 .sub b{color:var(--ink)}
 /* 行き先。設定を直したあと、シートと児童画面の両方を見に行くことになる */
-.golinks{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0 .9rem}
+.golinks{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0 1rem}
 .golinks a{font-size:.84rem;font-weight:700;text-decoration:none;color:var(--ink);
   border:1.5px solid var(--line);border-radius:9px;padding:.45rem .9rem;background:#fff}
 .golinks a:hover{border-color:var(--ink)}
+
+/* ページ内タブ。管理項目が増えても見通しが悪くならないように */
+.maintabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1.1rem}
+.maintabs button{font:inherit;font-weight:800;font-size:.95rem;padding:.55rem 1.1rem;
+  border-radius:999px;cursor:pointer;border:2px solid var(--ink);background:transparent;color:var(--ink)}
+.maintabs button.on{background:var(--ink);color:#fff}
+.tabpage{display:none}
+.tabpage.on{display:block}
+
 .box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.3rem;margin-bottom:1.1rem}
 h2{font-size:.72rem;letter-spacing:.18em;color:var(--mute);font-weight:700;margin-bottom:1rem}
 label{font-size:.82rem;font-weight:700;color:var(--mute);display:block;margin-bottom:.25rem}
@@ -65,6 +74,22 @@ button.pill.busy{opacity:.5}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .hint{font-size:.8rem;color:var(--mute);line-height:1.9}
 code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
+
+/* 「見せるタブ」の行。左に児童の学年、右に見せるタブのチップ */
+.tabrow{display:flex;align-items:center;gap:.8rem;padding:.55rem 0;
+  border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tabrow:last-child{border-bottom:none}
+.tabrow .g{width:4.5rem;font-weight:800;flex:0 0 auto}
+
+/* 名簿ビュー */
+.rosttabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.8rem}
+.rosttabs button{font:inherit;font-weight:700;font-size:.85rem;padding:.4rem .9rem;
+  border-radius:999px;cursor:pointer;border:1.5px solid var(--line);background:#fff;color:var(--mute)}
+.rosttabs button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+table.rost{width:100%;border-collapse:collapse;font-size:.9rem}
+table.rost th{font-size:.72rem;letter-spacing:.12em;color:var(--mute);text-align:left;
+  padding:.3rem .5rem;border-bottom:1.5px solid var(--line)}
+table.rost td{padding:.38rem .5rem;border-bottom:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -73,66 +98,119 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
   <div class="golinks" id="golinks"></div>
   <div class="sub" id="sub">児童のホーム画面に出す単元サイトを管理します</div>
 
-  <div class="box">
-    <h2>各単元の教師ページ</h2>
-    <div class="units" id="units"></div>
-    <div class="hint" style="margin-top:.9rem">
-      下の「リンク」に登録した URL に <code>?page=teacher</code> を付けた先を開きます。
-      非公開の単元も並びます（設定は公開前から触れます）。
+  <div class="maintabs" id="maintabs">
+    <button data-p="links" class="on">リンク</button>
+    <button data-p="tabs">見せるタブ</button>
+    <button data-p="roster">名簿</button>
+    <button data-p="misc">ぜんたい</button>
+  </div>
+
+  <!-- ============ リンク ============ -->
+  <div class="tabpage on" data-pg="links">
+    <div class="box">
+      <h2>各単元の教師ページ</h2>
+      <div class="units" id="units"></div>
+      <div class="hint" style="margin-top:.9rem">
+        下の「リンク」に登録した URL に <code>?page=teacher</code> を付けた先を開きます。
+        非公開の単元も並びます（設定は公開前から触れます）。
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>リンク</h2>
+      <div class="mini" style="margin:0 0 .9rem">
+        <label style="margin-right:.2rem">絞り込み</label>
+        <span class="gradechips" id="filt"></span>
+      </div>
+      <div id="list"></div>
+      <div class="bar">
+        <button id="add" class="ghost">＋ リンクを追加</button>
+        <button id="save">保存して児童に反映</button>
+        <span class="stat" id="stat"></span>
+      </div>
+      <div class="hint" style="margin-top:1rem">
+        「公開中／非公開」は押した時点で切り替わります。保存ボタンは要りません。<br>
+        URL は各単元サイトのデプロイ URL（末尾が <code>/exec</code>）を貼ります。<br>
+        「学年」は<b>どの学年タブに出るか</b>です。1つも選ばないと全学年タブに出ます。<br>
+        児童にそのタブが見えるかどうかは「見せるタブ」で学年ごとに決めます。<br>
+        並び順は「↑↓」で変えられます。児童にはこの順で並びます。
+      </div>
     </div>
   </div>
 
-  <div class="box">
-    <h2>ぜんたい</h2>
-    <label>ホーム画面のタイトル</label>
-    <input id="title" type="text" placeholder="算数タイムアタック">
-    <div style="margin-top:.9rem">
-      <label>この画面を開ける教師（@edu.nishi.or.jp と所有者は書かなくても開けます。別ドメインの人だけカンマ区切りで）</label>
-      <input id="teachers" type="text">
-    </div>
-    <div class="bar">
-      <button id="saveCfg">保存</button>
-      <span class="stat" id="cfgStat"></span>
-    </div>
-  </div>
-
-  <div class="box">
-    <h2>リンク</h2>
-    <div id="list"></div>
-    <div class="bar">
-      <button id="add" class="ghost">＋ リンクを追加</button>
-      <button id="save">保存して児童に反映</button>
-      <span class="stat" id="stat"></span>
-    </div>
-    <div class="hint" style="margin-top:1rem">
-      「公開中／非公開」は押した時点で切り替わります。保存ボタンは要りません。<br>
-      URL は各単元サイトのデプロイ URL（末尾が <code>/exec</code>）を貼ります。<br>
-      学年を1つも選ばないと全学年に表示されます。<br>
-      並び順は「↑↓」で変えられます。児童にはこの順で並びます。
+  <!-- ============ 見せるタブ ============ -->
+  <div class="tabpage" data-pg="tabs">
+    <div class="box">
+      <h2>学年ごとに見せるタブ</h2>
+      <div class="hint" style="margin-bottom:.9rem">
+        名簿に登録がある児童は、自分の学年のタブに加えて、ここで選んだ学年のタブも見られます。<br>
+        例：3年生の行で「4年」を選ぶと、3年生は「3ねん」「4ねん」のタブを切り替えられます。<br>
+        <b>自分の学年は常に見えます</b>（外せません）。名簿にない児童（おためし）は全タブを見られます。
+      </div>
+      <div id="tabset"></div>
+      <div class="bar">
+        <button id="saveTabs">保存</button>
+        <span class="stat" id="tabStat"></span>
+      </div>
     </div>
   </div>
 
-  <div class="box">
-    <h2>名簿について</h2>
-    <div class="hint">
-      このハブの <code>roster</code> シートを<b>名簿の正本</b>にしてください。<br>
-      各単元サイトの <code>roster</code> には、次の式を A1 に入れて参照させます。<br><br>
-      <code>=IMPORTRANGE("ハブのスプレッドシートURL","roster!A:E")</code><br><br>
-      こうすると学年やクラスの変更が1か所で済みます。
-      初回だけ各単元側で「アクセスを許可」を押す必要があります。<br><br>
-      記録・分析の対象になるのは、<b>email と氏名の両方が入っている児童だけ</b>です。<br>
-      名簿にない児童や氏名が空の行の児童も、各単元を「おためし」として
-      全モード使えますが、記録は一切されません。
+  <!-- ============ 名簿 ============ -->
+  <div class="tabpage" data-pg="roster">
+    <div class="box">
+      <h2>名簿（学年別）</h2>
+      <div class="rosttabs" id="rosttabs"></div>
+      <div id="rost"></div>
+      <div class="hint" style="margin-top:1rem">
+        このハブの <code>roster</code> シートが<b>名簿の正本</b>です。編集はシート側で行います。<br>
+        各単元サイトの <code>roster</code> には、次の式を A1 に入れて参照させます。<br><br>
+        <code>=IMPORTRANGE("ハブのスプレッドシートURL","roster!A:E")</code><br><br>
+        こうすると学年やクラスの変更が1か所で済みます。
+        初回だけ各単元側で「アクセスを許可」を押す必要があります。<br><br>
+        記録・分析の対象になるのは、<b>email と氏名の両方が入っている児童だけ</b>です。<br>
+        名簿にない児童や氏名が空の行の児童も、各単元を「おためし」として
+        全モード使えますが、記録は一切されません。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ぜんたい ============ -->
+  <div class="tabpage" data-pg="misc">
+    <div class="box">
+      <h2>ぜんたい</h2>
+      <label>ホーム画面のタイトル</label>
+      <input id="title" type="text" placeholder="算数タイムアタック">
+      <div style="margin-top:.9rem">
+        <label>この画面を開ける教師（@edu.nishi.or.jp と所有者は書かなくても開けます。別ドメインの人だけカンマ区切りで）</label>
+        <input id="teachers" type="text">
+      </div>
+      <div class="bar">
+        <button id="saveCfg">保存</button>
+        <span class="stat" id="cfgStat"></span>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-var COLORS = {}, LINKS = [], GRADES = [];
+var COLORS = {}, LINKS = [], GRADES = [], CFG = {}, ROSTER = [];
+var FILT = 0;   // リンク一覧の学年絞り込み（0=全部）
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function $(id){ return document.getElementById(id); }
+
+/* ---------- ページ内タブ ---------- */
+$('maintabs').addEventListener('click', function(e){
+  var p = e.target && e.target.dataset ? e.target.dataset.p : undefined;
+  if(!p) return;
+  document.querySelectorAll('#maintabs button').forEach(function(b){
+    b.classList.toggle('on', b.dataset.p === p);
+  });
+  document.querySelectorAll('.tabpage').forEach(function(d){
+    d.classList.toggle('on', d.dataset.pg === p);
+  });
+});
 
 /* 単元サイトの教師ページ URL。児童用 URL に page=teacher を足すだけ。
    各単元の doGet が同じ約束で分岐しているので、ハブが URL を別に持つ必要はない */
@@ -161,9 +239,26 @@ function renderUnits(){
   '下の「リンク」で URL を入れると、ここに入口が出ます。</div>';
 }
 
+/* リンクが学年タブ g に出るか（児童側の inTab と同じ判定） */
+function inTab(l, g){
+  var gr = String(l.grades || '').trim().toLowerCase();
+  if(!gr || gr === 'all') return true;
+  return gr.split(',').map(function(s){ return Number(s.trim()); }).indexOf(g) >= 0;
+}
+
+function renderFilt(){
+  $('filt').innerHTML =
+    '<span class="chip'+(FILT===0?' on':'')+'" data-fg="0">全部</span>' +
+    GRADES.map(function(g){
+      return '<span class="chip'+(FILT===g?' on':'')+'" data-fg="'+g+'">'+g+'年</span>';
+    }).join('');
+}
+
 function render(){
   renderUnits();
+  renderFilt();
   $('list').innerHTML = LINKS.map(function(l, i){
+    if(FILT && !inTab(l, FILT)) return '';
     var sel = String(l.grades||'').split(',').map(function(s){return s.trim();});
     var chips = GRADES.map(function(g){
       return '<span class="chip'+(sel.indexOf(String(g))>=0?' on':'')+'" '+
@@ -192,7 +287,7 @@ function render(){
           '<input type="text" data-f="url" data-i="'+i+'" value="'+esc(l.url)+'"></div>'+
       '</div>'+
       '<div class="mini">'+
-        '<label style="margin-right:.2rem">学年</label>'+
+        '<label style="margin-right:.2rem">出る学年タブ</label>'+
         '<span class="gradechips">'+chips+'</span>'+
         '<span style="flex:1"></span>'+
         '<label style="margin:0 .2rem 0 0">色</label>'+
@@ -201,6 +296,72 @@ function render(){
     '</div>';
   }).join('') || '<div class="hint">まだリンクがありません。「＋ リンクを追加」から作成してください。</div>';
 }
+
+/* ---------- 見せるタブ ---------- */
+/* CFG['tabs_'+g] = "3,4" など。自分の学年は常に含める */
+function tabsOf(g){
+  var set = {};
+  String(CFG['tabs_'+g] || '').split(',').forEach(function(s){
+    var n = Number(s.trim()); if(n) set[n] = true;
+  });
+  set[g] = true;
+  return set;
+}
+
+function renderTabs(){
+  $('tabset').innerHTML = GRADES.map(function(g){
+    var set = tabsOf(g);
+    var chips = GRADES.map(function(t){
+      var locked = (t === g);
+      return '<span class="chip'+(set[t]?' on':'')+'" data-tg="'+g+'" data-t="'+t+'"'+
+        (locked ? ' title="自分の学年は常に見えます"' : '')+'>'+t+'年'+(locked?'（自分）':'')+'</span>';
+    }).join('');
+    return '<div class="tabrow"><span class="g">'+g+'年生</span>'+
+      '<span class="gradechips">'+chips+'</span></div>';
+  }).join('');
+}
+
+$('saveTabs').onclick = function(){
+  var btn = this; btn.disabled = true;
+  $('tabStat').textContent = '保存中…';
+  var out = {};
+  GRADES.forEach(function(g){
+    var set = tabsOf(g);
+    out['tabs_'+g] = Object.keys(set).map(Number).sort(function(a,b){return a-b;}).join(',');
+  });
+  google.script.run.withSuccessHandler(function(r){
+    btn.disabled = false; CFG = r; $('tabStat').textContent = '保存しました';
+  }).withFailureHandler(function(e){
+    btn.disabled = false; $('tabStat').textContent = 'エラー: ' + e.message;
+  }).saveHubConfig(out);
+};
+
+/* ---------- 名簿ビュー ---------- */
+var RG = 0;   // 名簿の表示学年（0=先頭の学年）
+function renderRoster(){
+  var gs = [];
+  ROSTER.forEach(function(k){ if(k.grade && gs.indexOf(k.grade)<0) gs.push(k.grade); });
+  gs.sort(function(a,b){return a-b;});
+  if(!gs.length){ $('rosttabs').innerHTML=''; $('rost').innerHTML='<div class="hint">名簿がまだありません。</div>'; return; }
+  if(!RG || gs.indexOf(RG)<0) RG = gs[0];
+  $('rosttabs').innerHTML = gs.map(function(g){
+    var n = ROSTER.filter(function(k){return k.grade===g;}).length;
+    return '<button data-rg="'+g+'"'+(g===RG?' class="on"':'')+'>'+g+'年（'+n+'）</button>';
+  }).join('');
+  var rows = ROSTER.filter(function(k){return k.grade===RG;});
+  $('rost').innerHTML = '<table class="rost"><tr><th>組</th><th>番号</th><th>氏名</th><th>email</th></tr>'+
+    rows.map(function(k){
+      return '<tr><td>'+esc(k.cls)+'</td><td>'+(k.no||'')+'</td><td>'+esc(k.name||'（氏名なし）')+'</td>'+
+        '<td>'+esc(k.mail)+'</td></tr>';
+    }).join('')+'</table>';
+}
+$('rosttabs').addEventListener('click', function(e){
+  var g = e.target && e.target.dataset ? e.target.dataset.rg : undefined;
+  if(g===undefined) return;
+  RG = +g; renderRoster();
+});
+
+/* ---------- 入力・クリック ---------- */
 
 /* 入力はその場で LINKS に反映（再描画しない＝入力中にカーソルが飛ばない） */
 document.addEventListener('input', function(e){
@@ -236,12 +397,22 @@ function toggleVisible(i){
 
 document.addEventListener('click', function(e){
   var t = e.target;
+  if(t.dataset.fg !== undefined){ FILT = +t.dataset.fg; render(); return; }
+  if(t.dataset.tg !== undefined){          // 見せるタブのチップ
+    var g = +t.dataset.tg, tab = +t.dataset.t;
+    if(tab === g) return;                  // 自分の学年は外せない
+    var set = tabsOf(g);
+    if(set[tab]) delete set[tab]; else set[tab] = true;
+    set[g] = true;
+    CFG['tabs_'+g] = Object.keys(set).map(Number).sort(function(a,b){return a-b;}).join(',');
+    renderTabs(); return;
+  }
   if(t.dataset.vis !== undefined){ toggleVisible(+t.dataset.vis); return; }
-  if(t.dataset.g !== undefined){          // 学年チップ
-    var i = +t.dataset.i, g = t.dataset.g;
+  if(t.dataset.g !== undefined){          // リンクの学年チップ
+    var i = +t.dataset.i, g2 = t.dataset.g;
     var cur = String(LINKS[i].grades||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
-    var at = cur.indexOf(g);
-    if(at>=0) cur.splice(at,1); else cur.push(g);
+    var at = cur.indexOf(g2);
+    if(at>=0) cur.splice(at,1); else cur.push(g2);
     cur.sort(function(a,b){return a-b;});
     LINKS[i].grades = cur.join(',');
     render(); return;
@@ -297,11 +468,12 @@ function showWhere(w){
 }
 
 google.script.run.withSuccessHandler(function(r){
-  COLORS = r.colors; LINKS = r.links;
+  COLORS = r.colors; LINKS = r.links; CFG = r.config || {};
   $('title').value = r.config.title || '';
   $('teachers').value = r.config.teachers || '';
   showWhere(r.where);
   render();
+  renderTabs();
 }).withFailureHandler(function(e){
   $('stat').textContent = '読み込めません: ' + e.message;
 }).getAllLinks();
@@ -309,9 +481,16 @@ google.script.run.withSuccessHandler(function(r){
 google.script.run.withSuccessHandler(function(g){
   GRADES = (g && g.length) ? g : [1,2,3,4,5,6];
   render();
+  renderTabs();
 }).withFailureHandler(function(){
-  GRADES = [1,2,3,4,5,6]; render();
+  GRADES = [1,2,3,4,5,6]; render(); renderTabs();
 }).listGrades();
+
+google.script.run.withSuccessHandler(function(r){
+  ROSTER = r || []; renderRoster();
+}).withFailureHandler(function(){
+  $('rost').innerHTML = '<div class="hint">名簿を読み込めませんでした。</div>';
+}).listRoster();
 </script>
 </body>
 </html>
