@@ -18,6 +18,7 @@ function check(item, mode) {
   assert.ok(unit.types[item.t], 'unknown type ' + item.t); seen.add(item.t);
   assert.ok(ALLOWED[mode].includes(item.t), mode + ' ' + item.t);
   assert.ok(item.tag && item.q.length && item.f.length === 1);
+  assert.ok(!/,/.test(item.tag), 'tag に , があると記録の区切りと衝突する: ' + item.tag);
   assert.ok(typeof item.fig === 'string' && item.fig.startsWith('<svg') && item.fig.endsWith('</svg>'));
   assert.ok(!/NaN|undefined/.test(item.fig), item.fig);
   assert.ok(item.fig.length < 4000, 'fig too large: ' + item.fig.length);
@@ -25,7 +26,7 @@ function check(item, mode) {
   const cap = unit.digitCap[item.t][f];
   if (RIGHT[item.t]) {
     assert.equal(f, ''); assert.equal(cap, 1);
-    const order = item.tag.split(':')[1].split(',');
+    const order = item.tag.split(':')[1].split('-');
     assert.equal(order.length, 4); assert.equal(new Set(order).size, 4);
     assert.equal(order[a - 1], RIGHT[item.t]);
   } else {

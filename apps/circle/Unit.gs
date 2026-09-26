@@ -17,7 +17,7 @@
  *
  * 番号で答える問いの誤答の選択肢は、誤概念ごとに1つずつ置く。
  * 並びは毎問入れ替わるので、打った番号だけでは何を選んだか分からない。
- * tag に並び（例 'B:chord,rad,short,off'）を入れておき、mistakes シートの
+ * tag に並び（例 'B:chord-rad-short-off'）を入れておき、mistakes シートの
  * 「もんだい」と「こたえた値」から、どの誤りの選択肢を選んだかを読めるようにしている。
  *
  *   A 中心    center＝正答 near/mid/edge＝中心からずれた点（内側の点ならどれでも中心、とみなす誤り）
@@ -68,7 +68,7 @@ var UNIT = {
   },
 
   tips: '番号の問い（中心・半径・直径・切り口）の誤りは mistakes シートで読む。' +
-        '「もんだい」の欄が選択肢の並び（例 B:chord,rad,short,off）で、' +
+        '「もんだい」の欄が選択肢の並び（例 B:chord-rad-short-off）で、' +
         '「こたえた値」が3なら3番目の short（円周まで届かない線）を選んだ、と読む。' +
         'ならび（I・J）で答えが正答のちょうど半分なら、ボール1こ分を半径で数えている可能性がある。',
 
@@ -149,7 +149,7 @@ function ciChoice_(rand, t, ask, kinds, right, draw) {
   });
   return {
     t: t, q: ask, f: [''], ans: { '': order.indexOf(right) + 1 },
-    tag: t + ':' + order.join(','),
+    tag: t + ':' + order.join('-'),   // ',' は記録の区切りなので使わない
     fig: ciSvg_(W * 4, H, body)
   };
 }

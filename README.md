@@ -39,6 +39,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 | `apps/bignum` | 大きな数（万・億・兆、位取り、いくつ分、10倍・100倍と逆算） | 万を学習後〜億・兆を学習後 |
 | `apps/decimal` | 小数（0.1・0.01のいくつ分、位取り、10倍・100倍と逆算） | 3〜4年 |
 | `apps/circle` | 円と球（中心・半径・直径の見分け、半径⇄直径、球の切り口、箱に並んだボール） | 3年 |
+| `apps/bai` | 何倍でしょう（もとにする大きさ、テープ図・関係図、式の選択、第1〜第3用法、倍の倍） | 3年 |
 
 ## 構成
 
@@ -54,6 +55,7 @@ apps/
   divmod/Unit.gs あまりのあるわり算の出題定義
   bignum/Unit.gs 大きな数の出題定義（詳細: apps/bignum/README.md）
   decimal/Unit.gs 小数の出題定義
+  bai/Unit.gs    何倍でしょうの出題定義（詳細: apps/bai/README.md）
   circle/Unit.gs 円と球の出題定義（図は単元が SVG で描く。詳細: apps/circle/README.md）
   hub/           ハブ（Code.gs / links.html / teacher.html）
 docs/
