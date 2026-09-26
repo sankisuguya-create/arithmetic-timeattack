@@ -161,13 +161,18 @@ function isTeacher_(mail) {
  */
 function rosterRows_() {
   var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
-  var out = [];
+  var out = [], seen = {};
   for (var i = 1; i < v.length; i++) {
     var mail = String(v[i][0] || '').trim().toLowerCase();
     if (!mail || mail.indexOf('@') < 0) continue;
-    out.push({ mail: mail, grade: Number(v[i][1]),
-               cls: String(v[i][2] || '').trim(), no: Number(v[i][3]),
-               name: String(v[i][4] || '').trim() });
+    var r = { mail: mail, grade: Number(v[i][1]),
+              cls: String(v[i][2] || '').trim(), no: Number(v[i][3]),
+              name: String(v[i][4] || '').trim() };
+    // 同じ児童が複数のハブの名簿に載っていると、縦積みで行が重複する。
+    // 正本は先に出てきた行。ただし先の行が氏名なし・後の行が氏名ありなら
+    // 後の行を使う（記録・分析の対象になる児童を消さないため）
+    if (seen[mail] === undefined) { seen[mail] = out.length; out.push(r); }
+    else if (!out[seen[mail]].name && r.name) out[seen[mail]] = r;
   }
   return out;
 }
