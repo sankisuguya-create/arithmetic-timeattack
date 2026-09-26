@@ -576,7 +576,7 @@ function studentHeat(r, ck){
   var kids = (r.students || {})[ck] || [];
   if(!kids.length)
     return '<h3 class="sec">児童ごとの平均想起時間</h3>' +
-           '<div class="note">この期間に記録のある児童がいません（名簿の児童も全員未実施です）。</div>';
+           '<div class="note">このクラスには名簿の児童がいません。</div>';
   var rows = kids.map(function(k){
     var tds = r.order.map(function(ty){ return heatCell(k.t[ty], true); }).join('');
     var wob = k.wobble
