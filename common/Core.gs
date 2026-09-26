@@ -1365,8 +1365,9 @@ function writeWeakClass_(typeMiss, wrongCnt) {
  */
 
 /**
- * miss_items / wrong_items は ',' 区切りだが、円と球ではタグ自体に ',' が入る
- * （例 'B:chord,rad,short,off'）。「既知の型名 + ':' または '|'」で始まる断片だけを
+ * miss_items / wrong_items は ',' 区切りだが、円と球の初版ではタグ自体に ',' が入っていた
+ * （例 'B:chord,rad,short,off'。現在は '-' 区切りで、tag の ',' は契約検査で禁止）。過去の行のために残す。
+ * 「既知の型名 + ':' または '|'」で始まる断片だけを
  * 新しい要素として切り、それ以外は直前の要素のタグの続きとして連結して戻す。
  */
 function splitCellItems_(cell, typeSet) {
@@ -1697,7 +1698,8 @@ function validateUnit_() {
         if (!it.t || !UNIT.types[it.t]) say('gen(モード' + mid + ') の型 ' + it.t + ' が UNIT.types にありません');
         else seenTypes[it.t] = true;
         if (typeof it.tag !== 'string' || !it.tag) say('gen(モード' + mid + ') の tag が文字列ではありません');
-        else if (/[|\n"]/.test(it.tag)) say('gen(モード' + mid + ') の tag に | ・改行・" が含まれています: ' + it.tag);
+        // ',' は log の miss_items / wrong_items の区切り。含むと mistakes シートと誤り数の集計で1件が割れる
+        else if (/[|\n",]/.test(it.tag)) say('gen(モード' + mid + ') の tag に | ・,・改行・" が含まれています: ' + it.tag);
         // q が空でも、まきじゃく・はかり・図で問う型は正しい
         if (!Array.isArray(it.q)) say('gen(モード' + mid + ') の q が配列ではありません');
         else if (!it.q.length && !it.ruler && !it.dial && !it.fig) say('gen(モード' + mid + ') の q が空です（図や道具での出題なら正しい）');
