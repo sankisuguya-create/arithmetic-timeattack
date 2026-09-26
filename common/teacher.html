@@ -99,6 +99,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   <h1 id="h1">設定・分析</h1>
   <div class="golinks" id="golinks"></div>
   <div class="sub" id="sub">設定と分析</div>
+  <div id="verWarn" class="note" style="display:none;color:#C0392B;font-weight:700"></div>
 
   <nav class="tabs" role="tablist">
     <button class="tab on" id="tabSet" role="tab" aria-current="page">せってい</button>
@@ -223,8 +224,27 @@ var BASE_KEYS = ['limit_sec','miss_limit','slow_ms','key_gap','teachers'];
 var KEYS = BASE_KEYS.slice();
 var SETTINGS = [];
 
+/* この画面が前提にする Core.gs の版。貼り替えを片方だけ忘れたときに検知する */
+var WANT_VER = 1;
+
+function showWarn(msgs){
+  var el = document.getElementById('verWarn');
+  el.innerHTML = msgs.map(esc).join('<br>');
+  el.style.display = msgs.length ? '' : 'none';
+}
+
 google.script.run.withSuccessHandler(function(r){
   var c = r.config, u = r.unit;
+
+  // Core.gs との版ずれと、Unit.gs の契約検査の結果を先に出す
+  var warns = [];
+  if (r.ver !== undefined && r.ver !== WANT_VER) {
+    warns.push('エンジン(Core.gs)と画面(teacher.html)の版がちがいます。'
+      + '両方を同じ版に貼り直してください。');
+  }
+  (r.warnings || []).forEach(function(w){ warns.push('Unit.gs: ' + w); });
+  showWarn(warns);
+
   document.getElementById('h1').textContent = u.teacherTitle || u.title || '設定・分析';
   // どの写しを操作しているかを出す。版を入れ替えた直後、古い写しと新しい写しは
   // 見た目が同じで、取り違えても画面には何も出ない（児童側が空になるだけ）

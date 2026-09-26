@@ -44,6 +44,14 @@ var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
 var QN = 200;                              // 1セッションの出題数
 var SCHEMA_VERSION = 4;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし）
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
+
+/**
+ * Core.gs と共通画面（index.html / teacher.html）の間の版の番号。
+ * Core が画面に新しい関数や返却値を要求されたとき、または画面が Core の
+ * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
+ * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
+ */
+var ENGINE_VER = 1;
 /**
  * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
  *
@@ -145,20 +153,38 @@ function isTeacher_(mail) {
   return false;
 }
 
+/**
+ * 名簿の行を正規化して返す。{ mail, grade, cls, no, name } の配列。
+ * 学年ごとのハブから複数の IMPORTRANGE を縦積みで取り込むと、
+ * 各ソースのヘッダ行が途中に混ざるので、'@' を含まない行（ヘッダ・空行）を除く。
+ * 氏名の有無はここでは見ない（見るのは呼び出し側）。
+ */
+function rosterRows_() {
+  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < v.length; i++) {
+    var mail = String(v[i][0] || '').trim().toLowerCase();
+    if (!mail || mail.indexOf('@') < 0) continue;
+    out.push({ mail: mail, grade: Number(v[i][1]),
+               cls: String(v[i][2] || '').trim(), no: Number(v[i][3]),
+               name: String(v[i][4] || '').trim() });
+  }
+  return out;
+}
+
 function child_(mail) {
   if (!mail) return null;
   var key = 'roster_' + mail;
   var hit = cache_().get(key);
   if (hit) return JSON.parse(hit);
 
-  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
-  for (var i = 1; i < v.length; i++) {
-    if (String(v[i][0]).trim().toLowerCase() === mail) {
+  var rows = rosterRows_();
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].mail === mail) {
       // 氏名の無い登録は記録・分析の対象にしない。本人はゲストとして使える
-      var name = String(v[i][4] || '').trim();
-      if (!name) continue;
-      var c = { email: mail, grade: Number(v[i][1]), cls: String(v[i][2]),
-                no: Number(v[i][3]), name: name };
+      var r = rows[i];
+      if (!r.name) continue;
+      var c = { email: mail, grade: r.grade, cls: r.cls, no: r.no, name: r.name };
       cache_().put(key, JSON.stringify(c), TTL.roster);
       return c;
     }
@@ -173,12 +199,10 @@ function child_(mail) {
  * 「分析の対象は名簿にある児童だけ」という約束が画面上で破れるため。
  */
 function namedMails_() {
-  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
   var set = {};
-  for (var i = 1; i < v.length; i++) {
-    var mail = String(v[i][0]).trim().toLowerCase();
-    if (mail && String(v[i][4] || '').trim()) set[mail] = true;
-  }
+  rosterRows_().forEach(function (r) {
+    if (r.name) set[r.mail] = true;
+  });
   return set;
 }
 
@@ -429,6 +453,7 @@ function boot() {
 
   var base = {
     ok: true,
+    ver: ENGINE_VER,               // 画面側は WANT_VER と比べて版ずれを検知する
     // digitCap は「宣言」なので、そのままクライアントへ渡してよい（答えは含まない）。
     // 渡さないと index.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
@@ -915,7 +940,8 @@ function where_() {
 
 function getConfigForUI() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return { config: config_(), where: where_(),
+  return { config: config_(), where: where_(), ver: ENGINE_VER,
+           warnings: unitCheck_(),
            unit: { id: UNIT.id, title: UNIT.title,
            modes: UNIT.modes, types: UNIT.types,
            settings: UNIT.settings || [],
@@ -1009,19 +1035,18 @@ function saveClassConfig(rows) {
  * （別々に書くと、保存直後の表示と再読み込み後の表示がずれる）。
  */
 function listClassesCore_(over) {
-  var v = sh_(SHEETS.ROSTER).getDataRange().getValues();
   var seen = {}, out = [];
-  for (var i = 1; i < v.length; i++) {
-    var grade = Number(v[i][1]), cls = String(v[i][2]).trim();
-    if (!grade || !cls) continue;
+  rosterRows_().forEach(function (r) {
+    var grade = r.grade, cls = r.cls;
+    if (!grade || !cls) return;
     var ck = grade + '-' + cls;
-    if (seen[ck]) { seen[ck].n++; continue; }
+    if (seen[ck]) { seen[ck].n++; return; }
     var o = over[ck];
     var row = { cls: ck, grade: grade, room: cls, n: 1,
                 modes: {}, seqOff: !!(o && o.seqOff) };
     modeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
     seen[ck] = row; out.push(row);
-  }
+  });
   out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
   return out;
 }
@@ -1361,17 +1386,14 @@ function buildAnalysis_(fyear) {
   var wobble = Number(cfg.wobble_pct) || 40;
 
   // 名簿。記録・分析の対象は email と氏名の両方がある児童だけ（namedMails_ と同じ口）
-  var rv = sh_(SHEETS.ROSTER).getDataRange().getValues();
   var roster = {}, classes = {};
-  for (var i = 1; i < rv.length; i++) {
-    var mail = String(rv[i][0]).trim().toLowerCase();
-    if (!mail || !named[mail]) continue;
-    var g = Number(rv[i][1]), room = String(rv[i][2]).trim();
-    var ck = g + '-' + room;
-    roster[mail] = { ck: ck, no: Number(rv[i][3]), name: String(rv[i][4]).trim() };
-    if (!classes[ck]) classes[ck] = { cls: ck, label: g + '年' + room + '組', grade: g, room: room, n: 0, trials: 0 };
+  rosterRows_().forEach(function (rr) {
+    if (!named[rr.mail]) return;
+    var ck = rr.grade + '-' + rr.cls;
+    roster[rr.mail] = { ck: ck, no: rr.no, name: rr.name };
+    if (!classes[ck]) classes[ck] = { cls: ck, label: rr.grade + '年' + rr.cls + '組', grade: rr.grade, room: rr.cls, n: 0, trials: 0 };
     classes[ck].n++;
-  }
+  });
 
   // ck -> { trials, types: {t: {ntk,tk,tk2,miss}}, daily: {date: n}, wrong: {entry: n}, kids: {mail: stu} }
   var perCls = {};
@@ -1513,6 +1535,168 @@ function buildAnalysis_(fyear) {
     scopes: scopes,
     students: students
   };
+}
+
+/* ============================================================
+ *  Unit.gs の契約検査
+ *
+ *  新しい単元を増やしたとき、宣言の漏れや形のずれをここが拾う。
+ *  setup() の末尾と、教師画面の読み込み（getConfigForUI）で呼ばれる。
+ *  検査は宣言と gen の実働の両方を見る。宣言だけ合っていても、
+ *  実際に gen が返す形がずれていれば画面は壊れるため。
+ * ============================================================ */
+
+/**
+ * UNIT が共通エンジンの契約に合っているかを調べる。
+ * 問題点の文字列の配列を返す（空なら合格）。
+ * エディタからは checkUnit() で手動確認できる。
+ */
+function validateUnit_() {
+  var probs = [];
+  if (typeof UNIT !== 'object' || !UNIT) {
+    return ['UNIT が定義されていません（Unit.gs が読み込まれていない）'];
+  }
+  if (!UNIT.id) probs.push('UNIT.id がありません');
+  if (!UNIT.title) probs.push('UNIT.title がありません');
+  if (!UNIT.teacherTitle) probs.push('UNIT.teacherTitle がありません');
+  if (typeof UNIT.gen !== 'function') probs.push('UNIT.gen がありません');
+
+  // モードの宣言
+  var modeIds = [];
+  if (!Array.isArray(UNIT.modes) || !UNIT.modes.length) {
+    probs.push('UNIT.modes が空です');
+  } else {
+    var seenMode = {};
+    UNIT.modes.forEach(function (m) {
+      if (m.id == null || !m.name) {
+        probs.push('モードの宣言に id または name がありません');
+        return;
+      }
+      if (seenMode[m.id]) probs.push('モード id ' + m.id + ' が重複しています');
+      seenMode[m.id] = true;
+      modeIds.push(m.id);
+    });
+  }
+
+  // 解放条件の参照先とループ
+  (UNIT.modes || []).forEach(function (m) {
+    if (!m.needs) return;
+    if (!(m.needs.mode > 0)) { probs.push('モード ' + m.id + ' の needs.mode がありません'); return; }
+    if (modeIds.indexOf(m.needs.mode) < 0) probs.push('モード ' + m.id + ' の needs.mode=' + m.needs.mode + ' は存在しません');
+    if (!(m.needs.tries > 0)) probs.push('モード ' + m.id + ' の needs.tries がありません');
+  });
+  // ループ検出（AがB、BがA を必要とする形だと永遠に開かない）
+  modeIds.forEach(function (id) {
+    var cur = id, hops = 0;
+    while (cur && hops < 10) {
+      var m = null;
+      UNIT.modes.forEach(function (x) { if (x.id === cur) m = x; });
+      if (!m || !m.needs) break;
+      cur = m.needs.mode; hops++;
+      if (cur === id) { probs.push('モード ' + id + ' の解放条件がループしています'); break; }
+    }
+  });
+
+  if (!UNIT.types || !Object.keys(UNIT.types).length) probs.push('UNIT.types が空です');
+  if (!UNIT.digitCap) probs.push('注意：UNIT.digitCap がありません（自動確定の桁数が決められません）');
+
+  // 設定キーは defaults に宣言があること（無いと config_() が拾えず保存も効かない）
+  (UNIT.settings || []).forEach(function (s) {
+    if (!s.key) { probs.push('UNIT.settings に key の無い項目があります'); return; }
+    if (BASE_DEFAULTS[s.key] !== undefined) probs.push('UNIT.settings のキー ' + s.key + ' は共通の設定名と重なっています');
+    if ((UNIT.defaults || {})[s.key] === undefined) probs.push('UNIT.settings のキー ' + s.key + ' が UNIT.defaults にありません');
+    if (s.type !== undefined && s.type !== 'text' && s.type !== 'number') probs.push('UNIT.settings のキー ' + s.key + ' の type は text/number どちらかにしてください');
+    if (s.type !== 'text' && (s.min == null || s.max == null)) probs.push('注意：UNIT.settings のキー ' + s.key + ' に min/max がありません');
+  });
+
+  // gen の実働検査。モードごとに固定シードで引いて、返す形を見る
+  // 同じ指摘を60回分並べないよう、重複は1件にまとめる
+  var seenTypes = {}, said = {};
+  function say(msg) { if (!said[msg]) { said[msg] = true; probs.push(msg); } }
+  function warn(msg) { say('注意：' + msg); }
+  if (typeof UNIT.gen === 'function') {
+    modeIds.forEach(function (mid) {
+      var rand = rng_(20260903 + Number(mid));
+      for (var i = 0; i < 60; i++) {
+        var it;
+        try { it = UNIT.gen(rand, Number(mid)); }
+        catch (e) { say('gen(モード' + mid + ') が例外: ' + e.message); break; }
+        if (!it || typeof it !== 'object') { say('gen(モード' + mid + ') が問題を返しませんでした'); break; }
+        if (!it.t || !UNIT.types[it.t]) say('gen(モード' + mid + ') の型 ' + it.t + ' が UNIT.types にありません');
+        else seenTypes[it.t] = true;
+        if (typeof it.tag !== 'string' || !it.tag) say('gen(モード' + mid + ') の tag が文字列ではありません');
+        else if (/[|\n"]/.test(it.tag)) say('gen(モード' + mid + ') の tag に | ・改行・" が含まれています: ' + it.tag);
+        // q が空でも、まきじゃく・はかり・図で問う型は正しい
+        if (!Array.isArray(it.q)) say('gen(モード' + mid + ') の q が配列ではありません');
+        else if (!it.q.length && !it.ruler && !it.dial && !it.fig) say('gen(モード' + mid + ') の q が空です（図や道具での出題なら正しい）');
+        else if (it.q.some(function (x) { return x === undefined || (typeof x === 'number' && isNaN(x)); })) say('gen(モード' + mid + ') の q に undefined/NaN があります');
+        if (!Array.isArray(it.f) || !it.f.length) say('gen(モード' + mid + ') の f が空です');
+        else {
+          var seenF = {};
+          it.f.forEach(function (f) {
+            if (seenF[f]) say('gen(モード' + mid + ') の f に重複があります');
+            seenF[f] = true;
+            var a = it.ans ? it.ans[f] : undefined;
+            if (a === undefined || a === null || isNaN(Number(a))) say('gen(モード' + mid + ') の ans[' + f + '] が数値ではありません');
+            else {
+              var dc = (UNIT.digitCap || {})[it.t] || (UNIT.digitCap || {})[mid];
+              // 欄の宣言が無いと答えの桁数がそのまま確定タイミングになる（桁数がヒントとして漏れる）
+              if (!dc) warn('digitCap に型 ' + it.t + '（またはモード ' + mid + '）の宣言がありません');
+              else if (dc[f] === undefined) warn('digitCap の型 ' + it.t + ' に欄 ' + f + ' の宣言がありません（答えの桁数で確定されます）');
+              else if (dc[f] < String(a).length) say('digitCap の ' + f + ' = ' + dc[f] + ' が答え ' + a + ' の桁数より小さいです（モード' + mid + '、型 ' + it.t + '）');
+            }
+            // byTotal の単位は scale の換算率が無いと合計が合わない
+            if (UNIT.byTotal && UNIT.byTotal(it)) {
+              var k = (UNIT.scale || {})[f];
+              if (!k) say('UNIT.scale に欄 ' + f + ' の換算率がありません（byTotal の判定に必要）');
+            }
+          });
+        }
+        if (it.rows !== undefined) {
+          var us = String(it.rows).split('').filter(function (c) { return c === '_'; }).length;
+          if (us !== (it.f || []).length) say('gen(モード' + mid + ') の rows の空欄数 ' + us + ' が f の数 ' + (it.f || []).length + ' と合いません');
+        }
+        if (it.veil !== undefined && it.veil !== null) {
+          if (!(it.veil > 0) || it.veil > (it.f || []).length) say('gen(モード' + mid + ') の veil ' + it.veil + ' が f の範囲外です');
+        }
+        if (it.fig !== undefined && it.fig !== null) {
+          var fs = String(it.fig);
+          if (fs.indexOf('<svg') !== 0 || fs.slice(-6) !== '</svg>') say('gen(モード' + mid + ') の fig が <svg>...</svg> ではありません');
+          if (fs.length > 4000) say('gen(モード' + mid + ') の fig が大きすぎます（' + fs.length + '字）');
+          if (/NaN|undefined/.test(fs)) say('gen(モード' + mid + ') の fig に NaN/undefined が含まれています');
+        }
+      }
+    });
+    // 宣言した型が1つも出ないと、練習の選択肢に現れても実際には出ない
+    Object.keys(UNIT.types || {}).forEach(function (t) {
+      if (!seenTypes[t]) warn('型 ' + t + ' は全モードで出題されませんでした（宣言だけ残っている可能性）');
+    });
+    // 同じシードで同じ並びが出ること（児童が「同じ問題が出る」と迷わないため）
+    var r1 = rng_(7), r2 = rng_(7);
+    try {
+      var tags1 = [], tags2 = [];
+      for (var j = 0; j < 50; j++) { tags1.push(UNIT.gen(r1, Number(modeIds[0])).tag); }
+      for (var k2 = 0; k2 < 50; k2++) { tags2.push(UNIT.gen(r2, Number(modeIds[0])).tag); }
+      if (JSON.stringify(tags1) !== JSON.stringify(tags2)) probs.push('gen がシードに対して決定的ではありません');
+    } catch (e2) { /* gen の例外は上で拾う */ }
+  }
+  return probs;
+}
+
+/** 検査結果をキャッシュする（教師画面の読み込みで毎回 gen 60回×モード数を回さないため） */
+function unitCheck_() {
+  var hit = cache_().get('unitcheck');
+  if (hit) return JSON.parse(hit);
+  var probs;
+  try { probs = validateUnit_(); } catch (e) { probs = ['単元の検査中に失敗: ' + e.message]; }
+  cache_().put('unitcheck', JSON.stringify(probs), TTL.roster);
+  return probs;
+}
+
+/** エディタから手動で走らせる確認口。問題があれば文字列で列挙して返す */
+function checkUnit() {
+  var probs = validateUnit_();
+  return probs.length ? ('Unit.gs の確認:\n- ' + probs.join('\n- ')) : 'Unit.gs: 問題ありません';
 }
 
 /* ============================================================
@@ -1724,6 +1908,7 @@ function ensureTriggers_() {
 function setup() {
   PropertiesService.getScriptProperties().deleteProperty(READY_KEY);
   cache_().remove('ready');
+  cache_().remove('unitcheck');
   ensureReady_();
-  return 'セットアップ完了（シート・トリガーを確認しました）';
+  return 'セットアップ完了（シート・トリガーを確認しました）\n' + checkUnit();
 }
