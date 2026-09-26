@@ -45,7 +45,7 @@
  * index.html 側の経路を実機と共有しているので、digitCap の宣言ミスはここで再現する。
  */
 
-var KNOWN_UNITS = ['kuku', 'length', 'weight', 'divmod', 'bignum', 'decimal'];
+var KNOWN_UNITS = ['kuku', 'length', 'weight', 'divmod', 'bignum', 'decimal', 'circle'];
 
 function q(name) {
   return new URLSearchParams(location.search).get(name);
@@ -111,7 +111,7 @@ async function main() {
     "  var it = UNIT.gen(Math.random, m);\n" +
     "  if(pType){ for(var i=0;i<60 && it.t!==pType;i++) it = UNIT.gen(Math.random, m); }\n" +
     "  return {q:it.q, f:it.f, ans:it.ans, ruler:it.ruler||null, t:it.t||null, dial:it.dial||null,\n" +
-    "          rows:it.rows||null, veil:(it.veil == null ? null : it.veil)};\n" +
+    "          rows:it.rows||null, veil:(it.veil == null ? null : it.veil), fig:it.fig||null};\n" +
     "}";
 
   var newElseBlock =

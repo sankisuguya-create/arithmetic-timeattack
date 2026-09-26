@@ -166,12 +166,12 @@ same(unit.glyph['かける'], unit.glyph['しょう'], '①②の唱えの欄も
 // 欄キー '' に宣言すると、③⑤⑥のあまりの欄まで漢数字になる
 assert.equal(unit.glyph[''], undefined, "欄キー '' に字形を宣言しないこと");
 
-// 配信の形。rows と veil が7・8番目に載り、載せない型では null のまま
+// 配信の形。rows と veil が7・8番目に載り、載せない型では null のまま（9番目は図。わり算には無い）
 const packed = ctx.packQueue_(ctx.genQueue_(7, 7, 3));
-packed.forEach(x => { assert.equal(x.length, 8); assert.ok(x[6]); assert.equal(x[7], 2); });
+packed.forEach(x => { assert.equal(x.length, 9); assert.ok(x[6]); assert.equal(x[7], 2); assert.equal(x[8], null); });
 // ①②も並べ方を持つ（欄が式の途中に入るため）が、覆いは要らない
 [5, 1].forEach(m => ctx.packQueue_(ctx.genQueue_(7, m, 3)).forEach(x => {
-  assert.equal(x.length, 8); assert.ok(x[6]); assert.equal(x[7], null);
+  assert.equal(x.length, 9); assert.ok(x[6]); assert.equal(x[7], null);
 }));
 ctx.packQueue_(ctx.genQueue_(7, 3, 3)).forEach(x => {
   assert.equal(x[6], null); assert.equal(x[7], null);

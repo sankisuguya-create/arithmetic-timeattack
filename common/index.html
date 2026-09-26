@@ -143,6 +143,19 @@ body{
 .eq.oneline .line{display:contents}
 .eq .u{font-size:.62em;color:#8C93AC;margin-right:.22em;margin-left:.02em}
 
+/* 単元が描く図（q.fig）。上に問いと欄、残りの高さを図に回す。
+   stage の min-height:0 はまきじゃくと同じ理由（図に合わせて stage が膨らみ、
+   数字キーが押しつぶされるのを止める）。 */
+#play.fig-mode .stage{min-height:0;padding-top:40px}
+#play.fig-mode .eq{width:100%;height:100%;justify-content:flex-start;gap:.3rem}
+#play.fig-mode .line.ans{flex:0 0 auto;font-size:clamp(1.5rem,3.6vw,2.4rem);gap:.25em}
+#play.fig-mode .cntbox{left:8px;right:auto;top:6px;transform:none;position:absolute;margin-left:0}
+#play.fig-mode.hand-left .cntbox{left:auto;right:8px}
+#play.fig-mode .cntbox .n{font-size:clamp(1.8rem,3.6vw,2.6rem)}
+#play.fig-mode .cntbox .l{font-size:.6rem;margin-top:.15rem}
+.figbox{flex:1 1 auto;min-height:0;width:100%;display:flex;align-items:center;justify-content:center}
+.figbox svg{display:block;max-width:100%;max-height:100%;width:100%;height:100%}
+
 /* まきじゃく */
 .ruler{width:min(98%,1300px);margin:0 auto}
 .ruler svg{display:block;width:100%;height:auto}
@@ -915,8 +928,23 @@ function draw(){
 
   $('play').classList.toggle('ruler-mode', !!(q.ruler || q.dial));
   $('play').classList.toggle('dial-mode', !!q.dial);
+  $('play').classList.toggle('fig-mode', !!q.fig);
 
-  if(q.dial){
+  if(q.fig){
+    /*
+     * 単元が描いた図（SVG文字列）をそのまま置く。上に問い＋欄、下に図。
+     * 共通画面は図の中身（円・箱・番号）を知らない。まきじゃく・文字盤と違って
+     * 描画を単元側に持たせるのは、図の種類が単元ごとに違い、ここに足していくと
+     * 共通画面が単元を知ることになるため。問いには「＝」を付けない（式ではない）。
+     */
+    var ask = q.q.map(function(tok){
+      return UNITS.hasOwnProperty(tok) ? unitSpan(tok) : '<span>'+tok+'</span>';
+    }).join('');
+    eqEl.className = 'eq';
+    eqEl.innerHTML =
+      '<span class="line ans">'+ask+rhs+'</span>'+
+      '<div class="figbox">'+q.fig+'</div>';
+  }else if(q.dial){
     // はかりは、拡大窓（左）と文字盤（右）を並べ、式と正答数は上の帯へ。
     // 大きさは段の高さで決まる。dial_size は上限としてのみ効く。
     var fig = dialSVG(q.dial);
@@ -1335,7 +1363,7 @@ function pFetch(){
       var a = {};
       r.f.forEach(function(u, i){ a[u] = r.ans[i]; });
       pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
-              rows:r.rows||null, veil:(r.veil == null ? null : r.veil)};
+              rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null};
     }else{ pFail++; }
   }).withFailureHandler(function(){ pFetching = false; pFail++; })
     .nextPracticeItem(pMode, pType);
@@ -1386,7 +1414,7 @@ function beginPractice(timed){
         var a = {};
         x[1].forEach(function(u, i){ a[u] = x[2][i]; });
         return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null,
-                rows:x[6]||null, veil:(x[7] == null ? null : x[7])};
+                rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
       });
       qi = 0; clearTyped(); ready = true;
     }).withFailureHandler(function(){
@@ -1470,7 +1498,7 @@ function begin(m){
         var a = {};
         x[1].forEach(function(u, i){ a[u] = x[2][i]; });
         return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null,
-                rows:x[6]||null, veil:(x[7] == null ? null : x[7])};
+                rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
       });
       ready = true; clearTyped();
     }).withFailureHandler(function(){

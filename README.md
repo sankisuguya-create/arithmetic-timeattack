@@ -38,6 +38,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 | `apps/divmod` | あまりのあるわり算（九九の逆→九九さがし→引き算→ひとつなぎ→誤答判別→わり算） | 3年 |
 | `apps/bignum` | 大きな数（万・億・兆、位取り、いくつ分、10倍・100倍と逆算） | 万を学習後〜億・兆を学習後 |
 | `apps/decimal` | 小数（0.1・0.01のいくつ分、位取り、10倍・100倍と逆算） | 3〜4年 |
+| `apps/circle` | 円と球（中心・半径・直径の見分け、半径⇄直径、球の切り口、箱に並んだボール） | 3年 |
 
 ## 構成
 
@@ -53,6 +54,7 @@ apps/
   divmod/Unit.gs あまりのあるわり算の出題定義
   bignum/Unit.gs 大きな数の出題定義（詳細: apps/bignum/README.md）
   decimal/Unit.gs 小数の出題定義
+  circle/Unit.gs 円と球の出題定義（図は単元が SVG で描く。詳細: apps/circle/README.md）
   hub/           ハブ（Code.gs / links.html / teacher.html）
 docs/
   ARCHITECTURE.md  設計の考え方
