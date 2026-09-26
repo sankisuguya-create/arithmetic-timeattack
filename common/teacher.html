@@ -49,6 +49,49 @@ td{padding:.55rem .3rem;border-top:1.5px solid var(--line)}
 .tips{font-size:.84rem;line-height:1.9}
 .tips b{color:var(--ink)}
 code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
+
+/* ===== ぶんせきタブ =====
+ * 色は色覚特性を越えて見分けられる既定トークンだけを使い、
+ * 「色を外しても意味が残る」形（閾値線・記号・数値の併記）にする。 */
+:root{--cat1:#0F5EA8;--cat2:#C86A00;--alert:#C0330A;--fillA:#D7E8F8}
+.wrap.wide{max-width:900px}
+.tabs{display:flex;gap:.15rem;border-bottom:2px solid var(--line);margin-bottom:1.3rem}
+.tab{font:inherit;font-weight:700;font-size:1rem;padding:.55rem 1.5rem;background:none;
+  border:none;border-bottom:4px solid transparent;margin-bottom:-2px;color:var(--mute);cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--cat1);background:var(--fillA)}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.2rem 0 .9rem}
+.chip{padding:.3rem .8rem;border-radius:999px;border:1.5px solid var(--line);
+  font-size:.82rem;font-weight:700;cursor:pointer;background:#fff;color:var(--mute)}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.sec{margin-top:1.6rem}
+.sec:first-child{margin-top:.4rem}
+h3.sec{font-size:.9rem;font-weight:800;color:var(--ink);letter-spacing:0}
+.note{font-size:.76rem;color:var(--mute);margin:.1rem 0 .5rem;line-height:1.6}
+.chart{width:100%;height:auto;display:block;overflow:visible}
+.chart .blbl{font-size:11.5px;fill:var(--ink);font-weight:600}
+.chart .bval{font-size:11px;fill:var(--mute);font-weight:700}
+.chart .ax{stroke:var(--line);stroke-width:1}
+.chart .thr{stroke:var(--alert);stroke-width:1.6;stroke-dasharray:4 3}
+.chart .thl{font-size:11px;fill:var(--alert);font-weight:800}
+/* ヒートマップは単一色相（青）の明度段階。値そのものもセルに書くので色だけに頼らない */
+table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
+.heat th{font-size:.72rem;color:var(--mute);padding:.35rem .3rem;font-weight:700;
+  text-align:center;line-height:1.35;border-top:none}
+.heat td{padding:.42rem .3rem;text-align:center;border-top:1.5px solid var(--line);font-weight:700}
+.heat td.nm,.heat th.nm{text-align:left;font-weight:700}
+.heat td.wk,.heat th.wk{color:var(--mute);font-weight:600;white-space:nowrap}
+.heat td.none{color:var(--mute);font-weight:400}
+.heat td.h1{background:#E3F0FA}
+.heat td.h2{background:#A9CCE7}
+.heat td.h3{background:var(--cat1);color:#fff}
+.heat td .wb{color:var(--alert)}
+.heat td.h3 .wb{color:#fff}
+.wob{color:var(--alert)}
+.heatlg{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;font-size:.74rem;color:var(--mute);margin-top:.6rem}
+.heatlg .sw{display:inline-block;width:.85rem;height:.85rem;border-radius:3px;border:1px solid var(--line);
+  vertical-align:-1px;margin-right:.25rem}
+.wrong td{font-size:.82rem}
+.wrong td.n{font-weight:800}
 </style>
 </head>
 <body>
@@ -57,6 +100,12 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
   <div class="golinks" id="golinks"></div>
   <div class="sub" id="sub">設定と分析</div>
 
+  <nav class="tabs" role="tablist">
+    <button class="tab on" id="tabSet" role="tab" aria-current="page">せってい</button>
+    <button class="tab" id="tabAna" role="tab">ぶんせき</button>
+  </nav>
+
+  <div id="pageSet">
   <div class="box">
     <h2>せってい</h2>
     <div class="row">
@@ -127,6 +176,19 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
     <h2>シートの読み方</h2>
     <div class="tips" id="tips"></div>
   </div>
+  </div><!-- /pageSet -->
+
+  <div id="pageAna" style="display:none">
+  <div class="box">
+    <h2>ぶんせき</h2>
+    <div class="chips" id="anaChips"></div>
+    <div class="stat" id="anaStat">読み込み中…</div>
+    <div id="anaBody"></div>
+    <div class="bar">
+      <button class="ghost" id="anaReload">いまの記録で読み直す</button>
+    </div>
+  </div>
+  </div><!-- /pageAna -->
 </div>
 
 <script>
@@ -365,6 +427,228 @@ function setAll(v){
 }
 document.getElementById('clsAll').onclick  = function(){ setAll(true); };
 document.getElementById('clsNone').onclick = function(){ setAll(false); };
+
+/* ===== ぶんせきタブ =====
+ * 集計はサーバー側（getAnalysis）が log から一括で作って返す。
+ * ここでは受け取った結果を描くだけ。色と形は「色を外しても意味が残る」
+ * 二重符号化（閾値線・▲・数値の併記）で組む。 */
+var ANA = null, anaScope = null, anaAsked = false;
+
+function showPage(p){
+  var ana = (p === 'ana');
+  document.getElementById('tabSet').classList.toggle('on', !ana);
+  document.getElementById('tabAna').classList.toggle('on', ana);
+  document.getElementById(ana ? 'tabAna' : 'tabSet').setAttribute('aria-current', 'page');
+  document.getElementById(ana ? 'tabSet' : 'tabAna').removeAttribute('aria-current');
+  document.getElementById('pageSet').style.display = ana ? 'none' : '';
+  document.getElementById('pageAna').style.display = ana ? '' : 'none';
+  document.querySelector('.wrap').classList.toggle('wide', ana);
+  if(ana && !anaAsked){ anaAsked = true; loadAnalysis(false); }
+}
+document.getElementById('tabSet').onclick = function(){ showPage('set'); };
+document.getElementById('tabAna').onclick = function(){ showPage('ana'); };
+
+function loadAnalysis(fresh){
+  document.getElementById('anaStat').textContent = '集計中…';
+  document.getElementById('anaStat').classList.remove('bad');
+  google.script.run.withSuccessHandler(function(r){
+    ANA = r;
+    if(anaScope === null){
+      // 初期表示はいちばん記録の多いクラス（たいてい自分の学級）。全体はチップ1つで行ける
+      var best = '', n = -1;
+      (r.classes || []).forEach(function(c){ if(c.trials > n){ n = c.trials; best = c.cls; } });
+      anaScope = best || 'all';
+    }
+    renderAnalysis();
+  }).withFailureHandler(function(e){
+    document.getElementById('anaBody').innerHTML = '';
+    setStat('anaStat', '読み込めません: ' + e.message, true);
+  }).getAnalysis(!!fresh);
+}
+document.getElementById('anaReload').onclick = function(){ loadAnalysis(true); };
+document.getElementById('anaChips').addEventListener('click', function(e){
+  if(e.target.dataset && e.target.dataset.s){ anaScope = e.target.dataset.s; renderAnalysis(); }
+});
+
+/* ---- 横棒グラフ（型ごとの指標）。破線=めやす。超えた棒だけ橙 ---- */
+function hbarChart(rows, opt){
+  if(!rows.length) return '<div class="note">この期間に記録がありません。</div>';
+  var W = 860, lblW = 168, padR = 76, rowH = 26, top = 24;
+  var H = top + rows.length*rowH + 10;
+  var max = 0; rows.forEach(function(r){ if(r.val > max) max = r.val; });
+  var smax = Math.max(max, opt.thresh || 0) * 1.06 || 1;
+  var x0 = lblW, x1 = W - padR;
+  function px(v){ return x0 + (x1 - x0) * v / smax; }
+  var s = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img">';
+  if(opt.thresh){
+    var tx = px(opt.thresh);
+    s += '<line class="thr" x1="' + tx + '" y1="' + (top - 8) + '" x2="' + tx + '" y2="' + (H - 4) + '"/>' +
+         '<text class="thl" x="' + tx + '" y="' + (top - 11) + '" text-anchor="middle">' + esc(opt.threshTxt) + '</text>';
+  }
+  rows.forEach(function(r, i){
+    var y = top + i*rowH;
+    s += '<text class="blbl" x="' + (x0 - 8) + '" y="' + (y + rowH*0.68) + '" text-anchor="end">' + esc(r.label) + '</text>' +
+         '<rect x="' + x0 + '" y="' + (y + 4) + '" width="' + Math.max(px(r.val) - x0, 1.5) + '" height="' + (rowH - 9) +
+           '" rx="3" fill="' + (r.over ? '#C86A00' : '#0F5EA8') + '"><title>' + esc(r.label + ' ' + r.valTxt) + '</title></rect>' +
+         '<text class="bval" x="' + (px(r.val) + 6) + '" y="' + (y + rowH*0.68) + '">' + esc(r.valTxt) + '</text>';
+  });
+  return s + '</svg>';
+}
+
+/* ---- 日ごとの実施回数。記録の無い日は0本の柱として描く ---- */
+function colChart(daily){
+  if(!daily || !daily.length) return '<div class="note">この期間に記録がありません。</div>';
+  var W = 860, H = 128, padL = 30, padB = 16, padT = 16;
+  var map = {}, max = 0;
+  daily.forEach(function(x){ map[x[0]] = x[1]; if(x[1] > max) max = x[1]; });
+  var days = [];
+  var d = new Date(daily[0][0] + 'T00:00:00');
+  var last = new Date(daily[daily.length-1][0] + 'T00:00:00');
+  while(d <= last){
+    var key = d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    days.push([key, map[key] || 0]);
+    d.setDate(d.getDate() + 1);
+  }
+  var n = days.length, bw = (W - padL - 4) / n, base = H - padB;
+  var s = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img">' +
+          '<line class="ax" x1="' + padL + '" y1="' + base + '" x2="' + W + '" y2="' + base + '"/>' +
+          '<text class="bval" x="2" y="' + (padT - 4) + '">最大 ' + max + '回</text>';
+  days.forEach(function(day, i){
+    var h = (base - padT) * (max ? day[1]/max : 0);
+    var x = padL + i*bw + bw*0.16;
+    s += '<rect x="' + x + '" y="' + (base - h) + '" width="' + Math.max(bw*0.68, 1) +
+         '" height="' + Math.max(h, 0.5) + '" rx="1.5" fill="#0F5EA8">' +
+         '<title>' + esc(day[0].slice(5).replace('-', '/')) + ' ' + day[1] + '回</title></rect>';
+    if(i === 0 || i === n-1 || day[0].slice(-2) === '01' || (n > 14 && i % 7 === 0)){
+      s += '<text class="bval" x="' + (padL + i*bw + bw/2) + '" y="' + (H - 3) +
+           '" text-anchor="middle" style="font-size:9px">' + esc(day[0].slice(5).replace('-', '/')) + '</text>';
+    }
+  });
+  return s + '</svg>';
+}
+
+/* ---- ヒートマップ。セルは秒＋濃淡。ゆらぎ超過は▲を添える（色だけに頼らない） ---- */
+function heatCls(ms){
+  if(!ms) return 'none';
+  var r = ms / ANA.slowTk;
+  if(r <= 0.7) return '';
+  if(r <= 1.0) return 'h1';
+  if(r <= 1.5) return 'h2';
+  return 'h3';
+}
+function heatCell(o, wobble){
+  if(!o || !o.n) return '<td class="none" title="記録なし">–</td>';
+  var mark = (wobble && o.n >= 5 && o.cv > ANA.wobble) ? '<span class="wb">▲</span>' : '';
+  return '<td class="' + heatCls(o.ms) + '" title="' + o.n + '回・ゆらぎ' + o.cv + '%">' +
+         (o.ms/1000).toFixed(1) + mark + '</td>';
+}
+function heatLegend(r){
+  var t = (r.slowTk/1000).toFixed(1), t15 = (r.slowTk*1.5/1000).toFixed(1);
+  return '<div class="heatlg">' +
+    '<span><span class="sw" style="background:#fff"></span>速い（めやすの7割以下）</span>' +
+    '<span><span class="sw" style="background:#E3F0FA"></span>めやす以内</span>' +
+    '<span><span class="sw" style="background:#A9CCE7"></span>' + t + '秒超</span>' +
+    '<span><span class="sw" style="background:#0F5EA8"></span>' + t15 + '秒超</span>' +
+    '<span class="wob">▲ ゆらぎ' + r.wobble + '%超（5回以上の型）</span>' +
+    '<span>– 記録なし</span></div>';
+}
+function heatHead(r, extra){
+  return '<thead><tr><th class="nm">' + esc(extra.first) + '</th>' +
+    r.order.map(function(ty){ return '<th>' + esc(r.types[ty] || ty) + '</th>'; }).join('') +
+    extra.tail + '</tr></thead>';
+}
+function classHeat(r){
+  if(!(r.classes || []).length)
+    return '<h3 class="sec">クラスごとの平均想起時間</h3><div class="note">roster に児童が登録されていません。</div>';
+  var rows = r.classes.map(function(c){
+    var sc = r.scopes[c.cls];
+    var tds = r.order.map(function(ty){ return heatCell(sc && sc.types ? sc.types[ty] : null); }).join('');
+    return '<tr><td class="nm">' + esc(c.label) + '</td>' + tds +
+           '<td class="wk">' + c.trials + '回</td></tr>';
+  }).join('');
+  return '<h3 class="sec">クラスごとの平均想起時間</h3>' +
+    '<div class="note">セルの数値は秒（初打鍵までの平均）。濃いほど遅い。</div>' +
+    '<div style="overflow-x:auto"><table class="heat">' +
+    heatHead(r, { first: 'クラス', tail: '<th>試行</th>' }) +
+    '<tbody>' + rows + '</tbody></table></div>' + heatLegend(r);
+}
+function studentHeat(r, ck){
+  var kids = (r.students || {})[ck] || [];
+  if(!kids.length)
+    return '<h3 class="sec">児童ごとの平均想起時間</h3>' +
+           '<div class="note">このクラスには名簿の児童がいません。</div>';
+  var rows = kids.map(function(k){
+    var tds = r.order.map(function(ty){ return heatCell(k.t[ty], true); }).join('');
+    var wob = k.wobble
+      ? '<span class="' + (k.wobble > r.wobble ? 'wob' : '') + '">' + k.wobble + '% ' + esc(k.wobbleType) + '</span>'
+      : '';
+    return '<tr><td class="nm">' + (k.no || '') + '　' + esc(k.name) + '</td>' + tds +
+           '<td class="wk">' + wob + '</td><td class="wk">' + k.miss + '</td><td class="wk">' + k.tries + '</td></tr>';
+  }).join('');
+  return '<h3 class="sec">児童ごとの平均想起時間</h3>' +
+    '<div class="note">セルの数値は秒（初打鍵までの平均）。濃いほど遅い。' +
+    '<b>この表は児童に見せないでください</b>（「遅い」を名指すと隠す行動が出ます）。</div>' +
+    '<div style="overflow-x:auto"><table class="heat">' +
+    heatHead(r, { first: '児童', tail: '<th>ゆらぎ</th><th>誤答</th><th>試行</th>' }) +
+    '<tbody>' + rows + '</tbody></table></div>' + heatLegend(r);
+}
+function wrongTable(list, types){
+  if(!list || !list.length) return '<div class="note">この期間に誤答の記録はありません。</div>';
+  return '<table class="wrong"><thead><tr><th>問題型</th><th>もんだい</th><th>正しい答え</th><th>こたえた値</th><th>回数</th></tr></thead><tbody>' +
+    list.map(function(w){
+      return '<tr><td>' + esc(types[w.t] || w.t) + '</td><td>' + esc(w.tag) + '</td>' +
+             '<td>' + esc(w.ok || '–') + '</td><td>' + esc(w.ng) + '</td><td class="n">' + w.n + '</td></tr>';
+    }).join('') + '</tbody></table>' +
+    '<div class="note">全件はスプレッドシートの mistakes シートにあります。</div>';
+}
+
+function renderAnalysis(){
+  var r = ANA; if(!r) return;
+  document.getElementById('anaChips').innerHTML =
+    '<span class="chip' + (anaScope === 'all' ? ' on' : '') + '" data-s="all">全体</span>' +
+    (r.classes || []).map(function(c){
+      return '<span class="chip' + (anaScope === c.cls ? ' on' : '') + '" data-s="' + esc(c.cls) + '">' + esc(c.label) + '</span>';
+    }).join('');
+
+  var sc = r.scopes[anaScope] || { trials: 0, types: {}, wrongTop: [], daily: [] };
+  var meta = '';
+  if(anaScope !== 'all'){
+    var info = null, kids = (r.students || {})[anaScope] || [];
+    (r.classes || []).forEach(function(c){ if(c.cls === anaScope) info = c; });
+    if(info){
+      var active = kids.filter(function(k){ return k.tries > 0; }).length;
+      meta = '・' + active + '/' + info.n + '名に記録あり';
+    }
+  }
+  document.getElementById('anaStat').textContent =
+    r.span + '・' + sc.trials + ' 試行' + meta + '・' + r.at + ' 時点（名簿の児童だけが対象）';
+
+  var thrSec = r.slowTk / 1000;
+  var recall = r.order.filter(function(ty){ return sc.types[ty] && sc.types[ty].n > 0; })
+    .map(function(ty){
+      var o = sc.types[ty];
+      return { label: r.types[ty] || ty, val: o.ms/1000,
+               valTxt: (o.ms/1000).toFixed(1) + '秒・' + o.n + '回', over: o.ms > r.slowTk };
+    }).sort(function(a, b){ return b.val - a.val; });
+  var miss = r.order.filter(function(ty){ return sc.types[ty] && sc.types[ty].miss > 0; })
+    .map(function(ty){
+      return { label: r.types[ty] || ty, val: sc.types[ty].miss,
+               valTxt: sc.types[ty].miss + '件', over: false };
+    }).sort(function(a, b){ return b.val - a.val; });
+
+  document.getElementById('anaBody').innerHTML =
+    '<h3 class="sec">型ごとの平均想起時間</h3>' +
+    '<div class="note">問題が出てから最初のキーを押すまでの平均（打鍵は含まない）。' +
+      '破線は未習熟のめやす ' + thrSec.toFixed(1) + '秒。</div>' +
+    hbarChart(recall, { thresh: thrSec, threshTxt: 'めやす ' + thrSec.toFixed(1) + '秒' }) +
+    '<h3 class="sec">型ごとの誤答の数</h3>' +
+    hbarChart(miss, {}) +
+    '<h3 class="sec">日ごとの実施回数</h3>' +
+    colChart(sc.daily) +
+    '<h3 class="sec">よくある誤答</h3>' +
+    wrongTable(sc.wrongTop, r.types) +
+    (anaScope === 'all' ? classHeat(r) : studentHeat(r, anaScope));
+}
 </script>
 </body>
 </html>
