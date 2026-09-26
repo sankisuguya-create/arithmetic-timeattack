@@ -185,6 +185,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     <div class="stat" id="anaStat">読み込み中…</div>
     <div id="anaBody"></div>
     <div class="bar">
+      <select id="anaYear" style="display:none" aria-label="年度"></select>
       <button class="ghost" id="anaReload">いまの記録で読み直す</button>
     </div>
   </div>
@@ -433,6 +434,7 @@ document.getElementById('clsNone').onclick = function(){ setAll(false); };
  * ここでは受け取った結果を描くだけ。色と形は「色を外しても意味が残る」
  * 二重符号化（閾値線・▲・数値の併記）で組む。 */
 var ANA = null, anaScope = null, anaAsked = false;
+var anaFy = 0;   // 0 = 今年度。過去の年度を選ぶとその年の4月〜3月を集計する
 
 function showPage(p){
   var ana = (p === 'ana');
@@ -463,9 +465,13 @@ function loadAnalysis(fresh){
   }).withFailureHandler(function(e){
     document.getElementById('anaBody').innerHTML = '';
     setStat('anaStat', '読み込めません: ' + e.message, true);
-  }).getAnalysis(!!fresh);
+  }).getAnalysis(!!fresh, anaFy);
 }
 document.getElementById('anaReload').onclick = function(){ loadAnalysis(true); };
+document.getElementById('anaYear').onchange = function(){
+  anaFy = Number(this.value);
+  loadAnalysis(false);   // 年度ごとにキャッシュがあるので即切替
+};
 document.getElementById('anaChips').addEventListener('click', function(e){
   if(e.target.dataset && e.target.dataset.s){ anaScope = e.target.dataset.s; renderAnalysis(); }
 });
@@ -609,6 +615,14 @@ function renderAnalysis(){
     (r.classes || []).map(function(c){
       return '<span class="chip' + (anaScope === c.cls ? ' on' : '') + '" data-s="' + esc(c.cls) + '">' + esc(c.label) + '</span>';
     }).join('');
+
+  var sel = document.getElementById('anaYear');
+  var yrs = r.years || [];
+  sel.style.display = yrs.length > 1 ? '' : 'none';
+  sel.innerHTML = yrs.map(function(y){
+    return '<option value="' + y + '"' + (y === r.fy ? ' selected' : '') + '>' +
+           (y === yrs[0] ? '今年度' : y + '年度') + '</option>';
+  }).join('');
 
   var sc = r.scopes[anaScope] || { trials: 0, types: {}, wrongTop: [], daily: [] };
   var meta = '';
