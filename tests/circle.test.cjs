@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const ctx = vm.createContext({});
-vm.runInContext(read('common/Core.gs') + '\n' + read('apps/circle/Unit.gs'), ctx);
+vm.runInContext(read('common/Core.gs') + '\n' + read(require('./lib/kit.cjs').unitDir('circle') + '/Unit.gs'), ctx);
 const unit = ctx.UNIT;
 const seen = new Set();
 

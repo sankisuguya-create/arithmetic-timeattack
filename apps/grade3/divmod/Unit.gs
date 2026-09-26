@@ -45,6 +45,7 @@ var DM_KANJI = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九
 
 var UNIT = {
   id: 'divmod',
+  grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: 'あまりのあるわり算 タイムアタック！',
   teacherTitle: 'あまりのあるわり算 設定・分析',
 

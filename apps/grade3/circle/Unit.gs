@@ -38,6 +38,7 @@ var CI_LABEL = '#C9D1E8';   // 番号と長さ
 
 var UNIT = {
   id: 'circle',
+  grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '円と球 タイムアタック！',
   teacherTitle: '円と球 設定・分析',
 

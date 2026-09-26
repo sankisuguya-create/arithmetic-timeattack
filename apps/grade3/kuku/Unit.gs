@@ -6,6 +6,7 @@
 
 var UNIT = {
   id: 'kuku',
+  grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '九九表タイムアタック！',
   teacherTitle: '九九トレーニング 設定・分析',
 

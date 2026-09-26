@@ -1,5 +1,5 @@
 'use strict';
-// 全単元共通の契約テスト。apps/ に Unit.gs を置いた単元はすべて自動で検査される。
+// 全単元共通の契約テスト。apps/grade<学年>/ に Unit.gs を置いた単元はすべて自動で検査される。
 // 新しい単元を足したとき、ここに何も書かなくてもこの検査が掛かる。
 // 見つけるもの:
 //   - Unit.gs の宣言の欠落（validateUnit_。Core.gs 側と同じ検査）
@@ -10,7 +10,7 @@
 // 表示だけして落とさない。直すべきものは注意にしない。
 
 const assert = require('assert');
-const { loadUnit, unitNames } = require('./lib/kit.cjs');
+const { loadUnit, unitNames, unitDir } = require('./lib/kit.cjs');
 
 let totalWarns = 0;
 for (const name of unitNames()) {
@@ -24,6 +24,10 @@ for (const name of unitNames()) {
   warns.forEach(w => console.log(`  ${name}: ${w}`));
   totalWarns += warns.length;
   assert.deepEqual(errors, [], `${name}: Unit.gs の契約違反`);
+
+  // 置き場の学年と宣言の学年が一致すること（プレビューのメニューはこの宣言で分ける）
+  assert.equal(unitDir(name).split('/')[1], 'grade' + unit.grade,
+    `${name}: UNIT.grade=${unit.grade} と置き場 ${unitDir(name)} が合わない`);
 
   // 2) 出題 → サーバー採点の往復。正しい答えは通り、1つずらした答えは弾かれる
   unit.modes.forEach(m => {

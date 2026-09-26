@@ -37,6 +37,7 @@ var BA_NAMES = [['赤', '青'], ['白', '黄'], ['ながい', 'みじかい']];
 
 var UNIT = {
   id: 'bai',
+  grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '何倍でしょう タイムアタック！',
   teacherTitle: '何倍でしょう 設定・分析',
 

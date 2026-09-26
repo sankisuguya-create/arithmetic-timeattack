@@ -1632,6 +1632,8 @@ function validateUnit_() {
   if (!UNIT.id) probs.push('UNIT.id がありません');
   if (!UNIT.title) probs.push('UNIT.title がありません');
   if (!UNIT.teacherTitle) probs.push('UNIT.teacherTitle がありません');
+  // 学年はプレビューのメニューとリポジトリの置き場（apps/grade<学年>/）の分類に使う
+  if (!(UNIT.grade >= 1 && UNIT.grade <= 6 && UNIT.grade % 1 === 0)) probs.push('UNIT.grade（1〜6の学年）がありません');
   if (typeof UNIT.gen !== 'function') probs.push('UNIT.gen がありません');
 
   // モードの宣言

@@ -1,6 +1,7 @@
 /** 小数TA。小数を整数化して生成し、浮動小数の丸め誤差を採点に持ち込まない。 */
 var UNIT = {
   id: 'decimal',
+  grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '小数 タイムアタック！',
   teacherTitle: '小数 設定・分析',
   defaults: { slow_ms: 5000 },

@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const ctx = vm.createContext({});
-vm.runInContext(read('common/Core.gs') + '\n' + read('apps/divmod/Unit.gs'), ctx);
+vm.runInContext(read('common/Core.gs') + '\n' + read(require('./lib/kit.cjs').unitDir('divmod') + '/Unit.gs'), ctx);
 const unit = ctx.UNIT;
 const MODES = unit.modes.map(m => m.id);
 const seen = new Set();

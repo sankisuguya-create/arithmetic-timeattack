@@ -32,14 +32,14 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 | アプリ | 内容 | 対象 |
 |---|---|---|
 | `apps/hub` | 各アプリへの入口。学年で出し分ける | 全学年 |
-| `apps/kuku` | 九九・わり算（9×9 / 9×16） | 2〜4年 |
-| `apps/length` | km と m の換算・加減計算、まきじゃくの読み取り | 3年 |
-| `apps/weight` | g と kg の換算・加減計算、はかりの読み取り | 3年 |
-| `apps/divmod` | あまりのあるわり算（九九の逆→九九さがし→引き算→ひとつなぎ→誤答判別→わり算） | 3年 |
-| `apps/bignum` | 大きな数（万・億・兆、位取り、いくつ分、10倍・100倍と逆算） | 万を学習後〜億・兆を学習後 |
-| `apps/decimal` | 小数（0.1・0.01のいくつ分、位取り、10倍・100倍と逆算） | 3〜4年 |
-| `apps/circle` | 円と球（中心・半径・直径の見分け、半径⇄直径、球の切り口、箱に並んだボール） | 3年 |
-| `apps/bai` | 何倍でしょう（もとにする大きさ、テープ図・関係図、式の選択、第1〜第3用法、倍の倍） | 3年 |
+| `apps/grade3/kuku` | 九九・わり算（9×9 / 9×16） | 3年 |
+| `apps/grade3/length` | km と m の換算・加減計算、まきじゃくの読み取り | 3年 |
+| `apps/grade3/weight` | g と kg の換算・加減計算、はかりの読み取り | 3年 |
+| `apps/grade3/divmod` | あまりのあるわり算（九九の逆→九九さがし→引き算→ひとつなぎ→誤答判別→わり算） | 3年 |
+| `apps/grade3/bignum` | 大きな数（万・億・兆、位取り、いくつ分、10倍・100倍と逆算） | 3年 |
+| `apps/grade3/decimal` | 小数（0.1・0.01のいくつ分、位取り、10倍・100倍と逆算） | 3年 |
+| `apps/grade3/circle` | 円と球（中心・半径・直径の見分け、半径⇄直径、球の切り口、箱に並んだボール） | 3年 |
+| `apps/grade3/bai` | 何倍でしょう（もとにする大きさ、テープ図・関係図、式の選択、第1〜第3用法、倍の倍） | 3年 |
 
 ## 構成
 
@@ -49,14 +49,15 @@ common/
   index.html     共通の児童画面（レイアウト・キー配置・タイマー・送信）
   teacher.html   共通の教師画面（設定・クラスごとの公開モード・集計）
 apps/
-  kuku/Unit.gs   九九の出題定義
-  length/Unit.gs 長さの出題定義
-  weight/Unit.gs おもさの出題定義
-  divmod/Unit.gs あまりのあるわり算の出題定義
-  bignum/Unit.gs 大きな数の出題定義（詳細: apps/bignum/README.md）
-  decimal/Unit.gs 小数の出題定義
-  bai/Unit.gs    何倍でしょうの出題定義（詳細: apps/bai/README.md）
-  circle/Unit.gs 円と球の出題定義（図は単元が SVG で描く。詳細: apps/circle/README.md）
+  grade3/          3年の単元（学年ごとに grade<学年>/ を切る。Unit.gs の grade と一致させる）
+    kuku/Unit.gs     九九の出題定義
+    length/Unit.gs   長さの出題定義
+    weight/Unit.gs   おもさの出題定義
+    divmod/Unit.gs   あまりのあるわり算の出題定義
+    bignum/Unit.gs   大きな数の出題定義（詳細: apps/grade3/bignum/README.md）
+    decimal/Unit.gs  小数の出題定義
+    circle/Unit.gs   円と球の出題定義（図は単元が SVG で描く。詳細: apps/grade3/circle/README.md）
+    bai/Unit.gs      何倍でしょうの出題定義（詳細: apps/grade3/bai/README.md）
   hub/           ハブ（Code.gs / links.html / teacher.html）
 docs/
   ARCHITECTURE.md  設計の考え方
@@ -80,7 +81,7 @@ Core は単元を知らない。逆向きの依存を作らないことで、単
 シートもトリガーも初回アクセス時に自動で用意されるので、
 実行するのは承認のための `setup` 1回だけ。
 
-`clasp` を使う場合は `.clasp.json` を各 `apps/*` に置き、
+`clasp` を使う場合は `.clasp.json` を各 `apps/grade<学年>/*` に置き、
 `common/` のファイルを同じプロジェクトに含める。
 
 ## 設計の要点
