@@ -484,8 +484,8 @@ function boot() {
     // 渡さないと index.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
-            // 学年の進みの色と、まちがい・注意の赤。画面は色の値を持たず、ここから受け取る
-            grade: UNIT.grade, accent: gradeAccent_(), alert: ALERT_COLOR_,
+            // 学年の進みの色・まちがいの赤・「？」の印の色。画面は色の値を持たず、ここから受け取る
+            grade: UNIT.grade, accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
@@ -1649,6 +1649,16 @@ var GRADE_EXTRA_ = {
   6: ['#49B9DF', '#8A6CE5']
 };
 function gradeAccent_() { return GRADE_ACCENT_[UNIT.grade] || GRADE_ACCENT_[3]; }
+
+/**
+ * 「？」（問われている位置を示す印）の色。
+ * 赤はまちがい・注意に予約するので使わない。進みの色と混ざらないよう
+ * GRADE_EXTRA_ の先頭から取る（各学年とも進みの色・赤・背景と見分けられる組だけを残してある）。
+ */
+function questionColor_() {
+  var ex = GRADE_EXTRA_[UNIT.grade] || [];
+  return ex[0] || '#FFFFFF';
+}
 
 /**
  * UNIT が共通エンジンの契約に合っているかを調べる。

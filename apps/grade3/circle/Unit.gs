@@ -122,9 +122,9 @@ function ciSeg_(p, q) {
   return '<line x1="' + ciR_(p[0]) + '" y1="' + ciR_(p[1]) + '" x2="' + ciR_(q[0]) + '" y2="' + ciR_(q[1]) +
          '" stroke="' + CI_INK + '" stroke-width="6" stroke-linecap="round"/>';
 }
-function ciText_(x, y, s, size) {
+function ciText_(x, y, s, size, fill) {
   return '<text x="' + ciR_(x) + '" y="' + ciR_(y) + '" font-size="' + (size || 30) +
-         '" fill="' + CI_LABEL + '" text-anchor="middle" dominant-baseline="middle">' + s + '</text>';
+         '" fill="' + (fill || CI_LABEL) + '" text-anchor="middle" dominant-baseline="middle">' + s + '</text>';
 }
 /** 線分 p→q の中点から、線に垂直に d だけずらした位置に長さを書く */
 function ciLenLabel_(p, q, s, d) {
@@ -312,10 +312,10 @@ function ciBox_(rows, cols, d, give, ask, boxLen) {
   }
   if (ask === 'w') {
     var bw_ = ciBrace_([x0, y0 + bh + 6], [x0 + bw, y0 + bh + 6], 1);   // 箱の下、下へ
-    body += bw_.svg + ciText_(bw_.tip[0], bw_.tip[1] + 24, '？', 38);
+    body += bw_.svg + ciText_(bw_.tip[0], bw_.tip[1] + 24, '？', 38, questionColor_());
   } else if (ask === 'h') {
     var bh_ = ciBrace_([x0 + bw + 6, y0], [x0 + bw + 6, y0 + bh], -1);   // 箱の右、右へ
-    body += bh_.svg + ciText_(bh_.tip[0] + 24, bh_.tip[1], '？', 38);
+    body += bh_.svg + ciText_(bh_.tip[0] + 24, bh_.tip[1], '？', 38, questionColor_());
   }
   return ciSvg_(W, H, body);
 }

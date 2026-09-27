@@ -190,6 +190,9 @@ function baPlain_(lines, choices) {
  * 数の欄は vals（'ア' '？' や数）で受け、図は数の大きさに比例させない
  * （比例させると長さの比から答えが読めてしまう）。倍は下のテープの右に書く。
  */
+/** '？'や'ア'の問い印なら「？」の色（Core.gs の questionColor_）、数なら既定色 */
+function baQfill_(v) { return (v === '？' || v === 'ア') ? questionColor_() : BA_INK; }
+
 function baTape_(s, vals, y0) {
   var x0 = 170, full = 620, one = full / s.k, h = 50, body = '';
   var yS = y0, yB = y0 + 90;
@@ -197,9 +200,9 @@ function baTape_(s, vals, y0) {
   body += baRect_(x0, yS, one, h, 'rgba(255,255,255,.12)');
   body += baRect_(x0, yB, full, h, 'rgba(255,255,255,.12)');
   for (var i = 1; i < s.k; i++) body += baLine_(x0 + one * i, yB, x0 + one * i, yB + h, BA_LINE, 3);
-  body += baText1_(x0 + one + 16, yS + h / 2, vals.m + 'cm', 40);
-  body += baText1_(x0 + full + 16, yB + h / 2, vals.c + 'cm', 40);
-  body += baText1_(x0 + full / 2, yB + h + 40, '（' + vals.k + '倍）', 40, BA_INK, 'middle');
+  body += baText1_(x0 + one + 16, yS + h / 2, vals.m + 'cm', 40, baQfill_(vals.m));
+  body += baText1_(x0 + full + 16, yB + h / 2, vals.c + 'cm', 40, baQfill_(vals.c));
+  body += baText1_(x0 + full / 2, yB + h + 40, '（' + vals.k + '倍）', 40, baQfill_(vals.k), 'middle');
   return { svg: body, y: yB + h + 80 };
 }
 
@@ -207,14 +210,14 @@ function baTape_(s, vals, y0) {
 function baRel_(s, vals, y0) {
   var bw = 240, bh = 80, xL = 60, xR = 660, y = y0, body = '';
   body += baRect_(xL, y, bw, bh) + baRect_(xR, y, bw, bh);
-  body += baText1_(xL + bw / 2, y + bh / 2, vals.m + 'cm', 44, BA_INK, 'middle');
-  body += baText1_(xR + bw / 2, y + bh / 2, vals.c + 'cm', 44, BA_INK, 'middle');
+  body += baText1_(xL + bw / 2, y + bh / 2, vals.m + 'cm', 44, baQfill_(vals.m), 'middle');
+  body += baText1_(xR + bw / 2, y + bh / 2, vals.c + 'cm', 44, baQfill_(vals.c), 'middle');
   body += baText1_(xL + bw / 2, y + bh + 34, s.small, 36, BA_SUB, 'middle');
   body += baText1_(xR + bw / 2, y + bh + 34, s.big, 36, BA_SUB, 'middle');
   var ay = y + bh / 2;
   body += baLine_(xL + bw + 10, ay, xR - 20, ay, BA_INK, 5) +
           '<path d="M' + (xR - 10) + ' ' + ay + ' L' + (xR - 34) + ' ' + (ay - 14) + ' L' + (xR - 34) + ' ' + (ay + 14) + ' Z" fill="' + BA_INK + '"/>';
-  body += baText1_((xL + bw + xR) / 2, ay - 36, '×' + vals.k, 44, BA_INK, 'middle');
+  body += baText1_((xL + bw + xR) / 2, ay - 36, '×' + vals.k, 44, baQfill_(vals.k), 'middle');
   return { svg: body, y: y + bh + 70 };
 }
 

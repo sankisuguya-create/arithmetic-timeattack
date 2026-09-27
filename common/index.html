@@ -7,8 +7,8 @@
 <style>
 :root{
   --paper:#F7F7F4; --ink:#101728; --chalk:#FFFFFF;
-  /* --acc は学年の進みの色。boot で Core.gs の GRADE_ACCENT_ から上書きする（既定は3年） */
-  --acc:#35D0A5; --alert:#FF1A30;
+  /* --acc は学年の進みの色、--q は「？」の印の色。boot で Core.gs から上書きする（既定は3年） */
+  --acc:#35D0A5; --alert:#FF1A30; --q:#F1B1E4;
   --mute:#9AA0B0; --line:#DFDFD8;
 }
 *{margin:0;padding:0;box-sizing:border-box}
@@ -494,11 +494,12 @@ function pendFlush(){
   }).withFailureHandler(function(){}).submitSession(p.token, p.items);
 }
 
-/** 学年の色を画面に入れる。値は Core.gs（GRADE_ACCENT_）が正本で、ここは受け取るだけ */
-function setPalette_(accent, alert){
+/** 学年の色を画面に入れる。値は Core.gs（GRADE_ACCENT_ 等）が正本で、ここは受け取るだけ */
+function setPalette_(accent, alert, q){
   var ok = function(c){ return /^#[0-9A-Fa-f]{6}$/.test(c || ''); };
   if(ok(accent)) document.documentElement.style.setProperty('--acc', accent);
   if(ok(alert))  document.documentElement.style.setProperty('--alert', alert);
+  if(ok(q))      document.documentElement.style.setProperty('--q', q);
 }
 
 /* ============================================================
@@ -701,8 +702,9 @@ function rulerSVG(r){
   // 既定は矢印の右。右端に寄って窓からはみ出す時だけ左へ回す
   var qx = ax + 22, qAnchor = 'start';
   if(qx + fs*0.7 > padL + innerW){ qx = ax - 22; qAnchor = 'end'; }
+  // 「？」は矢印（--acc）と分けて、問われている位置だと一目で分かる色にする
   s.push('<text x="'+qx.toFixed(1)+'" y="'+(top-14)+'" text-anchor="'+qAnchor+'" '+
-         'font-size="'+Math.round(fs*1.15)+'" font-weight="800" style="fill:var(--acc)">?</text>');
+         'font-size="'+Math.round(fs*1.15)+'" font-weight="800" style="fill:var(--q)">?</text>');
 
   // 左端の金具（0 から始まるときだけ）
   if(r.from === 0){
@@ -1765,7 +1767,7 @@ function applyBoot(r, live){
   SCALE = r.unit.scale || {};
   GLYPH = r.unit.glyph || {};          // 古い localStorage の控えには無いので {} に落とす
   SLOTCOLOR = r.unit.slotColor || {};
-  setPalette_(r.unit.accent, r.unit.alert);   // 古い控えには無いので既定（3年）のまま
+  setPalette_(r.unit.accent, r.unit.alert, r.unit.q);   // 古い控えには無いので既定（3年）のまま
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);
