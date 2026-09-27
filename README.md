@@ -40,6 +40,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 | `apps/grade3/decimal` | 小数（0.1・0.01のいくつ分、位取り、10倍・100倍と逆算） | 3年 |
 | `apps/grade3/circle` | 円と球（中心・半径・直径の見分け、半径⇄直径、球の切り口、箱に並んだボール） | 3年 |
 | `apps/grade3/bai` | 何倍でしょう（もとにする大きさ、テープ図・関係図、式の選択、第1〜第3用法、倍の倍） | 3年 |
+| `apps/grade5/volume` | 体積（積み木、公式と逆算、m³・cm³・L・mL、複合図形、容積） | 5年 |
 
 ## 構成
 
@@ -58,6 +59,8 @@ apps/
     decimal/Unit.gs  小数の出題定義
     circle/Unit.gs   円と球の出題定義（図は単元が SVG で描く。詳細: apps/grade3/circle/README.md）
     bai/Unit.gs      何倍でしょうの出題定義（詳細: apps/grade3/bai/README.md）
+  grade5/
+    volume/Unit.gs   体積の出題定義（詳細: apps/grade5/volume/README.md）
   hub/           ハブ（Code.gs / links.html / teacher.html）
 docs/
   ARCHITECTURE.md  設計の考え方
