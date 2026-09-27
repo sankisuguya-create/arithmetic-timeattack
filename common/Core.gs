@@ -1473,6 +1473,22 @@ function gradeNorms_(kids) {
   return out;
 }
 
+/** 本人の中で苦手な型：その子の偏差値の平均より、この値以上低い型に印（self）を付ける */
+var SELF_GAP_DV_ = 10;
+
+/**
+ * 本人の中で遅い型。学年との比較だけだと、全体に遅い子は行全体が「遅い」になり、
+ * その子がとくに苦手な型が読めない。型ごとの偏差値（dv）の本人平均と比べて、
+ * SELF_GAP_DV_ 以上低い型に self を立てる。偏差値のある型が3つ未満なら判定しない。
+ * 秒どうしを比べないのは、型ごとに打鍵数・手順の数が違うため（偏差値なら型の差が消える）。
+ */
+function markSelfSlow_(t) {
+  var tys = Object.keys(t).filter(function (ty) { return t[ty].dv != null; });
+  if (tys.length < 3) return;
+  var avg = tys.reduce(function (a, ty) { return a + t[ty].dv; }, 0) / tys.length;
+  tys.forEach(function (ty) { if (t[ty].dv <= avg - SELF_GAP_DV_) t[ty].self = true; });
+}
+
 function recallOut_(acc, miss) {
   if (!acc || !acc.ntk) return { n: 0, ms: 0, cv: 0, miss: miss || 0 };
   var mean = acc.tk / acc.ntk;
@@ -1660,8 +1676,12 @@ function buildAnalysis_(fyear) {
     var nm = norms[classes[ck].grade] || {};
     students[ck].forEach(function (k) {
       Object.keys(k.t).forEach(function (ty) {
-        k.t[ty].b = k.t[ty].n >= SLOW_MIN_TRIES_ ? slowBand_(k.t[ty].ms, nm[ty]) : -1;
+        var o = k.t[ty];
+        o.b = o.n >= SLOW_MIN_TRIES_ ? slowBand_(o.ms, nm[ty]) : -1;
+        // 偏差値。速いほど高い（50＋10×(平均−本人)/標準偏差）。判定できる型だけ
+        if (o.b >= 0) o.dv = Math.round(50 + 10 * (nm[ty].mean - o.ms) / nm[ty].sd);
       });
+      markSelfSlow_(k.t);
     });
   });
   // クラス・全体の型平均も同じ分布に当てる。全体は学年が1つのときだけ（学年をまたぐ分布は無い）
@@ -1700,6 +1720,7 @@ function buildAnalysis_(fyear) {
     days: days,
     at: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M/d H:mm'),
     wobble: wobble, slowMinKids: SLOW_MIN_KIDS_, slowMinTries: SLOW_MIN_TRIES_,
+    norms: norms, selfGap: SELF_GAP_DV_,
     order: order, types: UNIT.types,
     classes: clsList,
     scopes: scopes,

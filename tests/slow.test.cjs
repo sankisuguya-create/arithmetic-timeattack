@@ -32,6 +32,17 @@ assert.equal(g[5].A.n, 1);
 assert.ok(ctx.slowBand_(3000, g[3].A) >= 2);
 assert.equal(ctx.slowBand_(3000, g[3].B), 0);
 
+// 本人の中で遅い型（◆）：全体に遅い子でも、他の型より偏差値が10以上低い型だけに付く
+const t1 = { A: { dv: 30 }, B: { dv: 32 }, C: { dv: 31 }, D: { dv: 15 } };
+ctx.markSelfSlow_(t1);
+assert.ok(t1.D.self && !t1.A.self && !t1.B.self && !t1.C.self);
+const t2 = { A: { dv: 30 }, B: { dv: 31 }, C: { dv: 29 } };    // 一様に遅い子には付かない
+ctx.markSelfSlow_(t2);
+assert.ok(!t2.A.self && !t2.B.self && !t2.C.self);
+const t3 = { A: { dv: 60 }, B: { dv: 30 } };                    // 型が3つ未満は判定しない
+ctx.markSelfSlow_(t3);
+assert.ok(!t3.B.self);
+
 // 単元に秒の閾値を残していないこと
 for (const name of unitNames()) {
   const u = loadUnit(name).UNIT;
