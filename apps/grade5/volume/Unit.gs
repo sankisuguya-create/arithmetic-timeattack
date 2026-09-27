@@ -30,6 +30,7 @@ var VO_MARK = ['①', '②', '③', '④'];
 var VO_LINE = '#8C93AC';    // 立体の辺
 var VO_INK = '#FFFFFF';     // 強調する線
 var VO_LABEL = '#C9D1E8';   // 長さの字
+var VO_DIM = '#D4D454';     // 寸法線（5年の進みの色）。長さの字がどの辺のものかを線でつなぐ
 // 正面・上面・側面。重ね描きで奥の面を隠すので、半透明にせず背景 #101728 と混ぜた不透明色にする
 var VO_FACE = ['#282E3E', '#454A57', '#1A2031'];
 
@@ -108,7 +109,7 @@ function voShuffle_(rand, arr) {
 function voView_(w, h, d, maxPx) {
   var kx = 0.5 * Math.cos(Math.PI / 6), ky = 0.5 * Math.sin(Math.PI / 6);
   var s = Math.min(maxPx / (w + d * kx), maxPx * 0.8 / (h + d * ky));
-  var pad = 100;
+  var pad = 120;
   var W = (w + d * kx) * s + pad * 2, H = (h + d * ky) * s + pad * 2;
   return {
     s: s, kx: kx, ky: ky, W: W, H: H,
@@ -150,18 +151,35 @@ function voPrism_(v, poly, d) {
   return body + voPoly_(poly.map(function (q) { return v.p(q[0], q[1], 0); }), VO_FACE[0]);
 }
 
-/** 辺 p→q の長さを、辺の外側（side 方向の画面ベクトル）に書く */
-function voLabel_(p, q, s, off) {
-  return voText_((p[0] + q[0]) / 2 + off[0], (p[1] + q[1]) / 2 + off[1], s, 30);
+/**
+ * 寸法線。辺 p→q の両端から、図の外向き o（画面の単位ベクトル）へ dist だけ補助線を伸ばし、
+ * その先を結んだ線の外側に長さを書く。字を辺のそばに置くだけだと、どの辺の長さか分からない
+ * （特に短い辺・内側の辺）。字は必ず図の外に出し、辺との対応は学年の色の線で示す。
+ */
+function voDim_(p, q, o, dist, str) {
+  var a = [p[0] + o[0] * dist, p[1] + o[1] * dist], b = [q[0] + o[0] * dist, q[1] + o[1] * dist];
+  function ln(u, w, width) {
+    return '<line x1="' + voR_(u[0]) + '" y1="' + voR_(u[1]) + '" x2="' + voR_(w[0]) + '" y2="' + voR_(w[1]) +
+           '" stroke="' + VO_DIM + '" stroke-width="' + width + '" stroke-linecap="round"/>';
+  }
+  var ext = 10;   // 補助線は寸法線を少し越える
+  var body = ln(p, [a[0] + o[0] * ext, a[1] + o[1] * ext], 2) +
+             ln(q, [b[0] + o[0] * ext, b[1] + o[1] * ext], 2) + ln(a, b, 4);
+  // 横へ出す字は字の幅ぶん、斜め（奥行き）はその中間だけ離す
+  var k = Math.abs(o[0]) > 0.7 ? 50 : o[0] !== 0 ? 42 : 28;
+  return body + voText_((a[0] + b[0]) / 2 + o[0] * k, (a[1] + b[1]) / 2 + o[1] * k, str, 30);
 }
 
-/** 直方体 w×h×d の図と、たて（奥行き）・よこ・高さの3辺の字。labels は {w,h,d} の表示文字（空なら書かない） */
+/** 奥行きの辺（右下）に対する外向き：辺の向き (cos30°, -sin30°) に垂直で下向き */
+var VO_OUT_D = [0.5, 0.866];
+
+/** 直方体 w×h×d の図と、たて（奥行き）・よこ・高さの3辺の寸法線。labels は {w,h,d} の表示文字（空なら書かない） */
 function voBoxFig_(w, h, d, labels, extra) {
   var v = voView_(w, h, d, 380);
   var body = voPrism_(v, [[0, 0], [w, 0], [w, h], [0, h]], d);
-  if (labels.w) body += voLabel_(v.p(0, 0, 0), v.p(w, 0, 0), labels.w, [0, 30]);
-  if (labels.h) body += voLabel_(v.p(0, 0, 0), v.p(0, h, 0), labels.h, [-44, 0]);
-  if (labels.d) body += voLabel_(v.p(w, 0, 0), v.p(w, 0, d), labels.d, [48, 12]);
+  if (labels.w) body += voDim_(v.p(0, 0, 0), v.p(w, 0, 0), [0, 1], 16, labels.w);
+  if (labels.h) body += voDim_(v.p(0, 0, 0), v.p(0, h, 0), [-1, 0], 16, labels.h);
+  if (labels.d) body += voDim_(v.p(w, 0, 0), v.p(w, 0, d), VO_OUT_D, 16, labels.d);
   return voSvg_(v.W, v.H, body + (extra ? extra(v) : ''));
 }
 
@@ -273,11 +291,12 @@ function voLshape_(rand) {
   } while (V < 100 || V > 999);
   var poly = [[0, 0], [W, 0], [W, h1], [w2, h1], [w2, H], [0, H]];
   var v = voView_(W, H, d, 380), body = voPrism_(v, poly, d);
-  body += voLabel_(v.p(0, 0, 0), v.p(W, 0, 0), W + 'cm', [0, 30]) +
-          voLabel_(v.p(0, 0, 0), v.p(0, H, 0), H + 'cm', [-44, 0]) +
-          voLabel_(v.p(0, H, 0), v.p(w2, H, 0), w2 + 'cm', [0, -26]) +
-          voLabel_(v.p(W, 0, d), v.p(W, h1, d), h1 + 'cm', [44, 0]) +
-          voLabel_(v.p(W, 0, 0), v.p(W, 0, d), d + 'cm', [48, 12]);
+  var top = d * v.ky * v.s;   // 上面が正面より上へはみ出す高さ
+  body += voDim_(v.p(0, 0, 0), v.p(W, 0, 0), [0, 1], 16, W + 'cm') +
+          voDim_(v.p(0, 0, 0), v.p(0, H, 0), [-1, 0], 16, H + 'cm') +
+          voDim_(v.p(0, H, 0), v.p(w2, H, 0), [0, -1], top + 16, w2 + 'cm') +
+          voDim_(v.p(W, 0, d), v.p(W, h1, d), [1, 0], 16, h1 + 'cm') +
+          voDim_(v.p(W, 0, 0), v.p(W, 0, d), VO_OUT_D, 16, d + 'cm');
   return {
     t: 'F', q: ['たいせきは'], f: ['cm³'], ans: { 'cm³': V },
     tag: 'F:よこ' + W + ' たかさ' + H + ' うえ' + w2 + ' だん' + h1 + ' おく' + d,
@@ -295,11 +314,13 @@ function voNotch_(rand) {
   } while (V < 100 || V > 999);
   var poly = [[0, 0], [W, 0], [W, H], [x0 + n, H], [x0 + n, H - m], [x0, H - m], [x0, H], [0, H]];
   var v = voView_(W, H, d, 380), body = voPrism_(v, poly, d);
-  body += voLabel_(v.p(0, 0, 0), v.p(W, 0, 0), W + 'cm', [0, 30]) +
-          voLabel_(v.p(0, 0, 0), v.p(0, H, 0), H + 'cm', [-44, 0]) +
-          voLabel_(v.p(x0, H - m, 0), v.p(x0 + n, H - m, 0), n + 'cm', [0, 26]) +
-          voLabel_(v.p(x0, H - m, 0), v.p(x0, H, 0), m + 'cm', [-40, 0]) +
-          voLabel_(v.p(W, 0, 0), v.p(W, 0, d), d + 'cm', [48, 12]);
+  // へこみの幅と深さは図の内側の辺なので、補助線を図の外（上・右）まで伸ばす
+  var top = d * v.ky * v.s, right = ((W - x0 - n) + d * v.kx) * v.s;
+  body += voDim_(v.p(0, 0, 0), v.p(W, 0, 0), [0, 1], 16, W + 'cm') +
+          voDim_(v.p(0, 0, 0), v.p(0, H, 0), [-1, 0], 16, H + 'cm') +
+          voDim_(v.p(x0, H - m, 0), v.p(x0 + n, H - m, 0), [0, -1], m * v.s + top + 16, n + 'cm') +
+          voDim_(v.p(x0 + n, H - m, 0), v.p(x0 + n, H, 0), [1, 0], right + 16, m + 'cm') +
+          voDim_(v.p(W, 0, 0), v.p(W, 0, d), VO_OUT_D, 16, d + 'cm');
   return {
     t: 'G', q: ['たいせきは'], f: ['cm³'], ans: { 'cm³': V },
     tag: 'G:よこ' + W + ' たかさ' + H + ' へこみ' + n + 'x' + m + ' おく' + d,
