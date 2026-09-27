@@ -22,7 +22,8 @@ python3 -m http.server 8791
 新しい単元を追加したときは、この仕組み自体を直す必要はない
 （`preview.html` は `UNIT.gen` / `UNIT.modes` / `UNIT.units` を読むだけの単元非依存の実装のため。
 メニューに出すには `preview.html` の `KNOWN_UNITS` に `'grade<学年>/<id>'` を1つ足す。カードのタイトル・モード名・学年の見出しは Unit.gs から読む。
-一覧を自動で集めないのは、`serve.ps1` がディレクトリの一覧を返さないため）。
+一覧を自動で集めないのは、`serve.ps1` がディレクトリの一覧を返さないため。
+足し忘れは `tests/contract.test.cjs` が `apps/grade*/` の単元と突き合わせて落とす）。
 
 ## できないこと
 

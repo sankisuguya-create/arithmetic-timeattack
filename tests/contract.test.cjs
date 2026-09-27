@@ -71,3 +71,17 @@ console.log(`${unitNames().length} units passed the contract checks (warns: ${to
   });
 }
 console.log('palette rules passed.');
+
+// プレビューの単元メニュー（tools/preview/preview.html の KNOWN_UNITS）に、全単元が載っていること。
+// serve.ps1 はディレクトリの一覧を返さないので、メニューは自動で集められない。
+// 単元を足して KNOWN_UNITS を忘れると、ここで落ちる（足し忘れがプレビューに出ないまま残らない）。
+{
+  const src = require('./lib/kit.cjs').read('tools/preview/preview.html');
+  const block = src.match(/var KNOWN_UNITS = \[([\s\S]*?)\];/);
+  assert.ok(block, 'preview.html に KNOWN_UNITS が見つからない');
+  const listed = (block[1].match(/'[^']+'/g) || []).map(s => s.slice(1, -1)).sort();
+  const actual = unitNames().map(n => unitDir(n).replace(/^apps\//, '')).sort();
+  assert.deepEqual(listed, actual,
+    `preview.html の KNOWN_UNITS が apps/grade*/ の単元と合わない。足りない: ${actual.filter(x => !listed.includes(x))} 余分: ${listed.filter(x => !actual.includes(x))}`);
+}
+console.log('preview menu lists every unit.');

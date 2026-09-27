@@ -106,11 +106,13 @@ function voShuffle_(rand, arr) {
 }
 
 /** 図の座標系。s＝1cm あたりの画素、(ox, oy)＝原点（左下手前）の画面位置 */
-function voView_(w, h, d, maxPx) {
+function voView_(w, h, d, maxPx, topPad) {
   var kx = 0.5 * Math.cos(Math.PI / 6), ky = 0.5 * Math.sin(Math.PI / 6);
   var s = Math.min(maxPx / (w + d * kx), maxPx * 0.8 / (h + d * ky));
   var pad = 120;
-  var W = (w + d * kx) * s + pad * 2, H = (h + d * ky) * s + pad * 2;
+  // topPad：図の上に足す余白。画面の左上（右手用は右上）に「せいかい」の数が重なるので、
+  // 図の上の外に字を出す図（へこみ）はその高さぶん下げる
+  var W = (w + d * kx) * s + pad * 2, H = (h + d * ky) * s + pad * 2 + (topPad || 0);
   return {
     s: s, kx: kx, ky: ky, W: W, H: H,
     p: function (x, y, z) { return [pad + (x + z * kx) * s, H - pad - (y + z * ky) * s]; }
@@ -327,7 +329,7 @@ function voNotch_(rand) {
     V = d * (W * H - n * m);
   } while (V < 100 || V > 999);
   var poly = [[0, 0], [W, 0], [W, H], [x0 + n, H], [x0 + n, H - m], [x0, H - m], [x0, H], [0, H]];
-  var v = voView_(W, H, d, 380), body = voPrism_(v, poly, d);
+  var v = voView_(W, H, d, 380, 90), body = voPrism_(v, poly, d);
   // へこみの幅と深さは図の内側の辺なので、引き出し線（学年の色）で示す。
   // 深さは左の壁の中点から左上へ斜めに図の外へ、幅は底の辺のすぐ下（図の中）へ
   var topY = v.p(0, H, d)[1] - 16;
