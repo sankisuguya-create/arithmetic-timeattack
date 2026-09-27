@@ -579,15 +579,17 @@ function heatCell(o, wobble){
 }
 function heatLegend(r){
   return '<div class="heatlg">' +
-    '<span><span class="sw" style="background:#fff"></span>学年の平均より速い／判定なし</span>' +
-    '<span><span class="sw" style="background:#E3F0FA"></span>平均〜＋標準偏差1つ</span>' +
-    '<span><span class="sw" style="background:#A9CCE7"></span>＋標準偏差1つ超（遅い）</span>' +
-    '<span><span class="sw" style="background:#0F5EA8"></span>＋標準偏差2つ超</span>' +
+    '<span><span class="sw" style="background:#fff"></span>学年の中央より速い／判定なし</span>' +
+    '<span><span class="sw" style="background:#E3F0FA"></span>中央〜＋1σ</span>' +
+    '<span><span class="sw" style="background:#A9CCE7"></span>＋1σ超（遅い）</span>' +
+    '<span><span class="sw" style="background:#0F5EA8"></span>＋2σ超</span>' +
     '<span class="wob">▲ ゆらぎ' + r.wobble + '%超（5回以上の型）</span>' +
-    '<span style="color:#C86A00">◆ その子の他の型より遅い（本人の偏差値の平均より' + r.selfGap + '以上低い）</span>' +
+    '<span style="color:#C86A00">◆ その子の他の型より遅い（本人の偏差値の中央より' + r.selfGap + '以上低く、回数による揺れの2倍を超える）</span>' +
     '<span>– 記録なし</span></div>' +
-    '<div class="note">くらべる相手は同じ学年・同じ型の児童（その型を' + r.slowMinTries + '回以上）。' +
-    r.slowMinKids + '人に満たない型は色を付けない。型をまたいで秒数をくらべないこと（打つ数が違う）。</div>';
+    '<div class="note">秒は代表値（幾何平均。ときどき大きく遅れた回に引っぱられにくい）。' +
+    'くらべる相手は同じ学年・同じ型の児童（その型を' + r.slowMinTries + '回以上）。' +
+    r.slowMinKids + '人に満たない型と、' + r.slowMinTries + '回に満たない児童には色を付けない。' +
+    'σは中央値からの絶対偏差（MAD）を標準偏差の目盛りにそろえたもの。型をまたいで秒数をくらべないこと（打つ数が違う）。</div>';
 }
 function heatHead(r, extra){
   return '<thead><tr><th class="nm">' + esc(extra.first) + '</th>' +
@@ -604,7 +606,7 @@ function classHeat(r){
            '<td class="wk">' + c.trials + '回</td></tr>';
   }).join('');
   return '<h3 class="sec">クラスごとの平均想起時間</h3>' +
-    '<div class="note">セルの数値は秒（初打鍵までの平均）。濃いほど遅い。</div>' +
+    '<div class="note">セルの数値は秒（初打鍵までの代表値＝幾何平均）。濃いほど遅い。</div>' +
     '<div style="overflow-x:auto"><table class="heat">' +
     heatHead(r, { first: 'クラス', tail: '<th>試行</th>' }) +
     '<tbody>' + rows + '</tbody></table></div>' + heatLegend(r);
@@ -623,7 +625,7 @@ function studentHeat(r, ck){
            '<td class="wk">' + wob + '</td><td class="wk">' + k.miss + '</td><td class="wk">' + k.tries + '</td></tr>';
   }).join('');
   return '<h3 class="sec">児童ごとの平均想起時間</h3>' +
-    '<div class="note">セルの数値は秒（初打鍵までの平均）。濃いほど遅い。' +
+    '<div class="note">セルの数値は秒（初打鍵までの代表値＝幾何平均）。濃いほど遅い。' +
     '<b>この表は児童に見せないでください</b>（「遅い」を名指すと隠す行動が出ます）。</div>' +
     '<div style="overflow-x:auto"><table class="heat">' +
     heatHead(r, { first: '児童', tail: '<th>ゆらぎ</th><th>誤答</th><th>試行</th>' }) +
@@ -652,18 +654,26 @@ function distSection(r){
       var pts = kids.filter(function(x){ return x.k.t[ty] && x.k.t[ty].dv != null; });
       if(!nm || !pts.length) return '';
       return '<div class="dist"><div class="tt">' + esc(r.types[ty] || ty) +
-        '<span>平均' + (nm.mean/1000).toFixed(1) + '秒・σ' + (nm.sd/1000).toFixed(1) + '秒・' + nm.n + '人</span></div>' +
+        '<span>中央' + (Math.exp(nm.med)/1000).toFixed(1) + '秒・1σ＝×' + Math.exp(nm.s).toFixed(2) + '・' + nm.n + '人</span></div>' +
         distSvg(ty, pts) + '</div>';
     }).join('');
     if(!cards) return;
     out += '<h3 class="sec">型ごとの偏差値の分布（' + g + '年）</h3>' +
-      '<div class="note">同じ学年・同じ型の児童の平均想起時間を偏差値にした分布。<b>速いほど右</b>（50＝学年の平均）。' +
+      '<div class="note">同じ学年・同じ型の児童の想起時間を偏差値にした分布。<b>速いほど右</b>（50＝学年の中央）。' +
+      '時間は遅い側に裾が長いので対数に直し、中心と広がりは外れ値に強い中央値と MAD で取っている' +
+      '（「1σ＝×1.3」なら、中央の1.3倍の時間で＋1σ）。' +
       '左の橙の帯（40未満）が＋1σより遅い側、右の青の帯（60超）が−1σより速い側。' +
       (anaScope === 'all' ? '' : '青い棒がこのクラス、灰色の棒は同じ学年の他のクラス。') +
       '棒に触れると、その範囲の児童名が出ます。<b>児童に見せないでください。</b></div>' +
       '<div class="dists">' + cards + '</div>';
   });
   return out;
+}
+/* 学年の中で遅いほうから何%の位置か（同じ値は半分ずつ数える）。偏差値より分布の形に左右されない */
+function rankPct(pts, ty, dv){
+  var lo = 0, eq = 0;
+  pts.forEach(function(p){ var d = p.k.t[ty].dv; if(d < dv) lo++; else if(d === dv) eq++; });
+  return Math.round((lo + eq / 2) / pts.length * 100);
 }
 function distSvg(ty, pts){
   var W = 300, H = 128, L = 8, R = 8, T = 16, B = 30, iw = W - L - R, ih = H - T - B;
@@ -692,7 +702,7 @@ function distSvg(ty, pts){
     var names = b.slice().sort(function(p, q){ return p.k.t[ty].dv - q.k.t[ty].dv; }).map(function(p){
       var o = p.k.t[ty];
       return (anaScope === 'all' || p.c.cls !== anaScope ? p.c.label.replace(/^\d+年/, '') + ' ' : '') +
-             p.k.name + '（' + o.dv + '・' + (o.ms/1000).toFixed(1) + '秒）';
+             p.k.name + '（偏差値' + o.dv + '・' + (o.ms/1000).toFixed(1) + '秒・遅いほうから' + rankPct(pts, ty, o.dv) + '%）';
     });
     var head = '偏差値' + (i === 0 ? '〜' + hi : i === nb - 1 ? lo + '〜' : lo + '〜' + hi) + '：' + b.length + '人';
     s += '<rect class="bin" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="#9AA0B0"' +
@@ -787,7 +797,7 @@ function renderAnalysis(){
 
   document.getElementById('anaBody').innerHTML =
     '<h3 class="sec">型ごとの平均想起時間</h3>' +
-    '<div class="note">問題が出てから最初のキーを押すまでの平均（打鍵は含まない）。' +
+    '<div class="note">問題が出てから最初のキーを押すまでの代表値（幾何平均。打鍵は含まない）。' +
       '強調した棒は、同じ学年の児童の分布で＋標準偏差1つを超える型。</div>' +
     hbarChart(recall, {}) +
     '<h3 class="sec">型ごとの誤答の数</h3>' +

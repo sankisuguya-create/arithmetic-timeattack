@@ -647,29 +647,38 @@ function submitSession(token, items) {
       }
     }
     if (firstTry) {
-      // [試行数, Σ送信まで, 初打鍵が取れた数, Σ初打鍵まで, Σ(初打鍵まで)^2]
+      // [試行数, Σ送信まで, 初打鍵が取れた数, Σ初打鍵まで, Σ(初打鍵まで)^2, Σln(初打鍵まで), Σln(初打鍵まで)^2]
       // 二乗和まで持つのは、平均だけでは「毎回同じ速さで遅い子」と
       // 「想起と計数を行き来していて時々速い子」が区別できないため。
       // 前者は手続きの短縮、後者は想起そのものの練習が要る。
-      if (!stat[qq.t]) stat[qq.t] = [0, 0, 0, 0, 0];
+      // 対数の和を持つのは、反応時間の分布が遅い側に長く裾を引くため。代表値は
+      // 対数の平均（幾何平均）で取る（Ratcliff 1993。docs/ARCHITECTURE.md「遅いの判定」）
+      if (!stat[qq.t]) stat[qq.t] = [0, 0, 0, 0, 0, 0, 0];
       var tk = Number(it.tk) || 0;
       stat[qq.t][0]++; stat[qq.t][1] += Number(it.ms) || 0;
-      if (tk > 0) { stat[qq.t][2]++; stat[qq.t][3] += tk; stat[qq.t][4] += tk * tk; }
+      if (tk > 0) {
+        var lt = Math.log(tk);
+        stat[qq.t][2]++; stat[qq.t][3] += tk; stat[qq.t][4] += tk * tk;
+        stat[qq.t][5] += lt; stat[qq.t][6] += lt * lt;
+      }
       (msByType[qq.t] || (msByType[qq.t] = [])).push({ tag: qq.tag, ms: Number(it.ms) || 0 });
     }
   }
 
-  // slow_items：この回の同じ型の中で、平均＋2標準偏差を超えた問題（5問以上ある型だけ）。
-  // 秒の固定閾値は使わない（単元・型ごとに基準が変わるため）。学年との比較は集計側で行う
+  // slow_items：この回の同じ型の中で、対数時間が 中央値＋2.5×MAD を超えた問題（5問以上ある型だけ）。
+  // 平均±SDは外れ値そのものに引っぱられて外れ値を見落とす（Leys et al. 2013）。学年との比較は集計側で行う
   Object.keys(msByType).forEach(function (t) {
-    var xs = msByType[t];
+    var xs = msByType[t].filter(function (x) { return x.ms > 0; });
     if (xs.length < 5) return;
-    var nm = slowNorm_(xs.map(function (x) { return x.ms; }));
-    xs.forEach(function (x) { if (x.ms > nm.mean + 2 * nm.sd) slow.push(t + ':' + x.tag + ':' + Math.round(x.ms)); });
+    var nm = robustNorm_(xs.map(function (x) { return Math.log(x.ms); }));
+    if (!(nm.s > 0)) return;
+    xs.forEach(function (x) {
+      if ((Math.log(x.ms) - nm.med) / nm.s > SLOW_ITEM_Z_) slow.push(t + ':' + x.tag + ':' + Math.round(x.ms));
+    });
   });
 
   var statStr = Object.keys(stat).map(function (k) {
-    return k + ':' + stat[k].join(':');
+    return k + ':' + stat[k].map(function (v, j) { return j >= 5 ? Math.round(v * 1000) / 1000 : v; }).join(':');
   }).join(',');
 
   var isPractice = !!s.p;
@@ -1167,13 +1176,13 @@ function aggregateCore_() {
       var p = t.split(':');
       if (p.length < 3) return;
       var c = slot(mail, row);
-      if (!c.t[p[0]]) c.t[p[0]] = [0, 0, 0, 0, 0];
+      if (!c.t[p[0]]) c.t[p[0]] = [0, 0, 0, 0, 0, 0, 0];
       c.t[p[0]][0] += Number(p[1]) || 0;
       c.t[p[0]][1] += Number(p[2]) || 0;
-      if (p.length >= 6) {                // 初打鍵を記録するようになってからの行
-        c.t[p[0]][2] += Number(p[3]) || 0;
-        c.t[p[0]][3] += Number(p[4]) || 0;
-        c.t[p[0]][4] += Number(p[5]) || 0;
+      var x = typeStat_(t);               // 初打鍵を記録するようになってからの行
+      if (x) {
+        c.t[p[0]][2] += x.ntk; c.t[p[0]][3] += x.tk; c.t[p[0]][4] += x.tk2;
+        c.t[p[0]][5] += x.ln;  c.t[p[0]][6] += x.ln2;
       }
     });
 
@@ -1271,7 +1280,7 @@ function writeWeakChild_(child, cfg) {
     var c = child[k], t = {};
     Object.keys(c.t).forEach(function (ty) {
       var x = c.t[ty];
-      if (x && x[2]) t[ty] = { n: x[2], ms: x[3] / x[2] };
+      if (x && x[2]) t[ty] = { n: x[2], ms: Math.exp(x[5] / x[2]) };
     });
     return { grade: c.grade, t: t };
   }));
@@ -1292,10 +1301,10 @@ function writeWeakChild_(child, cfg) {
     order.forEach(function (t) {
       var x = c.t[t];
       if (!x || !x[2]) { r.push(''); bg.push(null); return; }   // 初打鍵のデータが無い型は空欄
-      var n = x[2], mean = x[3] / n;
-      r.push(Math.round(mean / 100) / 10);       // 表示は秒
+      var n = x[2], mean = x[3] / n, gm = Math.exp(x[5] / n);
+      r.push(Math.round(gm / 100) / 10);         // 表示は秒。代表値は幾何平均（判定と同じ値）
       // 回数が少ない型は平均が不安定なので色を付けない（分布にも入れていない）
-      var band = n >= SLOW_MIN_TRIES_ ? slowBand_(mean, (norms[c.grade] || {})[t]) : -1;
+      var band = n >= SLOW_MIN_TRIES_ ? slowBand_(gm, (norms[c.grade] || {})[t]) : -1;
       bg.push(BAND_BG[band] || null);
 
       // ばらつきは 標準偏差÷平均（%）。試行が少ないと不安定なので5回以上の型だけ候補にする
@@ -1328,11 +1337,14 @@ function writeWeakChild_(child, cfg) {
   }
   sh.getRange('A1').setNote(
     (UNIT.tips ? UNIT.tips.replace(/<[^>]+>/g, '') + '\n\n' : '') +
-    '各型の数字は「問題が出てから最初のキーを押すまで」の平均です（想起にかかった時間）。\n' +
+    '各型の数字は「問題が出てから最初のキーを押すまで」の代表値（幾何平均）です（想起にかかった時間）。\n' +
+    'ときどき大きく遅れた回に引っぱられにくいよう、ふつうの平均ではなく幾何平均にしています。\n' +
     '打鍵にかかる時間を含まないので、答えの桁数が違う型どうしを比べられます。\n' +
-    '赤いセルは、同じ学年・同じ型の児童の平均より 標準偏差1つ分以上遅い（濃い赤は2つ分以上）。\n' +
+    '赤いセルは、同じ学年・同じ型の児童の中央より 1σ以上遅い（濃い赤は2σ以上）。\n' +
+    'σは中央値からの絶対偏差（MAD）を標準偏差の目盛りにそろえたもので、時間は対数に直して比べています\n' +
+    '（時間は遅い側に裾が長く、ふつうの平均と標準偏差は数人の極端な値に引っぱられるため）。\n' +
     '秒の固定の基準は使っていません（型ごとに打つ数や手順が違うため）。\n' +
-    'その型を ' + SLOW_MIN_TRIES_ + ' 回以上やった児童が ' + SLOW_MIN_KIDS_ + ' 人未満の学年・型は色を付けません。\n\n' +
+    'その型を ' + SLOW_MIN_TRIES_ + ' 回以上やった児童が ' + SLOW_MIN_KIDS_ + ' 人未満の学年・型、' + SLOW_MIN_TRIES_ + ' 回未満の児童には色を付けません。\n\n' +
     '「ゆらぎ」は、その子がいちばん不安定だった型の ばらつき（標準偏差÷平均）です（' + wobble + '%超で色）。\n' +
     '平均が基準内でもここが大きい子は、想起できる時と数えている時が混ざっています。\n' +
     '平均だけを見ていると、この子は「基準内」に見えて素通りします。\n' +
@@ -1418,49 +1430,73 @@ function getAnalysis(fresh, fyear) {
   return out;
 }
 
-/**
- * 型ごとの想起時間の畳み込み。{ ntk, tk, tk2 } → { n, ms, cv }
- * ms は平均（初打鍵まで）、cv は標準偏差÷平均（%）。
- * weak_child の行計算と同じ式。画面用に丸めた値を返す。
- */
-/**
- * 平均想起時間の分布。xs は児童ごとの平均（ms）の列。
- * 「遅い」の判定は秒の固定値ではなく、この分布との比較で行う（slowBand_）。
- */
-function slowNorm_(xs) {
-  var n = xs.length, sum = 0, sq = 0;
-  xs.forEach(function (x) { sum += x; sq += x * x; });
-  var mean = n ? sum / n : 0, vr = n ? sq / n - mean * mean : 0;
-  return { n: n, mean: Math.round(mean), sd: Math.round(vr > 0 ? Math.sqrt(vr) : 0) };
+/* ============================================================
+ *  「遅い」の判定
+ *
+ *  根拠と選択の理由は docs/ARCHITECTURE.md「遅いの判定」。要点だけ:
+ *  - 想起時間は遅い側に長く裾を引く（反応時間の一般的な性質）。対数に直してから扱う
+ *    （Ratcliff 1993）。児童の代表値は対数の平均＝幾何平均
+ *  - 学年の分布の中心と広がりは、平均・SD ではなく 中央値・MAD（×1.4826）で取る。
+ *    平均・SD は数人の極端な値に引っぱられる（Leys et al. 2013）
+ *  - 比べるのは同じ学年・同じ型だけ。型をまたぐと打鍵数・手順の数の差が混ざる
+ * ============================================================ */
+
+/** MAD を正規分布の標準偏差と同じ目盛りにそろえる係数（Leys et al. 2013） */
+var MAD_K_ = 1.4826;
+/** 比べる児童がこれより少ない学年・型は判定しない（中央値・MADが数人で決まってしまう）。根拠なしの保守的な値 */
+var SLOW_MIN_KIDS_ = 10;
+/** 児童の代表値を分布に入れる・色を付けるのに要る、その型の初打鍵の回数。根拠なし（ゆらぎの判定と同じ5にそろえた） */
+var SLOW_MIN_TRIES_ = 5;
+/** slow_items（1回の中で飛びぬけて遅い問題）のしきい値。Leys et al. 2013 の既定 2.5 */
+var SLOW_ITEM_Z_ = 2.5;
+/** 本人の中で苦手な型：本人の偏差値の中央値より、この値以上低い型（かつ誤差の2倍を超える） */
+var SELF_GAP_DV_ = 10;
+
+function median_(xs) {
+  var a = xs.slice().sort(function (p, q) { return p - q; }), n = a.length;
+  if (!n) return 0;
+  return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
 }
 
-/** 比べる児童がこれより少ない型は判定しない（平均・標準偏差が数人で決まってしまう） */
-var SLOW_MIN_KIDS_ = 5;
-/** 児童の平均を分布に入れるのに要る、その型の初打鍵の回数 */
-var SLOW_MIN_TRIES_ = 3;
+/** 頑健な中心と広がり。xs は対数時間。{ n, med, s }（s は MAD×1.4826＝SD相当） */
+function robustNorm_(xs) {
+  var med = median_(xs);
+  var mad = median_(xs.map(function (x) { return Math.abs(x - med); }));
+  return { n: xs.length, med: med, s: mad * MAD_K_ };
+}
+
+/** 児童ごとの代表値（ms）の列 → 学年・型の分布（対数で中央値・MAD） */
+function slowNorm_(msList) {
+  return robustNorm_(msList.filter(function (x) { return x > 0; }).map(Math.log));
+}
+
+/** 分布の中での位置（頑健なz。＋が遅い）。判定できなければ null */
+function slowZ_(ms, nm) {
+  if (!(ms > 0) || !nm || nm.n < SLOW_MIN_KIDS_ || !(nm.s > 0)) return null;
+  return (Math.log(ms) - nm.med) / nm.s;
+}
 
 /**
- * 段階：-1 判定なし／0 平均以下／1 平均〜＋1SD／2 ＋1SD超（遅い）／3 ＋2SD超
- * 同じ型どうしでだけ比べる。型をまたぐと答えの打鍵数・手順の数の差が混ざる。
+ * 段階：-1 判定なし／0 中央値以下／1 〜＋1σ／2 ＋1σ超（遅い）／3 ＋2σ超
+ * σ は MAD×1.4826（正規分布なら SD と一致する）。
  */
 function slowBand_(ms, nm) {
-  if (!ms || !nm || nm.n < SLOW_MIN_KIDS_ || !(nm.sd > 0)) return -1;
-  if (ms <= nm.mean) return 0;
-  if (ms <= nm.mean + nm.sd) return 1;
-  if (ms <= nm.mean + 2 * nm.sd) return 2;
-  return 3;
+  var z = slowZ_(ms, nm);
+  if (z === null) return -1;
+  return z <= 0 ? 0 : z <= 1 ? 1 : z <= 2 ? 2 : 3;
 }
 
 /**
- * 学年×型ごとの分布。kids は [{ grade, t: { 型: { n, ms } } }]。
- * 返り値 { 学年: { 型: slowNorm_ } }
+ * 学年×型ごとの分布。kids は [{ grade, t: { 型: { n, ms } } }]（ms は児童の幾何平均）。
+ * 回数が SLOW_MIN_TRIES_ 未満の児童は分布に入れない（代表値が不安定）。
+ * 返り値 { 学年: { 型: { n, med, s } } }
  */
 function gradeNorms_(kids) {
   var xs = {};
   kids.forEach(function (k) {
     Object.keys(k.t || {}).forEach(function (ty) {
       var o = k.t[ty];
-      if (!o || o.n < SLOW_MIN_TRIES_ || !o.ms) return;
+      if (!o || o.n < SLOW_MIN_TRIES_ || !(o.ms > 0)) return;
       var g = xs[k.grade] || (xs[k.grade] = {});
       (g[ty] || (g[ty] = [])).push(o.ms);
     });
@@ -1473,28 +1509,54 @@ function gradeNorms_(kids) {
   return out;
 }
 
-/** 本人の中で苦手な型：その子の偏差値の平均より、この値以上低い型に印（self）を付ける */
-var SELF_GAP_DV_ = 10;
-
 /**
- * 本人の中で遅い型。学年との比較だけだと、全体に遅い子は行全体が「遅い」になり、
- * その子がとくに苦手な型が読めない。型ごとの偏差値（dv）の本人平均と比べて、
- * SELF_GAP_DV_ 以上低い型に self を立てる。偏差値のある型が3つ未満なら判定しない。
- * 秒どうしを比べないのは、型ごとに打鍵数・手順の数が違うため（偏差値なら型の差が消える）。
+ * 本人の中で遅い型（◆）。学年との比較だけだと、全体に遅い子は行全体が「遅い」になり、
+ * その子がとくに苦手な型が読めない。
+ *
+ * 個人内の差（得意・不得意の型）は、差をとる2つの値の誤差が両方乗るので、
+ * 見かけの凸凹が出やすい（下位検査のプロフィール分析への批判：McDermott et al. 1990 ほか）。
+ * そのため次の3つを満たす型だけに付ける。
+ *   1. 偏差値（dv）のある型が3つ以上（中心を決められる）
+ *   2. 本人の dv の中央値より SELF_GAP_DV_ 以上低い
+ *   3. その差が、その型の dv の標準誤差（se）の2倍を超える（回数が少なく揺れているだけの型を除く）
  */
 function markSelfSlow_(t) {
   var tys = Object.keys(t).filter(function (ty) { return t[ty].dv != null; });
   if (tys.length < 3) return;
-  var avg = tys.reduce(function (a, ty) { return a + t[ty].dv; }, 0) / tys.length;
-  tys.forEach(function (ty) { if (t[ty].dv <= avg - SELF_GAP_DV_) t[ty].self = true; });
+  var center = median_(tys.map(function (ty) { return t[ty].dv; }));
+  tys.forEach(function (ty) {
+    var gap = center - t[ty].dv;
+    if (gap >= SELF_GAP_DV_ && gap > 2 * (t[ty].se || 0)) t[ty].self = true;
+  });
 }
 
+/**
+ * log の type_stats の1要素を読む。
+ * "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2[:Σln:Σln^2]"
+ * 対数の和が無い古い行は、平均の対数で代用する（その行の中のばらつきは0として扱う）。
+ * 初打鍵の無いさらに古い行は null。
+ */
+function typeStat_(e) {
+  var p = String(e).split(':');
+  if (p.length < 6 || !p[0]) return null;
+  var o = { t: p[0], ntk: Number(p[3]) || 0, tk: Number(p[4]) || 0, tk2: Number(p[5]) || 0, ln: 0, ln2: 0 };
+  if (p.length >= 8) { o.ln = Number(p[6]) || 0; o.ln2 = Number(p[7]) || 0; }
+  else if (o.ntk > 0 && o.tk > 0) { var l = Math.log(o.tk / o.ntk); o.ln = o.ntk * l; o.ln2 = o.ntk * l * l; }
+  return o;
+}
+
+/**
+ * 型ごとの想起時間の畳み込み。{ ntk, tk, tk2, ln, ln2 } → { n, ms, cv, sl }
+ * ms は代表値＝幾何平均（初打鍵まで）。cv は標準偏差÷平均（%、ゆらぎ）。sl は対数時間の標準偏差。
+ */
 function recallOut_(acc, miss) {
-  if (!acc || !acc.ntk) return { n: 0, ms: 0, cv: 0, miss: miss || 0 };
+  if (!acc || !acc.ntk) return { n: 0, ms: 0, cv: 0, sl: 0, miss: miss || 0 };
   var mean = acc.tk / acc.ntk;
   var vr = acc.tk2 / acc.ntk - mean * mean;
   var cv = mean > 0 ? Math.round((vr > 0 ? Math.sqrt(vr) : 0) / mean * 100) : 0;
-  return { n: acc.ntk, ms: Math.round(mean), cv: cv, miss: miss || 0 };
+  var lm = acc.ln / acc.ntk, lv = acc.ln2 / acc.ntk - lm * lm;
+  return { n: acc.ntk, ms: Math.round(Math.exp(lm)), cv: cv,
+           sl: Math.round((lv > 0 ? Math.sqrt(lv) : 0) * 1000) / 1000, miss: miss || 0 };
 }
 
 /**
@@ -1502,6 +1564,9 @@ function recallOut_(acc, miss) {
  * 今年度は「window_days 日前」と年度始まり（4/1）の遅い方を窓の下端にする。
  * 過去年度はその年度の4/1〜翌3/31の全体を参考用に集計する。
  */
+function newAcc_() { return { ntk: 0, tk: 0, tk2: 0, ln: 0, ln2: 0, miss: 0 }; }
+function addAcc_(a, x) { a.ntk += x.ntk; a.tk += x.tk; a.tk2 += x.tk2; a.ln += x.ln; a.ln2 += x.ln2; }
+
 function buildAnalysis_(fyear) {
   var cfg = config_();
   var days = Number(cfg.window_days) || 0;
@@ -1585,20 +1650,18 @@ function buildAnalysis_(fyear) {
 
     // type_stats … "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2"
     String(row[13] || '').split(',').forEach(function (e) {
-      var p = e.split(':');
-      if (p.length < 6 || !p[0]) return;      // 初打鍵の無い古い行は想起の集計に入れない
-      var ty = p[0];
-      var acc = b.types[ty] || (b.types[ty] = { ntk: 0, tk: 0, tk2: 0, miss: 0 });
-      var sa = st.t[ty] || (st.t[ty] = { ntk: 0, tk: 0, tk2: 0 });
-      var ntk = Number(p[3]) || 0, tk = Number(p[4]) || 0, tk2 = Number(p[5]) || 0;
-      acc.ntk += ntk; acc.tk += tk; acc.tk2 += tk2;
-      sa.ntk += ntk; sa.tk += tk; sa.tk2 += tk2;
+      var x = typeStat_(e);
+      if (!x) return;                          // 初打鍵の無い古い行は想起の集計に入れない
+      var ty = x.t;
+      var acc = b.types[ty] || (b.types[ty] = newAcc_());
+      var sa = st.t[ty] || (st.t[ty] = newAcc_());
+      addAcc_(acc, x); addAcc_(sa, x);
     });
 
     splitCellItems_(row[11], typeSet).forEach(function (e) {
       var ty = e.split(':')[0];
       if (!ty) return;
-      var acc = b.types[ty] || (b.types[ty] = { ntk: 0, tk: 0, tk2: 0, miss: 0 });
+      var acc = b.types[ty] || (b.types[ty] = newAcc_());
       acc.miss++;
       st.miss++;
     });
@@ -1615,9 +1678,9 @@ function buildAnalysis_(fyear) {
     var b = perCls[ck];
     all.trials += b.trials;
     Object.keys(b.types).forEach(function (ty) {
-      var a = all.types[ty] || (all.types[ty] = { ntk: 0, tk: 0, tk2: 0, miss: 0 });
+      var a = all.types[ty] || (all.types[ty] = newAcc_());
       var x = b.types[ty];
-      a.ntk += x.ntk; a.tk += x.tk; a.tk2 += x.tk2; a.miss += x.miss;
+      addAcc_(a, x); a.miss += x.miss;
     });
     Object.keys(b.daily).forEach(function (dd) { all.daily[dd] = (all.daily[dd] || 0) + b.daily[dd]; });
     Object.keys(b.wrong).forEach(function (k) { all.wrong[k] = (all.wrong[k] || 0) + b.wrong[k]; });
@@ -1655,7 +1718,7 @@ function buildAnalysis_(fyear) {
       order.forEach(function (ty) {
         var o = recallOut_(st.t[ty]);
         if (!o.n) return;
-        t[ty] = { n: o.n, ms: o.ms, cv: o.cv };
+        t[ty] = { n: o.n, ms: o.ms, cv: o.cv, sl: o.sl };
         // 試行が少ないとばらつきが不安定なので、weak_child と同じく5回以上の型だけ候補にする
         if (o.n >= 5 && o.cv > wMax) { wMax = o.cv; wType = ty; }
       });
@@ -1678,8 +1741,11 @@ function buildAnalysis_(fyear) {
       Object.keys(k.t).forEach(function (ty) {
         var o = k.t[ty];
         o.b = o.n >= SLOW_MIN_TRIES_ ? slowBand_(o.ms, nm[ty]) : -1;
-        // 偏差値。速いほど高い（50＋10×(平均−本人)/標準偏差）。判定できる型だけ
-        if (o.b >= 0) o.dv = Math.round(50 + 10 * (nm[ty].mean - o.ms) / nm[ty].sd);
+        // 偏差値。速いほど高い（50−10×頑健z）。se は偏差値の標準誤差（その子の対数時間のばらつき÷√回数）
+        if (o.b >= 0) {
+          o.dv = Math.round(50 - 10 * slowZ_(o.ms, nm[ty]));
+          o.se = Math.round(10 * (o.sl / Math.sqrt(o.n)) / nm[ty].s * 10) / 10;
+        }
       });
       markSelfSlow_(k.t);
     });
