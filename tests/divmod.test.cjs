@@ -262,10 +262,10 @@ gate.submit = () => { submits.push(gate.isRight()); };
   c.typed = { 'しょう': '5', 'つみ': '', 'のこり': '' };
   const html = [0, 1, 2].map(i => c.slotSpan_(item, i));
   assert.match(html[0], /class="slot accent cur"/, '商: 強調＋いま打っている欄');
-  assert.match(html[0], /style="--slotc:#C9A0FF"/);
+  assert.match(html[0], /style="--slotc:#8A6CE5"/);
   assert.equal(/accent/.test(html[1]), false, '積は強調しない');
   assert.match(html[2], /class="slot accent"/, 'あまり: 強調');
-  assert.match(html[2], /style="--slotc:#C9A0FF"/);
+  assert.match(html[2], /style="--slotc:#8A6CE5"/);
   // class 名が画面キーボードとぶつかっていないこと。ぶつかると鍵盤の見た目を拾い、
   // クリックの closest('.key') にも引っかかる
   html.forEach(h => assert.equal(h.indexOf('key') >= 0, false, '.key を使わない'));

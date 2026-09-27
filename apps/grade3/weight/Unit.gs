@@ -23,7 +23,7 @@ var UNIT = {
   ],
 
   /** 出題に出る単位と、その表示色（空文字は既定のグレー） */
-  units: { kg: '#FFC53D', g: '' },
+  units: { kg: '#F1B1E4', g: '' },
 
   modes: [
     { id: 1, name: 'かんさん きほん',   desc: '3kg=□g ／ 5000g=□kg' },

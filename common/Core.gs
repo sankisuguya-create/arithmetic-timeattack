@@ -484,6 +484,8 @@ function boot() {
     // 渡さないと index.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
+            // 学年の進みの色と、まちがい・注意の赤。画面は色の値を持たず、ここから受け取る
+            grade: UNIT.grade, accent: gradeAccent_(), alert: ALERT_COLOR_,
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
@@ -1619,6 +1621,35 @@ function buildAnalysis_(fyear) {
  *  実際に gen が返す形がずれていれば画面は壊れるため。
  * ============================================================ */
 
+/* ============================================================
+ *  学年の色（全単元共通の配色の正本）
+ *
+ *  学年ごとに「進みの色」を1色持つ（タイマーの帯・せいかい数・いま打つ欄）。
+ *  どの学年も背景 #101728 の黒で、まちがい・注意は共通の赤 #FF1A30 を使う。
+ *  7色は check-palette.mjs で、背景・白文字・赤と見分けられることを実測して決めた。
+ *
+ *  単元がもう1色使いたいとき（units の単位色、slotColor）は、別の学年の色を使う。
+ *  ただし自分の学年の色と色覚タイプによって同じに見える組があるので、
+ *  使ってよい色は GRADE_EXTRA_ に限る（validateUnit_ が検査する）。
+ * ============================================================ */
+var GRADE_ACCENT_ = { 1: '#F1B1E4', 2: '#49B9DF', 3: '#35D0A5', 4: '#8A6CE5', 5: '#D4D454', 6: '#E4B195' };
+var ALERT_COLOR_ = '#FF1A30';
+/**
+ * 学年ごとに、もう1色として使ってよい別学年の色。
+ * 自分の学年の色と、一般・1型・2型・3型のどれでも色差18以上、
+ * または明るさの比1.25以上（その場合は文字や形が別であること）の組だけを残した。
+ * 例：3年はからし（1型で色差16）・そら（3型で4）・あんず（1型で4）が落ちる。
+ */
+var GRADE_EXTRA_ = {
+  1: ['#49B9DF', '#35D0A5', '#8A6CE5'],
+  2: ['#F1B1E4', '#8A6CE5', '#D4D454', '#E4B195'],
+  3: ['#F1B1E4', '#8A6CE5'],
+  4: ['#F1B1E4', '#49B9DF', '#35D0A5', '#D4D454', '#E4B195'],
+  5: ['#49B9DF', '#8A6CE5'],
+  6: ['#49B9DF', '#8A6CE5']
+};
+function gradeAccent_() { return GRADE_ACCENT_[UNIT.grade] || GRADE_ACCENT_[3]; }
+
 /**
  * UNIT が共通エンジンの契約に合っているかを調べる。
  * 問題点の文字列の配列を返す（空なら合格）。
@@ -1634,6 +1665,16 @@ function validateUnit_() {
   if (!UNIT.teacherTitle) probs.push('UNIT.teacherTitle がありません');
   // 学年はプレビューのメニューとリポジトリの置き場（apps/grade<学年>/）の分類に使う
   if (!(UNIT.grade >= 1 && UNIT.grade <= 6 && UNIT.grade % 1 === 0)) probs.push('UNIT.grade（1〜6の学年）がありません');
+  // 単元が足す色（単位の色・目立たせる欄の色）は、別学年の色のうち GRADE_EXTRA_ にあるものだけ
+  var extraOk = GRADE_EXTRA_[UNIT.grade] || [];
+  function checkColor(where, c) {
+    if (!c) return;
+    if (extraOk.indexOf(String(c).toUpperCase()) < 0) {
+      probs.push(where + ' の色 ' + c + ' は ' + UNIT.grade + '年で使えません（使える色: ' + extraOk.join(' ') + '）');
+    }
+  }
+  Object.keys(UNIT.units || {}).forEach(function (k) { checkColor('units.' + k, UNIT.units[k]); });
+  Object.keys(UNIT.slotColor || {}).forEach(function (k) { checkColor('slotColor.' + k, UNIT.slotColor[k]); });
   if (typeof UNIT.gen !== 'function') probs.push('UNIT.gen がありません');
 
   // モードの宣言
