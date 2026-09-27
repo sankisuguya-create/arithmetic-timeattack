@@ -98,11 +98,9 @@ body{
 /* ---------- プレイ ---------- */
 #play{background:var(--ink);color:var(--chalk)}
 #bar{height:28px;background:var(--acc);width:100%;transform-origin:left center;will-change:transform}
-/* のこり時間が少ないとき：色を変えず、しま模様にする（色覚に関係なく変化が見える）。
-   赤の「のこり ○びょう」を同時に出す（#lowLbl） */
-#bar.low{background:repeating-linear-gradient(135deg,var(--acc) 0 14px,var(--ink) 14px 24px)}
-.hud .lowlbl{font-size:1.05rem;font-weight:800;color:var(--alert);visibility:hidden}
-.hud .lowlbl.on{visibility:visible}
+/* のこり時間が少ないとき：帯を赤の斜線にする。色（赤）と模様（斜線）の両方で変わるので、
+   色覚に関係なく変化が見える */
+#bar.low{background:repeating-linear-gradient(135deg,var(--alert) 0 14px,var(--ink) 14px 24px)}
 #bar.hidden{visibility:hidden}
 .hud{display:flex;justify-content:space-between;align-items:center;padding:.6rem 1.5rem .1rem}
 .hud .medal{font-size:1.7rem;line-height:1}
@@ -241,8 +239,8 @@ body{
   background:transparent;background:color-mix(in srgb, var(--slotc) 20%, transparent);
   border-radius:.1em .1em 0 0;padding:0 .06em}
 .eq .slot.cur{border-bottom-color:var(--acc)}
-/* 正しい答えの表示は白い字を白い枠で囲む（色ではなく枠で示す。学年の色と赤を避ける） */
-.eq.reveal .slot{color:var(--chalk);border-bottom-color:var(--chalk);outline:3px solid var(--chalk);outline-offset:.08em;border-radius:.08em}
+/* 正しい答えの表示（2回目のまちがいから）は赤。下の「こたえは ○」の文字と一緒に出す */
+.eq.reveal .slot{color:var(--alert);border-bottom-color:var(--alert)}
 /* 覆い。前の段が通るまで、次の段を読ませない。
    中身は消さずに visibility で隠す。表示を消すと外れた瞬間に式の幅が変わり、
    児童は同じ式をもう一度読み直すことになる */
@@ -382,7 +380,6 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   <div id="bar"></div>
   <div class="hud">
     <div class="medal" id="playMedal"></div>
-    <div class="lowlbl" id="lowLbl"></div>
     <div class="label" id="playLabel"></div>
   </div>
   <div class="stage">
@@ -1155,13 +1152,17 @@ function submit(){
   }else{
     miss++; showMiss();
     locked = true;
-    // 正答を見せてから、空欄にしてもう一度打たせる
-    q.f.forEach(function(u){ typed[u] = String(q.ans[u]); });
-    fi = q.f.length - 1;
-    paintSlots();
-    eqEl.classList.add('reveal');
-    $('footnote').textContent = 'こたえは ' +
-      q.f.map(function(u){ return glyph_(u, String(q.ans[u])) + u; }).join(' ');
+    // 1回目のまちがいは「×」だけ出して、もう一度打たせる（自分で直す機会を残す）。
+    // 2回目から正しい答えを赤で見せる。1回で次へ進む設定（missLimit=1）なら、進む前に見せる
+    var reveal = miss >= 2 || miss >= CFG.missLimit;
+    if(reveal){
+      q.f.forEach(function(u){ typed[u] = String(q.ans[u]); });
+      fi = q.f.length - 1;
+      paintSlots();
+      eqEl.classList.add('reveal');
+      $('footnote').textContent = 'こたえは ' +
+        q.f.map(function(u){ return glyph_(u, String(q.ans[u])) + u; }).join(' ');
+    }
     setTimeout(function(){
       locked = false;
       setHelp();
@@ -1172,7 +1173,7 @@ function submit(){
         clearTyped(); draw();
         $('footnote').textContent = 'もう いちど';
       }
-    }, 1500);
+    }, reveal ? 1500 : 500);
   }
 }
 
@@ -1356,12 +1357,7 @@ function tick(){
   if(left <= 0){ practice ? finishPractice() : finish(); return; }
   var p = left / (CFG.limitSec*1000);
   barEl.style.transform = 'scaleX('+p+')';
-  if(p < 0.17){
-    barEl.classList.add('low');
-    var ll = $('lowLbl'), txt = 'のこり ' + Math.ceil(left/1000) + 'びょう';
-    if(ll.textContent !== txt) ll.textContent = txt;
-    ll.classList.add('on');
-  }
+  if(p < 0.17) barEl.classList.add('low');
   raf = requestAnimationFrame(tick);
 }
 
@@ -1452,7 +1448,7 @@ function beginPractice(timed){
   show('play');
   setHelp();
   if(pTimed){
-    barEl.classList.remove('hidden','low'); $('lowLbl').classList.remove('on');
+    barEl.classList.remove('hidden','low');
     barEl.style.transform='scaleX(1)';
     eqEl.innerHTML='';
     countdown(3);
@@ -1537,7 +1533,7 @@ function begin(m){
   qi=0; correct=0; attempts=0; miss=0; locked=false; items=[]; curAns=[];
   countEl.textContent='0';
   $('playMedal').textContent = MEDAL[m] || '';
-  barEl.classList.remove('low'); $('lowLbl').classList.remove('on'); barEl.style.transform='scaleX(1)';
+  barEl.classList.remove('low'); barEl.style.transform='scaleX(1)';
   eqEl.innerHTML='';
   applyLayout();
   show('play');
