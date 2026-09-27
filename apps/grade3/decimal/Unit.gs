@@ -4,7 +4,6 @@ var UNIT = {
   grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '小数 タイムアタック！',
   teacherTitle: '小数 設定・分析',
-  defaults: { slow_ms: 5000 },
   units: { 'こ': '' },
   modes: [
     { id: 1, name: '0.1の いくつ分', desc: '3.7 は 0.1 が 37こ' },

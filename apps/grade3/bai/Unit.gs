@@ -41,9 +41,6 @@ var UNIT = {
   title: '何倍でしょう タイムアタック！',
   teacherTitle: '何倍でしょう 設定・分析',
 
-  // 文を読む時間が乗るので長め。値に根拠は無い（実測して調整する）
-  defaults: { slow_ms: 8000 },
-
   units: { cm: '', '倍': '' },
 
   modes: [

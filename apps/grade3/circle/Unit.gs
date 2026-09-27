@@ -42,8 +42,6 @@ var UNIT = {
   title: '円と球 タイムアタック！',
   teacherTitle: '円と球 設定・分析',
 
-  defaults: { slow_ms: 6000 },   // 図を読む時間が乗るので、式だけの単元より長め
-
   units: { cm: '' },
 
   modes: [
