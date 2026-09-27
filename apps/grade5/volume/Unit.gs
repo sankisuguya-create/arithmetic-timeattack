@@ -142,11 +142,12 @@ function voPrism_(v, poly, d) {
     var a = poly[i], b = poly[(i + 1) % n];
     var nx = b[1] - a[1], ny = a[0] - b[0];   // 反時計回りの外向き法線
     if (nx <= 0 && ny <= 0) continue;
-    faces.push({ up: ny > 0, at: ny > 0 ? a[1] : a[0],
+    // 手前ほど x・y が大きい。面の中心の (x·kx + y·ky) が小さい（奥の）面から描く
+    faces.push({ up: ny > 0, at: ((a[0] + b[0]) / 2) * v.kx + ((a[1] + b[1]) / 2) * v.ky,
                  pts: [v.p(a[0], a[1], 0), v.p(b[0], b[1], 0), v.p(b[0], b[1], d), v.p(a[0], a[1], d)] });
   }
-  // へこんだ形では、低い上面が高い上面の奥に隠れる。低い（左の）面から描いて上書きさせる
-  faces.sort(function (p, q) { return p.up === q.up ? p.at - q.at : 0; });
+  // へこんだ形では、へこみの底や壁が手前の柱の奥に隠れる。奥の面から描いて上書きさせる
+  faces.sort(function (p, q) { return p.at - q.at; });
   var body = faces.map(function (f) { return voPoly_(f.pts, f.up ? VO_FACE[1] : VO_FACE[2]); }).join('');
   return body + voPoly_(poly.map(function (q) { return v.p(q[0], q[1], 0); }), VO_FACE[0]);
 }
@@ -168,6 +169,25 @@ function voDim_(p, q, o, dist, str) {
   // 横へ出す字は字の幅ぶん、斜め（奥行き）はその中間だけ離す
   var k = Math.abs(o[0]) > 0.7 ? 50 : o[0] !== 0 ? 42 : 28;
   return body + voText_((a[0] + b[0]) / 2 + o[0] * k, (a[1] + b[1]) / 2 + o[1] * k, str, 30);
+}
+
+/**
+ * 引き出し線。内側の短い辺 p→q を学年の色でなぞり、その中点から線を上へ引き出して、
+ * 図の上の外（画面の y＝topY）で左右 dir（-1/+1）へ曲げ、先に下線つきで長さを書く。
+ * 補助線を2本伸ばす寸法線は、内側の辺では図の辺と交差して混線するので使わない。
+ */
+function voLeader_(p, q, topY, dir, str, jog) {
+  // 縦の辺から真上に引くと線が辺に重なるので、jog だけ横へずらしてから上げる
+  var m0 = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], m = [m0[0] + (jog || 0), m0[1]], r = 22;
+  var end = [m[0] + dir * 44, topY - 26];
+  var d = 'M' + voR_(m0[0]) + ' ' + voR_(m0[1]) + ' L' + voR_(m[0]) + ' ' + voR_(m[1]) + ' L' + voR_(m[0]) + ' ' + voR_(topY + r) +
+          ' Q' + voR_(m[0]) + ' ' + voR_(topY - 10) + ' ' + voR_(end[0]) + ' ' + voR_(end[1]);
+  var ux = end[0] + dir * 84;   // 字の下線の先
+  return '<line x1="' + voR_(p[0]) + '" y1="' + voR_(p[1]) + '" x2="' + voR_(q[0]) + '" y2="' + voR_(q[1]) +
+         '" stroke="' + VO_DIM + '" stroke-width="7" stroke-linecap="round"/>' +
+         '<path d="' + d + ' L' + voR_(ux) + ' ' + voR_(end[1]) + '" fill="none" stroke="' + VO_DIM +
+         '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
+         voText_((end[0] + ux) / 2, end[1] - 20, str, 30);
 }
 
 /** 奥行きの辺（右下）に対する外向き：辺の向き (cos30°, -sin30°) に垂直で下向き */
@@ -314,12 +334,13 @@ function voNotch_(rand) {
   } while (V < 100 || V > 999);
   var poly = [[0, 0], [W, 0], [W, H], [x0 + n, H], [x0 + n, H - m], [x0, H - m], [x0, H], [0, H]];
   var v = voView_(W, H, d, 380), body = voPrism_(v, poly, d);
-  // へこみの幅と深さは図の内側の辺なので、補助線を図の外（上・右）まで伸ばす
-  var top = d * v.ky * v.s, right = ((W - x0 - n) + d * v.kx) * v.s;
+  // へこみの幅と深さは図の内側の辺なので、辺をなぞって引き出し線で図の上の外へ出す。
+  // 深さは左の柱の右の辺（へこみの左の壁）で示す。幅は右へ、深さは左へ曲げて交差させない
+  var topY = v.p(0, H, d)[1] - 16;
   body += voDim_(v.p(0, 0, 0), v.p(W, 0, 0), [0, 1], 16, W + 'cm') +
           voDim_(v.p(0, 0, 0), v.p(0, H, 0), [-1, 0], 16, H + 'cm') +
-          voDim_(v.p(x0, H - m, 0), v.p(x0 + n, H - m, 0), [0, -1], m * v.s + top + 16, n + 'cm') +
-          voDim_(v.p(x0 + n, H - m, 0), v.p(x0 + n, H, 0), [1, 0], right + 16, m + 'cm') +
+          voLeader_(v.p(x0, H - m, 0), v.p(x0 + n, H - m, 0), topY, 1, n + 'cm') +
+          voLeader_(v.p(x0, H - m, 0), v.p(x0, H, 0), topY, -1, m + 'cm', Math.min(18, n * v.s / 3)) +
           voDim_(v.p(W, 0, 0), v.p(W, 0, d), VO_OUT_D, 16, d + 'cm');
   return {
     t: 'G', q: ['たいせきは'], f: ['cm³'], ans: { 'cm³': V },
