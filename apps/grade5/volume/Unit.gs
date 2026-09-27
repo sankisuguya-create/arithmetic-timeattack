@@ -30,7 +30,7 @@ var VO_MARK = ['①', '②', '③', '④'];
 var VO_LINE = '#8C93AC';    // 立体の辺
 var VO_INK = '#FFFFFF';     // 強調する線
 var VO_LABEL = '#C9D1E8';   // 長さの字
-var VO_DIM = '#D4D454';     // 寸法線（5年の進みの色）。長さの字がどの辺のものかを線でつなぐ
+var VO_DIM = '#D4D454';     // 引き出し線（5年の進みの色）。へこみの内側の辺と長さの字をつなぐ
 // 正面・上面・側面。重ね描きで奥の面を隠すので、半透明にせず背景 #101728 と混ぜた不透明色にする
 var VO_FACE = ['#282E3E', '#454A57', '#1A2031'];
 
@@ -153,47 +153,41 @@ function voPrism_(v, poly, d) {
 }
 
 /**
- * 寸法線。辺 p→q の両端から、図の外向き o（画面の単位ベクトル）へ dist だけ補助線を伸ばし、
- * その先を結んだ線の外側に長さを書く。字を辺のそばに置くだけだと、どの辺の長さか分からない
- * （特に短い辺・内側の辺）。字は必ず図の外に出し、辺との対応は学年の色の線で示す。
+ * 長さの字だけを、辺 p→q の中点から図の外向き o（画面の単位ベクトル）へ dist 離して書く。
+ * 外周の辺は字の位置だけで対応が分かるので、線は引かない（線を足すと図の辺と混ざる）。
  */
 function voDim_(p, q, o, dist, str) {
-  var a = [p[0] + o[0] * dist, p[1] + o[1] * dist], b = [q[0] + o[0] * dist, q[1] + o[1] * dist];
-  function ln(u, w, width) {
-    return '<line x1="' + voR_(u[0]) + '" y1="' + voR_(u[1]) + '" x2="' + voR_(w[0]) + '" y2="' + voR_(w[1]) +
-           '" stroke="' + VO_DIM + '" stroke-width="' + width + '" stroke-linecap="round"/>';
-  }
-  var ext = 10;   // 補助線は寸法線を少し越える
-  var body = ln(p, [a[0] + o[0] * ext, a[1] + o[1] * ext], 2) +
-             ln(q, [b[0] + o[0] * ext, b[1] + o[1] * ext], 2) + ln(a, b, 4);
   // 横へ出す字は字の幅ぶん、斜め（奥行き）はその中間だけ離す
-  var k = Math.abs(o[0]) > 0.7 ? 50 : o[0] !== 0 ? 42 : 28;
-  return body + voText_((a[0] + b[0]) / 2 + o[0] * k, (a[1] + b[1]) / 2 + o[1] * k, str, 30);
+  var k = Math.abs(o[0]) > 0.7 ? 34 : o[0] !== 0 ? 26 : 12;
+  return voText_((p[0] + q[0]) / 2 + o[0] * (dist + k), (p[1] + q[1]) / 2 + o[1] * (dist + k), str, 30);
+}
+
+function voCurve_(a, c, b) {
+  return '<path d="M' + voR_(a[0]) + ' ' + voR_(a[1]) + ' Q' + voR_(c[0]) + ' ' + voR_(c[1]) + ' ' +
+         voR_(b[0]) + ' ' + voR_(b[1]) + '" fill="none" stroke="' + VO_DIM +
+         '" stroke-width="4" stroke-linecap="round"/>';
 }
 
 /**
- * 引き出し線。内側の短い辺 p→q を学年の色でなぞり、その中点から線を上へ引き出して、
- * 図の上の外（画面の y＝topY）で左右 dir（-1/+1）へ曲げ、先に下線つきで長さを書く。
- * 補助線を2本伸ばす寸法線は、内側の辺では図の辺と交差して混線するので使わない。
+ * へこみの深さ（縦の内側の辺 p→q）。中点から左上へ斜めに引き出し、図の上の外（y＝topY）に字を書く。
+ * 縦に引き出すと、引き出し線そのものが長さ（辺）に見える。
  */
-function voLeader_(p, q, topY, dir, str, jog) {
-  // 縦の辺から真上に引くと線が辺に重なるので、jog だけ横へずらしてから上げる
-  var m0 = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], m = [m0[0] + (jog || 0), m0[1]], r = 22;
-  var end = [m[0] + dir * 44, topY - 26];
-  var d = 'M' + voR_(m0[0]) + ' ' + voR_(m0[1]) + ' L' + voR_(m[0]) + ' ' + voR_(m[1]) + ' L' + voR_(m[0]) + ' ' + voR_(topY + r) +
-          ' Q' + voR_(m[0]) + ' ' + voR_(topY - 10) + ' ' + voR_(end[0]) + ' ' + voR_(end[1]);
-  var ux = end[0] + dir * 84;   // 字の下線の先
-  return '<line x1="' + voR_(p[0]) + '" y1="' + voR_(p[1]) + '" x2="' + voR_(q[0]) + '" y2="' + voR_(q[1]) +
-         '" stroke="' + VO_DIM + '" stroke-width="7" stroke-linecap="round"/>' +
-         '<path d="' + d + ' L' + voR_(ux) + ' ' + voR_(end[1]) + '" fill="none" stroke="' + VO_DIM +
-         '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
-         voText_((end[0] + ux) / 2, end[1] - 20, str, 30);
+function voLeadUp_(p, q, topY, str) {
+  var m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+  var end = [m[0] - Math.max(60, (m[1] - topY) * 0.45), topY];
+  return voCurve_(m, [end[0] + 12, m[1] - (m[1] - topY) * 0.25], end) + voText_(end[0], end[1] - 24, str, 30);
+}
+
+/** へこみの幅（横の内側の辺 p→q）。例外として図の中、辺のすぐ下に短い引き出し線つきで書く */
+function voLeadDown_(p, q, str) {
+  var m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], end = [m[0] + 16, m[1] + 34];
+  return voCurve_(m, [m[0], m[1] + 28], end) + voText_(end[0] + 42, end[1], str, 30);
 }
 
 /** 奥行きの辺（右下）に対する外向き：辺の向き (cos30°, -sin30°) に垂直で下向き */
 var VO_OUT_D = [0.5, 0.866];
 
-/** 直方体 w×h×d の図と、たて（奥行き）・よこ・高さの3辺の寸法線。labels は {w,h,d} の表示文字（空なら書かない） */
+/** 直方体 w×h×d の図と、たて（奥行き）・よこ・高さの3辺の長さ。labels は {w,h,d} の表示文字（空なら書かない） */
 function voBoxFig_(w, h, d, labels, extra) {
   var v = voView_(w, h, d, 380);
   var body = voPrism_(v, [[0, 0], [w, 0], [w, h], [0, h]], d);
@@ -334,13 +328,13 @@ function voNotch_(rand) {
   } while (V < 100 || V > 999);
   var poly = [[0, 0], [W, 0], [W, H], [x0 + n, H], [x0 + n, H - m], [x0, H - m], [x0, H], [0, H]];
   var v = voView_(W, H, d, 380), body = voPrism_(v, poly, d);
-  // へこみの幅と深さは図の内側の辺なので、辺をなぞって引き出し線で図の上の外へ出す。
-  // 深さは左の柱の右の辺（へこみの左の壁）で示す。幅は右へ、深さは左へ曲げて交差させない
+  // へこみの幅と深さは図の内側の辺なので、引き出し線（学年の色）で示す。
+  // 深さは左の壁の中点から左上へ斜めに図の外へ、幅は底の辺のすぐ下（図の中）へ
   var topY = v.p(0, H, d)[1] - 16;
   body += voDim_(v.p(0, 0, 0), v.p(W, 0, 0), [0, 1], 16, W + 'cm') +
           voDim_(v.p(0, 0, 0), v.p(0, H, 0), [-1, 0], 16, H + 'cm') +
-          voLeader_(v.p(x0, H - m, 0), v.p(x0 + n, H - m, 0), topY, 1, n + 'cm') +
-          voLeader_(v.p(x0, H - m, 0), v.p(x0, H, 0), topY, -1, m + 'cm', Math.min(18, n * v.s / 3)) +
+          voLeadDown_(v.p(x0, H - m, 0), v.p(x0 + n, H - m, 0), n + 'cm') +
+          voLeadUp_(v.p(x0, H - m, 0), v.p(x0, H, 0), topY, m + 'cm') +
           voDim_(v.p(W, 0, 0), v.p(W, 0, d), VO_OUT_D, 16, d + 'cm');
   return {
     t: 'G', q: ['たいせきは'], f: ['cm³'], ans: { 'cm³': V },
