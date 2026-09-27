@@ -10,7 +10,6 @@ var UNIT = {
   teacherTitle: 'おもさ 設定・分析',
 
   defaults: {
-    slow_ms: 5000,      // 換算は九九より時間がかかる
     dial_size: 64       // はかりの文字盤・拡大窓の大きさの上限（画面の高さに対する%）
   },
 

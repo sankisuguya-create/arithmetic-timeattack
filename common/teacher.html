@@ -118,10 +118,6 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
       <input id="miss_limit" type="number" min="1" max="9">
     </div>
     <div class="row">
-      <label>未習熟とみなす時間<span class="note">ミリ秒。換算は九九より時間がかかるので既定5000</span></label>
-      <input id="slow_ms" type="number" min="1000" max="20000" step="500">
-    </div>
-    <div class="row">
       <label>キーの間隔<span class="note">画面下の数字キーの横間隔(px)。0〜40</span></label>
       <input id="key_gap" type="number" min="0" max="40">
     </div>
@@ -220,12 +216,12 @@ function esc(t){
   });
 }
 
-var BASE_KEYS = ['limit_sec','miss_limit','slow_ms','key_gap','teachers'];
+var BASE_KEYS = ['limit_sec','miss_limit','key_gap','teachers'];
 var KEYS = BASE_KEYS.slice();
 var SETTINGS = [];
 
 /* この画面が前提にする Core.gs の版。貼り替えを片方だけ忘れたときに検知する */
-var WANT_VER = 1;
+var WANT_VER = 2;
 
 function showWarn(msgs){
   var el = document.getElementById('verWarn');
@@ -554,29 +550,28 @@ function colChart(daily){
 }
 
 /* ---- ヒートマップ。セルは秒＋濃淡。ゆらぎ超過は▲を添える（色だけに頼らない） ---- */
-function heatCls(ms){
-  if(!ms) return 'none';
-  var r = ms / ANA.slowTk;
-  if(r <= 0.7) return '';
-  if(r <= 1.0) return 'h1';
-  if(r <= 1.5) return 'h2';
-  return 'h3';
+/* 「遅い」は秒の固定値ではなく、同じ学年・同じ型の児童の分布と比べた段階（サーバーの slowBand_）。
+   b: -1 判定なし／0 平均以下／1 平均〜+1SD／2 +1SD超／3 +2SD超 */
+function heatCls(o){
+  if(!o || !o.ms) return 'none';
+  return ['', 'h1', 'h2', 'h3'][o.b] || '';
 }
 function heatCell(o, wobble){
   if(!o || !o.n) return '<td class="none" title="記録なし">–</td>';
   var mark = (wobble && o.n >= 5 && o.cv > ANA.wobble) ? '<span class="wb">▲</span>' : '';
-  return '<td class="' + heatCls(o.ms) + '" title="' + o.n + '回・ゆらぎ' + o.cv + '%">' +
+  return '<td class="' + heatCls(o) + '" title="' + o.n + '回・ゆらぎ' + o.cv + '%">' +
          (o.ms/1000).toFixed(1) + mark + '</td>';
 }
 function heatLegend(r){
-  var t = (r.slowTk/1000).toFixed(1), t15 = (r.slowTk*1.5/1000).toFixed(1);
   return '<div class="heatlg">' +
-    '<span><span class="sw" style="background:#fff"></span>速い（めやすの7割以下）</span>' +
-    '<span><span class="sw" style="background:#E3F0FA"></span>めやす以内</span>' +
-    '<span><span class="sw" style="background:#A9CCE7"></span>' + t + '秒超</span>' +
-    '<span><span class="sw" style="background:#0F5EA8"></span>' + t15 + '秒超</span>' +
+    '<span><span class="sw" style="background:#fff"></span>学年の平均より速い／判定なし</span>' +
+    '<span><span class="sw" style="background:#E3F0FA"></span>平均〜＋標準偏差1つ</span>' +
+    '<span><span class="sw" style="background:#A9CCE7"></span>＋標準偏差1つ超（遅い）</span>' +
+    '<span><span class="sw" style="background:#0F5EA8"></span>＋標準偏差2つ超</span>' +
     '<span class="wob">▲ ゆらぎ' + r.wobble + '%超（5回以上の型）</span>' +
-    '<span>– 記録なし</span></div>';
+    '<span>– 記録なし</span></div>' +
+    '<div class="note">くらべる相手は同じ学年・同じ型の児童（その型を' + r.slowMinTries + '回以上）。' +
+    r.slowMinKids + '人に満たない型は色を付けない。型をまたいで秒数をくらべないこと（打つ数が違う）。</div>';
 }
 function heatHead(r, extra){
   return '<thead><tr><th class="nm">' + esc(extra.first) + '</th>' +
@@ -657,12 +652,11 @@ function renderAnalysis(){
   document.getElementById('anaStat').textContent =
     r.span + '・' + sc.trials + ' 試行' + meta + '・' + r.at + ' 時点（名簿の児童だけが対象）';
 
-  var thrSec = r.slowTk / 1000;
   var recall = r.order.filter(function(ty){ return sc.types[ty] && sc.types[ty].n > 0; })
     .map(function(ty){
       var o = sc.types[ty];
       return { label: r.types[ty] || ty, val: o.ms/1000,
-               valTxt: (o.ms/1000).toFixed(1) + '秒・' + o.n + '回', over: o.ms > r.slowTk };
+               valTxt: (o.ms/1000).toFixed(1) + '秒・' + o.n + '回', over: o.b >= 2 };
     }).sort(function(a, b){ return b.val - a.val; });
   var miss = r.order.filter(function(ty){ return sc.types[ty] && sc.types[ty].miss > 0; })
     .map(function(ty){
@@ -673,8 +667,8 @@ function renderAnalysis(){
   document.getElementById('anaBody').innerHTML =
     '<h3 class="sec">型ごとの平均想起時間</h3>' +
     '<div class="note">問題が出てから最初のキーを押すまでの平均（打鍵は含まない）。' +
-      '破線は未習熟のめやす ' + thrSec.toFixed(1) + '秒。</div>' +
-    hbarChart(recall, { thresh: thrSec, threshTxt: 'めやす ' + thrSec.toFixed(1) + '秒' }) +
+      '強調した棒は、同じ学年の児童の分布で＋標準偏差1つを超える型。</div>' +
+    hbarChart(recall, {}) +
     '<h3 class="sec">型ごとの誤答の数</h3>' +
     hbarChart(miss, {}) +
     '<h3 class="sec">日ごとの実施回数</h3>' +

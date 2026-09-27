@@ -40,8 +40,6 @@ var UNIT = {
   title: '体積 タイムアタック！',
   teacherTitle: '体積 設定・分析',
 
-  defaults: { slow_ms: 8000 },   // 図を読み、3数をかける時間が乗る
-
   units: { 'cm³': '', cm: '', 'こ': '', L: '' },
 
   modes: [
