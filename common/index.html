@@ -524,7 +524,7 @@ function previewItem(){
  *    無地 → ① 輪郭線 → ② 太い菱形を学年の色で塗る → ③ 細い菱形を第二の色で塗る
  *  と、どの層も「育ち始める点」から外へ広がり、画面全体を覆い終えたら次の層へ進む。
  *
- *  単元が settings で floor_on / floor_per_min を宣言したときだけ動く（宣言が無ければ 0 ＝出さない）。
+ *  単元が settings で floor_on / floor_per_answer を宣言したときだけ動く（宣言が無ければ 0 ＝出さない）。
  *  表示だけの仕組みで、出題にも採点にも関わらない。
  *
  *  児童端末（4GB の Chromebook）を前提にした軽さの規則：
@@ -538,7 +538,10 @@ var FLOOR = { min: 0, pace: {}, c2: '', pat: '', shown: null, tiles: [], thick: 
               W: 0, H: 0, dpr: 1, edge: 24, ox: 0, oy: 0, maskSig: '', anim: 0, pending: false, grew: false };
 
 function floorOn_(){ return uset_('floor_on', 0) === 1; }
-function floorRate_(){ var r = uset_('floor_per_min', 18); return r > 0 ? r : 18; }
+/** 標準の1分あたりに増える枚数 ＝ 1正答あたりの育ち（教師の設定）× 基準の速さ（1分20問。Core.gs の FLOOR_REF_PER_MIN_ と同じ）。
+    1正答の枚数は「設定値 × 20 ÷ そのモードの1分あたりの平均正答」になる */
+var FLOOR_REF = 20;
+function floorRate_(){ var r = uset_('floor_per_answer', 0.75); return (r > 0 ? r : 0.75) * FLOOR_REF; }
 
 /**
  * 本番の正答を足す。正答の数ではなく「標準の分数」に直して足す：

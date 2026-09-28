@@ -44,4 +44,14 @@ assert.ok(!dm.validateUnit_().some(x => /floor/.test(x)), JSON.stringify(dm.vali
 dm.UNIT.floorPattern = 'pinwheel';
 assert.ok(dm.validateUnit_().some(x => /floorPattern/.test(x)));
 
+// 「1正答あたりの育ち」の基準の速さは、サーバーと画面で同じ値（どちらかだけ変えると、教師画面の説明と実際の育ちがずれる）
+const fs = require('fs'), path = require('path');
+const ui = fs.readFileSync(path.join(__dirname, '..', 'common', 'index.html'), 'utf8');
+assert.equal(Number((/var FLOOR_REF = (\d+);/.exec(ui) || [])[1]), ctx.FLOOR_REF_PER_MIN_);
+// 床を出す単元は 1正答あたりの設定を持つ（1分あたりの旧設定は残さない。保存済みの値が別の意味で読まれるのを防ぐ）
+[ctx, dm].forEach(c => {
+  const keys = (c.UNIT.settings || []).map(s => s.key);
+  assert.ok(keys.includes('floor_per_answer') && !keys.includes('floor_per_min'), keys.join(','));
+});
+
 console.log('floor: ok');
