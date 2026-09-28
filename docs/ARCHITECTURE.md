@@ -251,7 +251,7 @@ span は目盛りの窓と答えの値域の両方を決めているので、表
 最初のメニューの背景に、練習を重ねるほど育つ非周期の床を敷ける。
 単元が `settings` で `floor_on`（onoff）と `floor_per_min`（1分あたりの育ち）を宣言したときだけ動く。
 図形は単元が `UNIT.floorPattern` で選ぶ（`penrose` / `octagon` / `heptagon` / `dodecagon` / `sunflower`。既定は `penrose`）。
-今は九九（ペンローズ・すみれ）と、あまりのあるわり算（八角の星・サファイア）が宣言している。
+今は九九（八角の星・すみれ）と、あまりのあるわり算（ペンローズ・サファイア）が宣言している。
 生成器は design リポジトリの `growing-figures/generators.js` を `common/index.html` に写したもの。直すときは向こうを正本にする。宣言の無い単元では `uset_` が 0 を返し、キャンバスは隠れたまま何も計算しない。
 図形・育ち方・色の正本は design リポジトリの `growing-figures/`。ここにあるのはその実装。
 

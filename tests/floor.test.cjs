@@ -35,9 +35,10 @@ ctx.UNIT.floorColor = 'ruby';
 assert.ok(ctx.validateUnit_().some(x => /floorColor/.test(x)));
 ctx.UNIT.floorColor = 'amethyst';
 
-// 床の図形：宣言できるのは一覧の id だけ。あまりのあるわり算は八角の星・サファイア
+// 床の図形：宣言できるのは一覧の id だけ。九九は八角の星・すみれ、あまりのあるわり算はペンローズ・サファイア
+assert.equal(ctx.UNIT.floorPattern, 'octagon');
 const dm = loadUnit('divmod');
-assert.equal(dm.UNIT.floorPattern, 'octagon');
+assert.equal(dm.UNIT.floorPattern, 'penrose');
 assert.equal(dm.floorColor_(), '#3D6FD6');
 assert.ok(!dm.validateUnit_().some(x => /floor/.test(x)), JSON.stringify(dm.validateUnit_()));
 dm.UNIT.floorPattern = 'pinwheel';
