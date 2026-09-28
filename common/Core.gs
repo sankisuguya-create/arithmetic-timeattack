@@ -494,7 +494,9 @@ function boot() {
             // 目立たせる欄の色。これも宣言で、答えは含まない
             slotColor: UNIT.slotColor || {},
             // 背景の床（成長する図形）の第二の色。第一の色は accent（学年の色）
-            floor2: floorColor_() },
+            floor2: floorColor_(),
+            // 床の図形（design リポジトリ growing-figures の生成器の id）。宣言が無ければペンローズ
+            floorPattern: UNIT.floorPattern || 'penrose' },
     settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
@@ -1899,6 +1901,9 @@ function questionColor_() {
  * そのため GRADE_EXTRA_（見分けの検査を通した組）には縛らず、宝石の名の8色から選ぶ。
  * 学年の色と同じ色だけは禁止（2つの層が見分けられなくなる）。
  */
+/** 床の図形として選べる生成器（common/index.html に写した generators.js の id） */
+var FLOOR_PATTERNS_ = ['penrose', 'octagon', 'heptagon', 'dodecagon', 'sunflower'];
+
 var FLOOR_GEMS_ = {
   amethyst:   '#8A6CE5',   // すみれ
   sapphire:   '#3D6FD6',   // 青
@@ -1985,6 +1990,9 @@ function validateUnit_() {
   if (UNIT.floorColor !== undefined) {
     if (!FLOOR_GEMS_[UNIT.floorColor]) probs.push('UNIT.floorColor は ' + Object.keys(FLOOR_GEMS_).join('/') + ' のどれかにしてください');
     else if (FLOOR_GEMS_[UNIT.floorColor].toUpperCase() === String(gradeAccent_()).toUpperCase()) probs.push('UNIT.floorColor が学年の色と同じです（床の2つの層が見分けられません）');
+  }
+  if (UNIT.floorPattern !== undefined && FLOOR_PATTERNS_.indexOf(UNIT.floorPattern) < 0) {
+    probs.push('UNIT.floorPattern は ' + FLOOR_PATTERNS_.join('/') + ' のどれかにしてください');
   }
   if (UNIT.floorPrior !== undefined) {
     Object.keys(UNIT.floorPrior).forEach(function (m) {

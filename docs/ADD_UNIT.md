@@ -300,7 +300,7 @@ settings: [
 ### 背景の床（成長する図形）を出す
 
 九九の `Unit.gs` の `defaults` / `settings` の `floor_on` と `floor_per_min` の2項目を写し、
-`floorColor` にこのサイトの第二の色を宣言する。色は design リポジトリの `growing-figures/COLORS.md`
+`floorColor` にこのサイトの第二の色を、`floorPattern` に図形を宣言する。色は design リポジトリの `growing-figures/COLORS.md`
 の台帳で、他のサイトと重ならないものを選び、台帳にも書き足す。
 1分あたりの平均正答は記録から自動で出るので、単元側で難しさを申告する必要はない
 （記録の無い年度初めの目安を変えたいときだけ `floorPrior: { 1: 12, 2: 8 }` のように書く）。
