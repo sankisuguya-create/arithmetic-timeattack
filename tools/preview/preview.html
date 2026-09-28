@@ -237,7 +237,10 @@ async function main() {
     "  renderMenu(); show('start');\n" +
     "}";
 
-  var patchedUi = uiText.replace(previewItemRe, newPreviewItem).replace(elseBlockRe, newElseBlock);
+  // index.html はサーバーでテンプレートとして評価され、単元の id が埋め込まれる。プレビューではその場で埋める
+  var appIdRe = /<\?!= JSON\.stringify\(String\(UNIT\.id\)\) \?>/;
+  if (!appIdRe.test(uiText)) { fail('common/index.html の APP_ID の埋め込み（<?!= JSON.stringify(String(UNIT.id)) ?>）が見つかりませんでした。'); return; }
+  var patchedUi = uiText.replace(appIdRe, JSON.stringify(unit)).replace(previewItemRe, newPreviewItem).replace(elseBlockRe, newElseBlock);
 
   var helperScript =
     '<script>\n' +

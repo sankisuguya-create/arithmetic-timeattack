@@ -428,6 +428,14 @@ body.practice-result .stats,body.practice-result .rank{display:none}
 <script>
 'use strict';
 var SRV = (typeof google !== 'undefined' && google.script && google.script.run);
+/*
+ * この画面がどの単元か。サーバーがページを返すときに埋め込む（doGet はテンプレートとして評価する）。
+ * localStorage の控え（起動の控え・未送信の記録）を単元ごとに分けるのに使う。
+ * GAS のウェブアプリは、どの単元も同じ置き場（iframe の location.pathname は /userCodeAppPanel）で動くため、
+ * パスで分けると単元どうしで控えが混ざる。あまりのあるわり算を開いたのに九九の控えが先に描かれ、
+ * サーバーの応答が失敗すると九九のまま残っていた。
+ */
+var APP_ID = <?!= JSON.stringify(String(UNIT.id)) ?>;
 
 /* モードはサーバー（Unit.gs）から受け取る。この画面は単元を知らない */
 var MODES = {}, MODES_ALL = [], LOCKED = {};
@@ -484,9 +492,11 @@ var eqEl=$('eq'), barEl=$('bar'), countEl=$('count');
 /* ============================================================
  *  未送信データの退避
  * ============================================================ */
-function pendSave(p){ try{ localStorage.setItem('km_pending', JSON.stringify(p)); }catch(e){} }
-function pendLoad(){ try{ return JSON.parse(localStorage.getItem('km_pending')||'null'); }catch(e){ return null; } }
-function pendClear(){ try{ localStorage.removeItem('km_pending'); }catch(e){} }
+// 未送信の記録も単元ごとに分ける。以前の共通の置き場（km_pending）に残っているものは、読むだけ読んで送り直す
+var PEND_KEY = 'km_pending_' + APP_ID;
+function pendSave(p){ try{ localStorage.setItem(PEND_KEY, JSON.stringify(p)); }catch(e){} }
+function pendLoad(){ try{ return JSON.parse(localStorage.getItem(PEND_KEY) || localStorage.getItem('km_pending') || 'null'); }catch(e){ return null; } }
+function pendClear(){ try{ localStorage.removeItem(PEND_KEY); localStorage.removeItem('km_pending'); }catch(e){} }
 function pendFlush(){
   var p = pendLoad();
   if(!p || !SRV) return;
@@ -2323,14 +2333,15 @@ function bootFetch(){
   }).boot();
 }
 
-var BOOT_KEY = 'km_boot_' + (location.pathname || '');
+var BOOT_KEY = 'km_boot_' + APP_ID + '_' + (location.pathname || '');
 function bootCacheSave(r){
   try{ localStorage.setItem(BOOT_KEY, JSON.stringify(r)); }catch(e){}
 }
 function bootCacheLoad(){
   try{
     var r = JSON.parse(localStorage.getItem(BOOT_KEY) || 'null');
-    return (r && r.ok && r.unit && r.unit.modes) ? r : null;
+    // 別の単元の控えは使わない（キーを分けたうえで、念のため中身の単元も確かめる）
+    return (r && r.ok && r.unit && r.unit.modes && r.unit.id === APP_ID) ? r : null;
   }catch(e){ return null; }
 }
 
