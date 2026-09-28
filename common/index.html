@@ -23,7 +23,11 @@ body{
 .screen.on{display:flex}
 
 /* ---------- 開始 ---------- */
-#start{align-items:center;justify-content:center;gap:1.4rem;padding:1.3rem}
+/* isolation で重なりの基準を #start に閉じ、背景の床（z-index:-1）を中身の後ろに置く */
+#start{align-items:center;justify-content:center;gap:1.4rem;padding:1.3rem;isolation:isolate}
+/* 背景の床（成長する図形）。描くのは状態が変わった時だけ。操作は受け取らない */
+.floorcv{position:absolute;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+.floorcv[hidden]{display:none}
 .apptitle{font-size:clamp(1.3rem,4.5vw,1.9rem);font-weight:800;letter-spacing:.02em}
 .timelede{font-size:clamp(1.5rem,5.5vw,2.3rem);font-weight:800;color:var(--acc);margin-top:-.6rem}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;width:min(760px,96vw)}
@@ -318,6 +322,8 @@ body.practice-result .stats,body.practice-result .rank{display:none}
 <body>
 
 <section id="start" class="screen">
+  <canvas id="floorBase" class="floorcv" aria-hidden="true" hidden></canvas>
+  <canvas id="floorGrow" class="floorcv" aria-hidden="true" hidden></canvas>
   <div class="apptitle">よみこみ中…</div>
   <div class="timelede" id="timelede">1回 60びょう</div>
   <div class="grid" id="modeGrid"></div>
@@ -487,7 +493,7 @@ function pendFlush(){
   google.script.run.withSuccessHandler(function(r){
     if(r.ok){
       if(r.practice){ PBEST[r.mode]=r.best; }
-      else { BEST[r.mode]=r.best; MEDAL[r.mode]=r.medal; if(r.star) STARS[r.mode]=r.star; }
+      else { BEST[r.mode]=r.best; MEDAL[r.mode]=r.medal; if(r.star) STARS[r.mode]=r.star; floorAdd(r.score); }
       renderMenu(); pendClear();
     }
     else if(r.code==='gone' || r.code==='bad'){ pendClear(); }
@@ -511,11 +517,271 @@ function previewItem(){
 }
 
 /* ============================================================
+ *  背景の床（成長する図形）
+ *  最初のメニューの背景に敷くペンローズの床（P3：太い菱形と細い菱形）。
+ *  累計正答（本番のみ・全モード合算。Core.gs の bests_ が数える）に応じて、
+ *    無地 → ① 輪郭線 → ② 太い菱形を学年の色で塗る → ③ 細い菱形を第二の色で塗る
+ *  と、どの層も「育ち始める点」から外へ広がり、画面全体を覆い終えたら次の層へ進む。
+ *
+ *  単元が settings で floor_on / floor_rate を宣言したときだけ動く（宣言が無ければ 0 ＝出さない）。
+ *  表示だけの仕組みで、出題にも採点にも関わらない。
+ *
+ *  児童端末（4GB の Chromebook）を前提にした軽さの規則：
+ *  - 描くのは状態が変わった時だけ。常時動くループは持たない
+ *  - 同じ色・同じ濃さの菱形は1本のパスに集めて1回で塗る（1枚ずつ色を切り替えると、それが重さの大半になる）
+ *  - 床の計算はメニューを出した後に回す（押せるようになるまでの時間を床が遅らせない）
+ *  - 育つ演出は本番を終えてメニューに戻った時の1回だけ。増えた菱形だけを描き足す
+ *  - 菱形は必ず1枚まるごと描く（半分だけ塗られた菱形は作らない）
+ * ============================================================ */
+var FLOOR = { tc: 0, c2: '', shown: null, tiles: [], thick: [], thin: [],
+              W: 0, H: 0, dpr: 1, edge: 24, ox: 0, oy: 0, maskSig: '', anim: 0, pending: false, grew: false };
+
+function floorOn_(){ return uset_('floor_on', 0) === 1; }
+function floorRate_(){ var r = uset_('floor_rate', 0.75); return r > 0 ? r : 0.75; }
+
+/** 本番の正答を足す。次回の起動で古い控えから描いたときに縮んで見えないよう、控えも書き換える */
+function floorAdd(n){
+  n = Number(n) || 0; if(n <= 0) return;
+  FLOOR.tc += n; FLOOR.grew = true;   // 次にメニューが見えた時、増えた分を演出つきで見せる
+  try{ var c = bootCacheLoad(); if(c){ c.floorTC = FLOOR.tc; bootCacheSave(c); } }catch(e){}
+}
+
+/* ---- 色：学年の色（--acc）と第二の色の「系統」。菱形の向き（5方向）ごとに明暗を少しずらし、宝石の切子面のように見せる ---- */
+function floorFam_(hex){
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'').trim());
+  var c = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [53,208,165];
+  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
+    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
+  });
+}
+
+/* ---- ペンローズ（P3）をロビンソン三角形の置き換えで作り、辺を共有する2枚を組にして菱形にする ---- */
+function floorGen_(){
+  var F = FLOOR, cv = $('floorBase'), W = cv.clientWidth, H = cv.clientHeight;
+  if(!W || !H) return false;
+  var PHI = (1 + Math.sqrt(5)) / 2;
+  F.W = W; F.H = H; F.dpr = Math.min(window.devicePixelRatio || 1, 2);
+  F.edge = Math.max(15, Math.min(28, Math.sqrt(W * H) / 40));
+  // 育ち始める点。横長の画面では左下寄り、縦長では上端。中央に置くとカードの陰になって最初の成長が見えない
+  F.ox = W * (W < H ? 0.5 : 0.14); F.oy = H * (W < H ? 0.06 : 0.78);
+  var far = 0;
+  [[0,0],[W,0],[0,H],[W,H]].forEach(function(p){ var dx = p[0]-F.ox, dy = p[1]-F.oy; far = Math.max(far, Math.sqrt(dx*dx+dy*dy)); });
+  var k = 0, R = F.edge; while(R < far + F.edge * 2){ R *= PHI; k++; }
+  var T = [], i, j;
+  for(i = 0; i < 10; i++){
+    var b = [F.ox + R*Math.cos((2*i-1)*Math.PI/10), F.oy + R*Math.sin((2*i-1)*Math.PI/10)],
+        c = [F.ox + R*Math.cos((2*i+1)*Math.PI/10), F.oy + R*Math.sin((2*i+1)*Math.PI/10)];
+    if(i % 2 === 0){ var t = b; b = c; c = t; }
+    T.push([0, [F.ox, F.oy], b, c]);
+  }
+  function L(p, q, t){ return [p[0] + (q[0]-p[0])*t, p[1] + (q[1]-p[1])*t]; }
+  // 画面（＋菱形2枚分の余白）に掛からない三角形は、それ以上分割せずに捨てる。
+  // 余白を2枚分とるのは、画面の縁で菱形の片割れだけが残らないようにするため
+  var M = F.edge * 2;
+  function inside(t){
+    var A = t[1], B = t[2], C = t[3];
+    return (A[0]>-M||B[0]>-M||C[0]>-M) && (A[0]<W+M||B[0]<W+M||C[0]<W+M) &&
+           (A[1]>-M||B[1]>-M||C[1]>-M) && (A[1]<H+M||B[1]<H+M||C[1]<H+M);
+  }
+  for(var s = 0; s < k; s++){
+    var N = [];
+    for(j = 0; j < T.length; j++){
+      var c0 = T[j][0], A = T[j][1], B = T[j][2], C = T[j][3];
+      if(c0 === 0){ var P = L(A, B, 1/PHI); N.push([0, C, P, B], [1, P, C, A]); }
+      else{ var Q = L(B, A, 1/PHI), S = L(B, C, 1/PHI); N.push([1, S, C, A], [1, Q, S, B], [0, S, Q, A]); }
+    }
+    T = N.filter(inside);
+  }
+  // 菱形＝辺BCを共有する同じ種類の三角形2枚。BC の両端の座標で組を作る
+  var fam1 = floorFam_(getComputedStyle(document.documentElement).getPropertyValue('--acc')),
+      fam2 = floorFam_(FLOOR.c2 || '#8A6CE5');
+  function key(p){ return Math.round(p[0]*8) + ',' + Math.round(p[1]*8); }
+  var pair = {}, tiles = [];
+  for(j = 0; j < T.length; j++){
+    var tr = T[j], kb = key(tr[2]), kc = key(tr[3]), kk = tr[0] + '|' + (kb < kc ? kb + '|' + kc : kc + '|' + kb), o = pair[kk];
+    if(!o){ pair[kk] = tr; continue; }
+    delete pair[kk];
+    var cx = (tr[2][0] + tr[3][0]) / 2, cy = (tr[2][1] + tr[3][1]) / 2;
+    if(cx < -F.edge || cx > W + F.edge || cy < -F.edge || cy > H + F.edge) continue;
+    var ang = Math.atan2(o[1][1] - tr[1][1], o[1][0] - tr[1][0]), dir = ((Math.round(ang / (Math.PI/5)) % 5) + 5) % 5;
+    var thick = tr[0] === 1;                       // 1＝太い菱形（72°）、0＝細い菱形（36°）
+    tiles.push({ p: [tr[1], tr[2], o[1], tr[3]], thick: thick, rgb: (thick ? fam1 : fam2)[dir],
+                 d: Math.sqrt((cx-F.ox)*(cx-F.ox) + (cy-F.oy)*(cy-F.oy)), cx: cx, cy: cy, m: 1 });
+  }
+  tiles.sort(function(p, q){ return p.d - q.d; });
+  F.tiles = tiles;
+  F.thick = tiles.filter(function(t){ return t.thick; });
+  F.thin  = tiles.filter(function(t){ return !t.thick; });
+  [$('floorBase'), $('floorGrow')].forEach(function(c){ c.width = W * F.dpr; c.height = H * F.dpr; });
+  F.maskSig = '';
+  return true;
+}
+
+/* ---- 文字・カード・ボタンの際で模様を薄める。菱形ごとに「一番近い要素までの距離」から濃さの係数 m を出す ---- */
+var FLOOR_MASK_SEL = '.apptitle,#timelede,#modeGrid,#startHint,.prow .pbtn,#teacherLink';
+function floorMask_(){
+  var F = FLOOR, o = $('floorBase').getBoundingClientRect(), rs = [], sig = '';
+  [].forEach.call(document.querySelectorAll(FLOOR_MASK_SEL), function(e){
+    var r = e.getBoundingClientRect(); if(!r.width || !r.height) return;
+    rs.push([r.left - o.left - 2, r.top - o.top - 2, r.right - o.left + 2, r.bottom - o.top + 2]);
+  });
+  sig = rs.map(function(r){ return r.map(Math.round).join(','); }).join('|');
+  if(sig === F.maskSig) return false;
+  F.maskSig = sig;
+  var FADE = 10, MIN_K = 0.1;
+  for(var i = 0; i < F.tiles.length; i++){
+    var t = F.tiles[i], d = 1e9;
+    for(var j = 0; j < rs.length; j++){
+      var r = rs[j], dx = Math.max(r[0]-t.cx, 0, t.cx-r[2]), dy = Math.max(r[1]-t.cy, 0, t.cy-r[3]), dd = dx*dx + dy*dy;
+      if(dd < d) d = dd;
+    }
+    var k = Math.min(1, Math.sqrt(d) / FADE); t.m = MIN_K + (1 - MIN_K) * k * k * (3 - 2 * k);
+  }
+  return true;
+}
+
+/** 累計正答から、3つの層それぞれの進み（何枚目まで描くか）を出す */
+function floorProg_(tc){
+  var F = FLOOR, u = Math.floor(tc * floorRate_()), N = F.tiles.length, K = F.thick.length;
+  return { line: Math.min(u, N), thick: Math.max(0, Math.min(u - N, K)), thin: Math.max(0, Math.min(u - N - K, F.thin.length)) };
+}
+
+/* ---- 描画。濃さを40段階に丸め、同じ色・同じ濃さの菱形を1本のパスに集めて1回で塗る ---- */
+var FLOOR_Q = 40, FLOOR_LINE = '16,23,40', FLOOR_A = { line: 0.18, thick: 0.30, thin: 0.26 };
+function floorPoly_(P, t){ var p = t.p; P.moveTo(p[0][0],p[0][1]); P.lineTo(p[1][0],p[1][1]); P.lineTo(p[2][0],p[2][1]); P.lineTo(p[3][0],p[3][1]); P.closePath(); }
+function floorQ_(a){ return Math.max(1, Math.round(a * FLOOR_Q)); }
+function floorBucket_(){
+  var m = {};
+  return { add: function(key, t){ var P = m[key] || (m[key] = new Path2D()); floorPoly_(P, t); },
+           fill: function(ctx){ for(var k in m){ var s = k.split('|'); ctx.fillStyle = 'rgba(' + s[0] + ',' + (s[1]/FLOOR_Q) + ')'; ctx.fill(m[k]); } },
+           stroke: function(ctx, w){ ctx.lineWidth = w; for(var k in m){ var s = k.split('|'); ctx.strokeStyle = 'rgba(' + s[0] + ',' + (s[1]/FLOOR_Q) + ')'; ctx.stroke(m[k]); } } };
+}
+function floorFillKey_(t){ return t.rgb + '|' + floorQ_((t.thick ? FLOOR_A.thick : FLOOR_A.thin) * t.m); }
+function floorLineKey_(t){ return FLOOR_LINE + '|' + floorQ_(FLOOR_A.line * t.m); }
+function floorCtx_(id){
+  var ctx = $(id).getContext('2d');
+  ctx.setTransform(FLOOR.dpr, 0, 0, FLOOR.dpr, 0, 0); ctx.lineJoin = 'round';
+  return ctx;
+}
+
+/** 土台：その時点の3層をまとめて描く */
+function floorDraw_(g){
+  var F = FLOOR, ctx = floorCtx_('floorBase'), i;
+  ctx.clearRect(0, 0, F.W, F.H);
+  var fills = floorBucket_(), lines = floorBucket_(), hints = floorBucket_();
+  for(i = 0; i < g.thick; i++) fills.add(floorFillKey_(F.thick[i]), F.thick[i]);
+  for(i = 0; i < g.thin; i++)  fills.add(floorFillKey_(F.thin[i]), F.thin[i]);
+  for(i = 0; i < g.line; i++)  lines.add(floorLineKey_(F.tiles[i]), F.tiles[i]);
+  // ①の途中だけ、輪郭の先にうっすら次の輪郭をにじませる（この先にまだ何かある予告）
+  if(g.line && g.line < F.tiles.length){
+    var front = F.tiles[g.line - 1].d, band = F.edge * 6;
+    for(i = g.line; i < F.tiles.length; i++){
+      var t = F.tiles[i], f = 1 - (t.d - front) / band; if(f <= 0) break;
+      hints.add(FLOOR_LINE + '|' + floorQ_(0.12 * f * f * t.m), t);
+    }
+  }
+  fills.fill(ctx); lines.stroke(ctx, 1); hints.stroke(ctx, 0.8);
+  F.shown = g;
+}
+
+/** 演出を途中で打ち切り、最終の状態を土台に焼き付ける */
+function floorSettle_(){
+  var F = FLOOR;
+  if(!F.anim) return;
+  cancelAnimationFrame(F.anim); F.anim = 0;
+  floorCtx_('floorGrow').clearRect(0, 0, F.W, F.H);
+  if(F.target) floorDraw_(F.target);
+}
+
+/**
+ * 育つ演出。増えた菱形だけを上の層に、内側から順に1枚ずつまるごと描き足す（①→②→③の順）。
+ * 各フレームで描くのは「そのフレームで順番が来た菱形」だけで、描いたものは消さずに重ねる。
+ * 終わったら土台に焼き付けて上の層を消す
+ */
+function floorGrow_(g0, g1){
+  var F = FLOOR;
+  floorSettle_();
+  var steps = [
+    { list: F.tiles.slice(g0.line, g1.line),  fill: false },
+    { list: F.thick.slice(g0.thick, g1.thick), fill: true },
+    { list: F.thin.slice(g0.thin, g1.thin),    fill: true }
+  ].filter(function(s){ return s.list.length; });
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduce || !steps.length){ floorDraw_(g1); return; }
+  var ctx = floorCtx_('floorGrow'), DUR = 1100, GAP = 250, at = 0;
+  ctx.clearRect(0, 0, F.W, F.H);
+  steps.forEach(function(s){ s.start = at; s.i = 0; at += DUR + GAP; });
+  var t0 = performance.now(), END = at - GAP;
+  F.target = g1;
+  F.anim = requestAnimationFrame(function frame(now){
+    var el = now - t0;
+    steps.forEach(function(s){
+      if(el < s.start || s.i >= s.list.length) return;
+      var p = Math.min(1, (el - s.start) / DUR), upto = Math.ceil(s.list.length * (1 - Math.pow(1 - p, 2)));
+      var fills = floorBucket_(), lines = floorBucket_();
+      for(; s.i < upto; s.i++){ var t = s.list[s.i]; if(s.fill) fills.add(floorFillKey_(t), t); lines.add(floorLineKey_(t), t); }
+      fills.fill(ctx); lines.stroke(ctx, 1);   // 塗った菱形にも輪郭を引き直し、焼き付け後と同じ見え方にする
+    });
+    if(el < END){ F.anim = requestAnimationFrame(frame); return; }
+    F.anim = 0;
+    floorDraw_(g1);
+    ctx.clearRect(0, 0, F.W, F.H);
+  });
+}
+
+function floorSame_(a, b){ return a && b && a.line === b.line && a.thick === b.thick && a.thin === b.thin; }
+
+/**
+ * メニューが見えている間に呼ぶ。必要な時だけ描く。
+ * animate が真なら増えた分を演出つきで、偽なら黙って描き直す
+ * （起動直後やサーバーの値で追いついた時は演出しない。演出は本番を終えて戻った時だけ）
+ */
+function floorRender_(animate){
+  var F = FLOOR, on = floorOn_();
+  $('floorBase').hidden = !on; $('floorGrow').hidden = !on;
+  if(!on || scr !== 'start') return;
+  if(!F.tiles.length && !floorGen_()) return;
+  var moved = floorMask_(), g = floorProg_(F.tc);
+  if(!F.shown){ floorDraw_(g); F.grew = false; return; }   // 初めて描く時は演出しない
+  var grow = (animate || F.grew) && !floorSame_(F.shown, g);
+  F.grew = false;
+  if(moved){                                     // メニューの配置が変わった：薄める範囲を新しくして描き直す
+    floorSettle_(); floorDraw_(grow ? F.shown : g);
+  }else if(!grow){
+    if(!floorSame_(F.shown, g)) floorDraw_(g);
+    return;
+  }
+  if(grow) floorGrow_(F.shown, g);
+}
+
+/* 床の計算と描画は、メニューを描き終えた次の区切りに回す（初回は重いので、押せるまでの時間を遅らせない） */
+function floorLater_(animate){
+  if(FLOOR.pending) return;
+  FLOOR.pending = true;
+  requestAnimationFrame(function(){ setTimeout(function(){ FLOOR.pending = false; floorRender_(animate); }, 0); });
+}
+function floorOnShow(id){
+  if(id !== 'start'){ floorSettle_(); return; }   // メニューを離れたら演出は打ち切って焼き付ける
+  floorLater_(true);                              // 本番から戻った時は、増えた分がここで育つ
+}
+function floorSync(){ if(scr === 'start') floorLater_(false); }
+
+var floorRT = 0;
+window.addEventListener('resize', function(){
+  clearTimeout(floorRT);
+  floorRT = setTimeout(function(){
+    if(!floorOn_()) return;
+    floorSettle_(); FLOOR.tiles = []; FLOOR.shown = null; floorRender_(false);
+  }, 200);
+});
+
+/* ============================================================
  *  画面
  * ============================================================ */
 function show(id){
   ['start','keyset','popt','ptime','ptype','play','result'].forEach(function(s){ $(s).classList.remove('on'); });
   $(id).classList.add('on'); scr = id;
+  floorOnShow(id);
 }
 function fatal(t){ $('msg').textContent = t; $('msg').classList.add('on'); }
 /**
@@ -583,6 +849,7 @@ function renderMenu(){
     : open.length === 1 ? (open[0] + ' のキーで はじまります')
     : seq ? ('1〜' + open.length + ' のキーで はじまります')
     : (open.join('・') + ' のキーで はじまります');
+  floorSync();
 }
 function openPractice(){
   var vis = visibleModes();
@@ -1587,7 +1854,11 @@ function finish(){
   $('rank').textContent = '';
   show('result');
 
-  if(!SRV){ $('saving').textContent = '（ローカル表示：記録されません）'; return; }
+  if(!SRV){
+    $('saving').textContent = '（ローカル表示：記録されません）';
+    floorAdd(correct);               // プレビューでは記録の代わりにその場で育てて、動きを確かめられるようにする
+    return;
+  }
   if(!sent.token || !sent.items.length){
     $('saving').textContent = CFG.guest ? 'おためしモード：きろくされません' : '';
     return;
@@ -1599,6 +1870,7 @@ function finish(){
       pendClear();
       BEST[r.mode]=r.best; MEDAL[r.mode]=r.medal;
       if(r.star) STARS[r.mode] = r.star;
+      floorAdd(r.score);             // 記録できた本番の正答だけ床が育つ
       renderMenu();
       if(mode===r.mode && scr==='result'){
         $('best').textContent = r.best;
@@ -1768,6 +2040,9 @@ function applyBoot(r, live){
   GLYPH = r.unit.glyph || {};          // 古い localStorage の控えには無いので {} に落とす
   SLOTCOLOR = r.unit.slotColor || {};
   setPalette_(r.unit.accent, r.unit.alert, r.unit.q);   // 古い控えには無いので既定（3年）のまま
+  // 背景の床。累計正答と第二の色。古い控え・古いエンジンには無いので 0 と既定色に落とす
+  FLOOR.tc = Number(r.floorTC) || 0;
+  FLOOR.c2 = r.unit.floor2 || '';
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
   setAppTitle(r.unit.title);

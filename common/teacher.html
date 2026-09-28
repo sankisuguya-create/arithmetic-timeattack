@@ -30,6 +30,9 @@ h2{font-size:.72rem;letter-spacing:.18em;color:var(--mute);font-weight:700;margi
 input[type=number],input[type=text]{width:7rem;padding:.5rem .7rem;border:1.5px solid var(--line);
   border-radius:8px;font:inherit;font-weight:700;text-align:right;background:var(--paper)}
 input.wide{width:100%;text-align:left;font-weight:400}
+.row select{width:7rem;padding:.5rem .5rem;border:1.5px solid var(--line);
+  border-radius:8px;font:inherit;font-weight:700;background:var(--paper)}
+.row select:focus{outline:none;border-color:var(--ink)}
 input:focus{outline:none;border-color:var(--ink)}
 button{font:inherit;font-weight:700;padding:.65rem 1.3rem;border:none;border-radius:9px;
   background:var(--ink);color:#fff;cursor:pointer}
@@ -264,6 +267,13 @@ google.script.run.withSuccessHandler(function(r){
   // 単元が持たなければ何も描かない（九九の画面に長さの欄は出ない）。
   SETTINGS = u.settings || [];
   document.getElementById('settingRows').innerHTML = SETTINGS.map(function(s){
+    // onoff は「表示する／表示しない」の2択。数値欄に 0/1 を打たせると意味が読めない
+    if(s.type === 'onoff'){
+      return '<div class="row"><label>'+s.label+
+        (s.note ? '<span class="note">'+s.note+'</span>' : '')+
+        '</label><select id="'+s.key+'"><option value="1">表示する</option>'+
+        '<option value="0">表示しない</option></select></div>';
+    }
     var attr = (s.type === 'text')
       ? 'type="text" class="wide"'
       : 'type="number"' +

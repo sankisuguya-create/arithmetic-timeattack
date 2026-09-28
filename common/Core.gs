@@ -492,7 +492,9 @@ function boot() {
             // digitCap と同じく「宣言」であって、答えは含まない
             glyph: UNIT.glyph || {},
             // 目立たせる欄の色。これも宣言で、答えは含まない
-            slotColor: UNIT.slotColor || {} },
+            slotColor: UNIT.slotColor || {},
+            // 背景の床（成長する図形）の第二の色。第一の色は accent（学年の色）
+            floor2: floorColor_() },
     settings: uset,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
   };
@@ -512,6 +514,7 @@ function boot() {
     base.open = allOn;                // 名簿外の試用者。記録されないので全モード出す
     base.locked = {};                 // 記録が無いので順次開放は判定できない。開けておく
     base.best = {}; base.practiceBest = {}; base.stars = {}; base.medals = {};
+    base.floorTC = 0;                 // 記録が無いので床は育たない
     modeIds_().forEach(function (m) {
       base.best[m] = 0; base.practiceBest[m] = 0; base.stars[m] = 0; base.medals[m] = '';
     });
@@ -522,6 +525,7 @@ function boot() {
   base.open = openFor_(c.grade, c.cls);
   var b = bests_(mail, cfg.limit_sec);
   base.best = b.best; base.practiceBest = b.practiceBest; base.stars = b.stars;
+  base.floorTC = b.tc;
   base.locked = lockNotes_(base.open, seqOffFor_(c.grade, c.cls), b.tries);
   base.medals = medals_(classKey_(c), mail, cfg.limit_sec);
   return base;
@@ -781,11 +785,14 @@ function summaryIndex_(limitSec) {
     var mail = String(v[i][SUM.MAIL]).toLowerCase().trim();
     if (!mail) continue;
     var e = idx[mail];
-    if (!e) e = idx[mail] = { best: {}, prac: {}, stars: {}, tries: {} };
+    if (!e) e = idx[mail] = { best: {}, prac: {}, stars: {}, tries: {}, tc: 0 };
     var m = Number(v[i][SUM.MODE]);
     // 順次開放に使う試行回数だけは、制限時間も本番／練習も問わずに合算する。
     // 「何回やったか」の条件なので、条件を満たす道を制限時間の設定で塞がない。
     e.tries[m] = (e.tries[m] || 0) + (Number(v[i][SUM.TRIES]) || 0);
+    // 背景の床（成長する図形）の育ち具合に使う累計正答。本番だけを、全モード・全制限時間で合算する。
+    // 練習を入れないのは ★（自己ベスト更新回数）と同じ理由：記録しない場で増えると意味が薄れる
+    if (String(v[i][SUM.KIND]) !== 'p') e.tc += Number(v[i][SUM.TC]) || 0;
     if (Number(v[i][SUM.LIM]) !== Number(limitSec)) continue;
     if (String(v[i][SUM.KIND]) === 'p') {
       e.prac[m] = Number(v[i][SUM.BEST]) || 0;
@@ -803,13 +810,14 @@ function summaryIndex_(limitSec) {
 function bests_(mail, limitSec) {
   var e = summaryIndex_(limitSec)[mail] || {};
   var real = {}, prac = {}, stars = {}, tries = {};
+  var tc = Number(e.tc) || 0;
   modeIds_().forEach(function (m) {
     real[m]  = Number((e.best  || {})[m]) || 0;
     prac[m]  = Number((e.prac  || {})[m]) || 0;
     stars[m] = Number((e.stars || {})[m]) || 0;
     tries[m] = Number((e.tries || {})[m]) || 0;
   });
-  return { best: real, practiceBest: prac, stars: stars, tries: tries };
+  return { best: real, practiceBest: prac, stars: stars, tries: tries, tc: tc };
 }
 
 /**
@@ -1843,6 +1851,16 @@ function questionColor_() {
 }
 
 /**
+ * 背景の床（成長する図形）の第二の色。第一の色は学年の色。
+ * 「？」の印（GRADE_EXTRA_ の先頭）と同じ色を避けて2番目を取る。
+ * 3年なら先頭の桃ではなく、すみれになる（学年の色のミントと並べたとき宝石らしく見える組）。
+ */
+function floorColor_() {
+  var ex = GRADE_EXTRA_[UNIT.grade] || [];
+  return ex[1] || ex[0] || '#8A6CE5';
+}
+
+/**
  * UNIT が共通エンジンの契約に合っているかを調べる。
  * 問題点の文字列の配列を返す（空なら合格）。
  * エディタからは checkUnit() で手動確認できる。
@@ -1913,8 +1931,9 @@ function validateUnit_() {
     if (!s.key) { probs.push('UNIT.settings に key の無い項目があります'); return; }
     if (BASE_DEFAULTS[s.key] !== undefined) probs.push('UNIT.settings のキー ' + s.key + ' は共通の設定名と重なっています');
     if ((UNIT.defaults || {})[s.key] === undefined) probs.push('UNIT.settings のキー ' + s.key + ' が UNIT.defaults にありません');
-    if (s.type !== undefined && s.type !== 'text' && s.type !== 'number') probs.push('UNIT.settings のキー ' + s.key + ' の type は text/number どちらかにしてください');
-    if (s.type !== 'text' && (s.min == null || s.max == null)) probs.push('注意：UNIT.settings のキー ' + s.key + ' に min/max がありません');
+    if (s.type !== undefined && s.type !== 'text' && s.type !== 'number' && s.type !== 'onoff') probs.push('UNIT.settings のキー ' + s.key + ' の type は text/number/onoff のどれかにしてください');
+    if (s.type === 'onoff' && [0, 1].indexOf(Number((UNIT.defaults || {})[s.key])) < 0) probs.push('UNIT.settings のキー ' + s.key + ' は onoff なので、既定値は 0 か 1 にしてください');
+    if (s.type !== 'text' && s.type !== 'onoff' && (s.min == null || s.max == null)) probs.push('注意：UNIT.settings のキー ' + s.key + ' に min/max がありません');
   });
 
   // gen の実働検査。モードごとに固定シードで引いて、返す形を見る
