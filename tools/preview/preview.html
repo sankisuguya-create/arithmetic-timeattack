@@ -219,6 +219,7 @@ async function main() {
     "  SLOTCOLOR = UNIT.slotColor || {};\n" +
     "  setPalette_(GRADE_ACCENT_[UNIT.grade], ALERT_COLOR_);\n" +
     "  if (typeof FLOOR_GEMS_ !== 'undefined' && FLOOR_GEMS_[UNIT.floorColor]) FLOOR.c2 = FLOOR_GEMS_[UNIT.floorColor];\n" +
+    "  FLOOR.pat = UNIT.floorPattern || '';\n" +
     "  TYPES = UNIT.types || {};\n" +
     // 型の一覧は Core.gs と同じく gen を回して導出する
     "  TYPES_BY_MODE = {};\n" +
