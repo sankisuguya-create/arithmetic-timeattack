@@ -514,7 +514,7 @@ function boot() {
     base.open = allOn;                // 名簿外の試用者。記録されないので全モード出す
     base.locked = {};                 // 記録が無いので順次開放は判定できない。開けておく
     base.best = {}; base.practiceBest = {}; base.stars = {}; base.medals = {};
-    base.floorTC = 0;                 // 記録が無いので床は育たない
+    base.floor = { min: 0, pace: floorPace_(null) };   // 記録が無いので床は育たない（summary も読まない）
     modeIds_().forEach(function (m) {
       base.best[m] = 0; base.practiceBest[m] = 0; base.stars[m] = 0; base.medals[m] = '';
     });
@@ -525,7 +525,7 @@ function boot() {
   base.open = openFor_(c.grade, c.cls);
   var b = bests_(mail, cfg.limit_sec);
   base.best = b.best; base.practiceBest = b.practiceBest; base.stars = b.stars;
-  base.floorTC = b.tc;
+  base.floor = b.floor;
   base.locked = lockNotes_(base.open, seqOffFor_(c.grade, c.cls), b.tries);
   base.medals = medals_(classKey_(c), mail, cfg.limit_sec);
   return base;
@@ -785,14 +785,21 @@ function summaryIndex_(limitSec) {
     var mail = String(v[i][SUM.MAIL]).toLowerCase().trim();
     if (!mail) continue;
     var e = idx[mail];
-    if (!e) e = idx[mail] = { best: {}, prac: {}, stars: {}, tries: {}, tc: 0 };
+    if (!e) e = idx[mail] = { best: {}, prac: {}, stars: {}, tries: {}, tcm: {} };
     var m = Number(v[i][SUM.MODE]);
     // 順次開放に使う試行回数だけは、制限時間も本番／練習も問わずに合算する。
     // 「何回やったか」の条件なので、条件を満たす道を制限時間の設定で塞がない。
     e.tries[m] = (e.tries[m] || 0) + (Number(v[i][SUM.TRIES]) || 0);
-    // 背景の床（成長する図形）の育ち具合に使う累計正答。本番だけを、全モード・全制限時間で合算する。
-    // 練習を入れないのは ★（自己ベスト更新回数）と同じ理由：記録しない場で増えると意味が薄れる
-    if (String(v[i][SUM.KIND]) !== 'p') e.tc += Number(v[i][SUM.TC]) || 0;
+    // 背景の床（成長する図形）に使う累計正答と、そのサイト全体の「1分あたりの正答」。
+    // 本番だけを、モードごとに・全制限時間で合算する。練習を入れないのは ★ と同じ理由
+    // （記録しない場で増えると意味が薄れる）。詳細は floorPace_
+    if (String(v[i][SUM.KIND]) !== 'p') {
+      var tcv = Number(v[i][SUM.TC]) || 0, sec = (Number(v[i][SUM.TRIES]) || 0) * (Number(v[i][SUM.LIM]) || 0);
+      e.tcm[m] = (e.tcm[m] || 0) + tcv;
+      if (!idx['*']) idx['*'] = { tc: {}, sec: {} };
+      idx['*'].tc[m] = (idx['*'].tc[m] || 0) + tcv;
+      idx['*'].sec[m] = (idx['*'].sec[m] || 0) + sec;
+    }
     if (Number(v[i][SUM.LIM]) !== Number(limitSec)) continue;
     if (String(v[i][SUM.KIND]) === 'p') {
       e.prac[m] = Number(v[i][SUM.BEST]) || 0;
@@ -808,16 +815,48 @@ function summaryIndex_(limitSec) {
 }
 
 function bests_(mail, limitSec) {
-  var e = summaryIndex_(limitSec)[mail] || {};
-  var real = {}, prac = {}, stars = {}, tries = {};
-  var tc = Number(e.tc) || 0;
+  var idx = summaryIndex_(limitSec), e = idx[mail] || {};
+  var real = {}, prac = {}, stars = {}, tries = {}, pace = floorPace_(idx), floorMin = 0;
   modeIds_().forEach(function (m) {
+    floorMin += (Number((e.tcm || {})[m]) || 0) / pace[m];
     real[m]  = Number((e.best  || {})[m]) || 0;
     prac[m]  = Number((e.prac  || {})[m]) || 0;
     stars[m] = Number((e.stars || {})[m]) || 0;
     tries[m] = Number((e.tries || {})[m]) || 0;
   });
-  return { best: real, practiceBest: prac, stars: stars, tries: tries, tc: tc };
+  return { best: real, practiceBest: prac, stars: stars, tries: tries,
+           floor: { min: Math.round(floorMin * 100) / 100, pace: pace } };
+}
+
+/**
+ * 背景の床の「育ちやすさ」を、そのサイトの解きやすさで揃える。
+ *
+ * 床は正答の数ではなく「標準の分数」で育てる。標準の分数とは、
+ * そのサイトの児童が平均的な速さで解いたとして、その正答数を取るのに要る時間（分）。
+ *   標準の分数 ＝ Σ（モードごとの累計正答 ÷ そのモードの1分あたりの平均正答）
+ * 床の枚数 ＝ 標準の分数 × 教師が決める「1分あたりの育ち」（floor_per_min）。
+ *
+ * これで、解きにくい問題（1分で取れる正答が少ない）を載せたサイトほど、1問で多く染まる。
+ * 九九で1分30問、単位換算で1分10問なら、同じ1分の練習で同じだけ育つ。
+ * モードごとに見るので、同じサイトの中でも難しいモード（9×16 など）は1問の重みが大きい。
+ *
+ * 1分あたりの平均正答は、summary の本番の行（全児童・全制限時間）から出す：
+ *   （累計正答 ＋ 事前の正答）÷（遊んだ分数 ＋ 事前の分数）
+ * 「事前」は記録の少ない年度初めに値が暴れないための下駄（1分20問を10分ぶん）。
+ * 記録が増えるほど実際の速さに寄る。単元が floorPrior で別の事前値を宣言してもよい。
+ *
+ * 注意：平均が変わると標準の分数も少し変わる（学級全体が速くなると、同じ正答の重みが少し減る）。
+ */
+var FLOOR_PRIOR_ = { perMin: 20, min: 10 };
+function floorPace_(idx) {
+  var st = (idx && idx['*']) || { tc: {}, sec: {} }, pr = UNIT.floorPrior || {}, out = {};
+  modeIds_().forEach(function (m) {
+    var perMin = Number(pr[m]) || FLOOR_PRIOR_.perMin;
+    var tc = (Number(st.tc[m]) || 0) + perMin * FLOOR_PRIOR_.min;
+    var min = (Number(st.sec[m]) || 0) / 60 + FLOOR_PRIOR_.min;
+    out[m] = Math.max(1, Math.round(tc / min * 100) / 100);
+  });
+  return out;
 }
 
 /**
@@ -1852,12 +1891,29 @@ function questionColor_() {
 
 /**
  * 背景の床（成長する図形）の第二の色。第一の色は学年の色。
- * 「？」の印（GRADE_EXTRA_ の先頭）と同じ色を避けて2番目を取る。
- * 3年なら先頭の桃ではなく、すみれになる（学年の色のミントと並べたとき宝石らしく見える組）。
+ * 第二の色はサイト（単元）ごとに変え、どのサイトの床かが色で分かるようにする。
+ * 単元が UNIT.floorColor で FLOOR_GEMS_ の中から1色を宣言する（validateUnit_ が検査する）。
+ * 割り当ての台帳は design リポジトリの growing-figures/COLORS.md が正本。
+ *
+ * 床の色は薄く塗る背景で、意味を伝える色（進み・まちがい・？の印）ではない。
+ * そのため GRADE_EXTRA_（見分けの検査を通した組）には縛らず、宝石の名の8色から選ぶ。
+ * 学年の色と同じ色だけは禁止（2つの層が見分けられなくなる）。
  */
+var FLOOR_GEMS_ = {
+  amethyst:   '#8A6CE5',   // すみれ
+  sapphire:   '#3D6FD6',   // 青
+  topaz:      '#E0A43A',   // こはく
+  peridot:    '#8DC63F',   // 若葉
+  aquamarine: '#49B9DF',   // 空
+  rose:       '#E27DB0',   // 桃
+  garnet:     '#B5476B',   // えんじ
+  citrine:    '#D4C04A'    // からし
+};
 function floorColor_() {
+  var c = String(UNIT.floorColor || '');
+  if (FLOOR_GEMS_[c]) return FLOOR_GEMS_[c];
   var ex = GRADE_EXTRA_[UNIT.grade] || [];
-  return ex[1] || ex[0] || '#8A6CE5';
+  return ex[1] || ex[0] || FLOOR_GEMS_.amethyst;
 }
 
 /**
@@ -1925,6 +1981,16 @@ function validateUnit_() {
 
   if (!UNIT.types || !Object.keys(UNIT.types).length) probs.push('UNIT.types が空です');
   if (!UNIT.digitCap) probs.push('注意：UNIT.digitCap がありません（自動確定の桁数が決められません）');
+
+  if (UNIT.floorColor !== undefined) {
+    if (!FLOOR_GEMS_[UNIT.floorColor]) probs.push('UNIT.floorColor は ' + Object.keys(FLOOR_GEMS_).join('/') + ' のどれかにしてください');
+    else if (FLOOR_GEMS_[UNIT.floorColor].toUpperCase() === String(gradeAccent_()).toUpperCase()) probs.push('UNIT.floorColor が学年の色と同じです（床の2つの層が見分けられません）');
+  }
+  if (UNIT.floorPrior !== undefined) {
+    Object.keys(UNIT.floorPrior).forEach(function (m) {
+      if (!(Number(UNIT.floorPrior[m]) > 0)) probs.push('UNIT.floorPrior のモード ' + m + ' は正の数（1分あたりの正答）にしてください');
+    });
+  }
 
   // 設定キーは defaults に宣言があること（無いと config_() が拾えず保存も効かない）
   (UNIT.settings || []).forEach(function (s) {
