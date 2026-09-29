@@ -80,4 +80,14 @@ assert.ok(/floor: \{ pattern: UNIT\.floorPattern/.test(fs.readFileSync(path.join
 
 // 児童の見返しボタン：左下に1つ。模様はその際で薄める（ボタンの上に模様が濃く重ならない）
 assert.ok(ui.includes('id="floorReplay"') && /FLOOR_MASK_SEL = '[^']*#floorReplay/.test(ui));
+// 円と球＝起点2つ（円＝鱗のピルの渦、球＝フィボナッチ球）。どのタイルも育つ順の値 o（0〜1）を持ち、共通エンジンはその順に並べる
+const ci = loadUnit('circle');
+assert.equal(ci.UNIT.floorPattern, 'circlesphere');
+assert.equal(ci.floorColor_(), '#8A6CE5');
+assert.ok(!ci.validateUnit_().some(x => /floor|settings/.test(x)), JSON.stringify(ci.validateUnit_()));
+const cs = win.GrowingFigures.GENERATORS.circlesphere.make({ W: 1366, H: 768, ox: 191, oy: 599, edge: 25.6, margin: 51 });
+assert.ok(cs.length > 1200 && cs.every(t => t.o >= 0 && t.o <= 1), 'circlesphere の o');
+assert.ok(/F\.byO \? function\(a, b\)\{ return a\.o - b\.o; \}/.test(ui), '児童の画面が o の順に並べる');
+assert.ok(/byO \? function\(a, b\)\{ return a\.o - b\.o; \}/.test(th), '教師画面のプレビューが o の順に並べる');
+
 console.log('floor: ok');

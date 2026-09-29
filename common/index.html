@@ -587,7 +587,7 @@ function floorFam_(hex){
 }
 
 /* ---- 図形の生成器 ----
-   design リポジトリ growing-figures/generators.js の写し（315d036）。図形を直すときは向こうを正本として直し、
+   design リポジトリ growing-figures/generators.js の写し（b94681c）。図形を直すときは向こうを正本として直し、
    check.cjs を通してからここへ写す。ここでは window.GrowingFigures に入る。
    BEGIN と END の印の間は、教師画面の床のプレビューがサーバー側で切り出して使う（Core.gs の floorGenSource_）。
    写し直すときも印は残す。 */
@@ -762,7 +762,7 @@ function floorFam_(hex){
      長い向きになる（大きな円から、中心が中に入った小さな円を取り除くとき。内向きの丸い渦格子の仕切りで起きた）。
      短い向きの弧の中点が多角形の内側かどうかで決める。全部が内側なら null */
   function inPoly(pt,poly){var c=false;for(var i=0,j=poly.length-1;i<poly.length;j=i++){var a=poly[i],b=poly[j];if((a[1]>pt[1])!==(b[1]>pt[1])&&pt[0]<(b[0]-a[0])*(pt[1]-a[1])/(b[1]-a[1])+a[0])c=!c}return c}
-  function minusDisk(pts,c,R){
+  function minusDisk(pts,c,R,shortOnly){   // shortOnly：削り跡をいつも短い向きの弧にする（円がタイルよりずっと大きいとき。凹んだタイルで向きの判定が外れるのを防ぐ）
     var n=pts.length,R2=R*R,ins=pts.map(function(p){var dx=p[0]-c[0],dy=p[1]-c[1];return dx*dx+dy*dy<R2});   // Math.hypot は遅いので2乗で比べる
     var s0=ins.indexOf(false); if(s0<0) return null; if(ins.indexOf(true)<0) return pts;
     function hit(A,B){var dx=B[0]-A[0],dy=B[1]-A[1],fx=A[0]-c[0],fy=A[1]-c[1],a=dx*dx+dy*dy,b=2*(fx*dx+fy*dy),cc=fx*fx+fy*fy-R*R,D=Math.sqrt(Math.max(0,b*b-4*a*cc));
@@ -775,7 +775,7 @@ function floorFam_(hex){
       if(ins[i]&&!ins[j]){
         var Y=hit(A,B), a0=Math.atan2(exitP[1]-c[1],exitP[0]-c[0]), a1=Math.atan2(Y[1]-c[1],Y[0]-c[0]), dd=a1-a0;
         while(dd>Math.PI)dd-=TAU; while(dd<-Math.PI)dd+=TAU;
-        var am=a0+dd/2, longWay=!inPoly([c[0]+R*Math.cos(am),c[1]+R*Math.sin(am)],pts);
+        var am=a0+dd/2, longWay=!shortOnly&&!inPoly([c[0]+R*Math.cos(am),c[1]+R*Math.sin(am)],pts);
         out=out.concat(arc(c,exitP,Y,0.07,longWay).slice(1));out.push(Y);exitP=null;    // 円周をたどって出る点へ
       }
     }
@@ -1038,6 +1038,442 @@ function floorFam_(hex){
     return out;
   }
 
+  /* ================================================================
+   *  3年の単元に向けた図形（利用者の評価でストックとして採用）
+   *  clockstar 時こくと時間 / pascal たし算とひき算の筆算 / chair かけ算の筆算 / fibgrid 表とグラフ /
+   *  farey 分数 / padovan 三角形と角 / decimal 小数
+   * ================================================================ */
+  var SQ3 = Math.sqrt(3);
+
+  /* ---------- 文字盤の星：12回対称。多重格子（6方向・同じずれ）の 60°菱形を短い対角線で正三角形2枚に割る ---------- */
+  function clockstar(g) {
+    var raw = multigrid(6, 0.5)({ W: g.W, H: g.H, ox: g.ox, oy: g.oy, edge: g.edge * 1.25, margin: g.margin }), out = [];
+    function ang(p, i) {
+      var a = p[(i + 3) % 4], b = p[i], c = p[(i + 1) % 4];
+      var u = [a[0] - b[0], a[1] - b[1]], v = [c[0] - b[0], c[1] - b[1]];
+      return Math.acos((u[0] * v[0] + u[1] * v[1]) / Math.hypot(u[0], u[1]) / Math.hypot(v[0], v[1])) * 180 / Math.PI;
+    }
+    raw.forEach(function (t) {
+      var p = t.p, a0 = ang(p, 0), mn = Math.min(a0, 180 - a0);
+      if (mn > 75) { out.push({ p: p, cls: 1, dir: t.dir }); return; }            // 正方形
+      if (mn < 45) { out.push({ p: p, cls: 1, dir: (t.dir + 2) % 5 }); return; }  // 細い菱形（30°）
+      var o = a0 > 90 ? 0 : 1;                                                    // 鈍角の頂点を結ぶ（短い対角線）
+      out.push({ p: [p[o], p[(o + 1) % 4], p[(o + 2) % 4]], cls: 0, dir: t.dir });
+      out.push({ p: [p[(o + 2) % 4], p[(o + 3) % 4], p[o]], cls: 0, dir: (t.dir + 1) % 5 });
+    });
+    return out;
+  }
+
+  /* ---------- パスカルの偶奇：六角のマスを中心から輪に数え、輪 n の各辺の k 番目に C(n,k) を置く。
+     どのマスも内側の隣2つの和になる（6つの扇それぞれがパスカルの三角形）。奇数を色1。C(n,k) が奇数 ⇔ (k & n) === k ---------- */
+  function pascal(g) {
+    var R = g.edge * 0.5, far = farthest(g) + R * 3, N = Math.ceil(far / (R * 1.5)) + 1, out = [];
+    var D = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+    function hex(q, r) {
+      var cx = g.ox + R * SQ3 * (q + r / 2), cy = g.oy + R * 1.5 * r, p = [];
+      for (var i = 0; i < 6; i++) { var a = Math.PI / 6 + i * Math.PI / 3; p.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]); }
+      return p;
+    }
+    out.push({ p: hex(0, 0), cls: 1, dir: 0 });
+    for (var n = 1; n <= N; n++) {
+      var q = D[4][0] * n, r = D[4][1] * n;
+      for (var s = 0; s < 6; s++) for (var k = 0; k < n; k++) {
+        var p = hex(q, r);
+        if (onScreen(g, p, 0)) out.push({ p: p, cls: (k & n) === k ? 1 : 0, dir: 0 });
+        q += D[s][0]; r += D[s][1];
+      }
+    }
+    return out;
+  }
+
+  /* ---------- 椅子のタイル：L字（2×2 の箱から1隅を欠いた形）を、半分の大きさのL字4つに分ける置き換え。
+     o＝欠けた隅の向き（0..3、90°ずつ）。色は向きの組（0と2／1と3）で分ける ---------- */
+  function chair(g) {
+    var target = g.edge * 0.95, m = g.edge * 2;
+    var L = target; while (L < 2 * (Math.max(g.W, g.H) + 2 * m)) L *= 2;
+    var cx = g.W + m, cy = g.H + m;   // 欠けた隅（右下）の角を画面の右下の外に置き、画面を覆う3/4の側に入れる
+    // 子：[箱の中心のずれ（親の箱の1/4単位）, 向きの差]
+    var KIDS = [[0, 0, 0], [-1, -1, 0], [1, -1, 1], [-1, 1, 3]];
+    function rot(x, y, o) { for (var i = 0; i < o; i++) { var t = x; x = -y; y = t; } return [x, y]; }
+    function poly(c) {   // c = [cx, cy, 箱の一辺, o]
+      var h = c[2] / 2, P = [[-1, -1], [1, -1], [1, 0], [0, 0], [0, 1], [-1, 1]];
+      return P.map(function (v) { var w = rot(v[0], v[1], c[3]); return [c[0] + w[0] * h, c[1] + w[1] * h]; });
+    }
+    var T = [[cx, cy, L, 0]];
+    while (T[0][2] > target * 1.01) {
+      var N = [];
+      for (var i = 0; i < T.length; i++) {
+        var t = T[i], u = t[2] / 4;
+        for (var j = 0; j < 4; j++) {
+          var d = rot(KIDS[j][0], KIDS[j][1], t[3]);
+          var c = [t[0] + d[0] * u, t[1] + d[1] * u, t[2] / 2, (t[3] + KIDS[j][2]) % 4];
+          if (onScreen(g, poly(c), c[2] * 0.1)) N.push(c);
+        }
+      }
+      T = N;
+    }
+    return T.map(function (c) {
+      var k = Math.floor(c[0] / c[2]) + Math.floor(c[1] / c[2]);
+      return { p: poly(c), cls: c[3] % 2, dir: (c[3] + ((k % 3) + 3) % 3) % 5 };
+    });
+  }
+
+  /* ---------- フィボナッチの格子：列の幅と行の高さが長 L・短 S（L/S＝黄金比）で、フィボナッチ語の順に並ぶ。
+     色1＝長×長と短×短、色2＝長×短 ---------- */
+  function fibgrid(g) {
+    var PHI = (1 + Math.sqrt(5)) / 2, S = g.edge * 0.62, L = S * PHI;
+    function cuts(lo, hi, o, beta) {
+      function X(n) { return S * n + (L - S) * Math.floor(n / PHI + beta); }
+      var n0 = Math.floor((lo - o) / S) - 2, n1 = Math.ceil((hi - o) / S) + 2, xs = [];
+      for (var n = n0; n <= n1; n++) xs.push([o + X(n) - X(0), X(n + 1) - X(n) > (S + L) / 2]);
+      return xs;
+    }
+    var C = cuts(0, g.W, g.ox, 0.5), R = cuts(0, g.H, g.oy, 0.19), out = [];
+    for (var i = 0; i < C.length - 1; i++) {
+      var x0 = C[i][0], x1 = C[i + 1][0]; if (x1 < 0 || x0 > g.W) continue;
+      for (var j = 0; j < R.length - 1; j++) {
+        var y0 = R[j][0], y1 = R[j + 1][0]; if (y1 < 0 || y0 > g.H) continue;
+        var a = C[i][1], b = R[j][1];
+        out.push({ p: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], cls: a === b ? 1 : 0, dir: a ? (b ? 0 : 2) : (b ? 3 : 1) });
+      }
+    }
+    return out;
+  }
+
+  /* ---------- ファレイの円盤：上半平面のファレイ分割（頂点は既約分数 p/q）を ρ=e^{iπ/3} が中心に来るように円板へ写す。
+     隣り合う a/b・c/d の間には (a+c)/(b+d) の三角形が入る。大きい三角形は中心 ρ から6つに割る（モジュラー群の三角形）。
+     小さくなった先は、測地線と円周で囲まれた残りを1枚にする。円の外には円での鏡映の写しを置く（リーマン球面の南北） ---------- */
+  function farey(g) {
+    var Rd = Math.min(g.W, g.H) * 0.44, cx = g.W / 2, cy = g.H / 2, STEP = 4, out = [];
+    var RX = 0.5, RY = SQ3 / 2;
+    function cdiv(a, b) { var d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; }
+    function toDisk(z) { return cdiv([z[0] - RX, z[1] - RY], [z[0] - RX, z[1] + RY]); }
+    function ideal(v) { return cdiv([v[0] - RX * v[1], -RY * v[1]], [v[0] - RX * v[1], RY * v[1]]); }   // p/q（q=0 は ∞）
+    function scr(w) { return [cx + Rd * w[0], cy - Rd * w[1]]; }
+    // 円の外は、円での鏡映（反転 w → w/|w|²）で内側の写しを置く。中心 0 は無限遠へ行くので、両隣の向きの遠い2点に置き換える
+    function mirror(ws) {
+      var o = [];
+      for (var i = 0; i < ws.length; i++) {
+        var w = ws[i], m = w[0] * w[0] + w[1] * w[1];
+        if (m > 1e-12) { o.push([w[0] / m, w[1] / m]); continue; }
+        [ws[(i + ws.length - 1) % ws.length], ws[(i + 1) % ws.length]].forEach(function (q) {
+          var l = Math.hypot(q[0], q[1]); o.push([q[0] / l * 40, q[1] / l * 40]);
+        });
+      }
+      return o;
+    }
+    function geo(P, Q) {   // 円板の2点を結ぶ測地線（P を含み Q を含まない）。向きに依らず同じ点列になるよう正規の向きで作る
+      var flip = P[0] > Q[0] || (P[0] === Q[0] && P[1] > Q[1]); if (flip) { var t = P; P = Q; Q = t; }
+      var det = P[0] * Q[1] - P[1] * Q[0], pts = [];
+      var len = Math.hypot(P[0] - Q[0], P[1] - Q[1]) * Rd;
+      if (Math.abs(det) < 1e-9 || len < STEP) { pts = [P, Q]; }
+      else {
+        var a = (P[0] * P[0] + P[1] * P[1] + 1) / 2, b = (Q[0] * Q[0] + Q[1] * Q[1] + 1) / 2;
+        var c = [(a * Q[1] - b * P[1]) / det, (b * P[0] - a * Q[0]) / det], r = Math.hypot(P[0] - c[0], P[1] - c[1]);
+        var a0 = Math.atan2(P[1] - c[1], P[0] - c[0]), a1 = Math.atan2(Q[1] - c[1], Q[0] - c[0]), d = a1 - a0;
+        while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU;
+        // 円の外の写しは最大で4倍ほどに伸びるので、その分細かく打つ
+        var n = Math.max(1, Math.ceil(Math.abs(d) * r * Rd * 2 / STEP));
+        for (var k = 0; k <= n; k++) { var t2 = a0 + d * k / n; pts.push([c[0] + r * Math.cos(t2), c[1] + r * Math.sin(t2)]); }
+        pts[0] = P; pts[n] = Q;
+      }
+      if (flip) pts.reverse();
+      pts.pop();
+      return pts;
+    }
+    function emit(ws, cls, dir) {
+      if (ws.length < 3) return;
+      var s = ws.map(scr); if (onScreen(g, s, 0)) out.push({ p: s, cls: cls, dir: dir });
+      var m = mirror(ws).map(scr); if (onScreen(g, m, 0)) out.push({ p: m, cls: 1 - cls, dir: (dir + 2) % 5 });
+    }
+    function tile(ws, cls, dir) {
+      var p = [];
+      for (var i = 0; i < ws.length; i++) p = p.concat(geo(ws[i], ws[(i + 1) % ws.length]));
+      emit(p, cls, dir);
+    }
+    function mob(M, z) { return cdiv([M[0] * z[0] + M[1], M[0] * z[1]], [M[2] * z[0] + M[3], M[2] * z[1]]); }
+    var BASE = [[0.5, RY], [0, 1], [1, 1], [0.5, 0.5]];   // ρ, i, 1+i, (1+i)/2
+    function triangle(u, v, depth) {   // 頂点 u＝0、v＝∞、u+v＝1 に当たる三角形
+      var M = [v[0], u[0], v[1], u[1]], n = [u[0] + v[0], u[1] + v[1]];
+      var wc = toDisk(mob(M, BASE[0])), rc = Math.hypot(wc[0], wc[1]), size = (1 - rc) * Rd * Math.max(1, 1 / Math.max(rc, 0.25));
+      var U = ideal(u), V = ideal(v), N = ideal(n);
+      if (size < g.edge * 0.6) { tile([U, N, V], depth & 1, depth % 5); return; }
+      var wi = toDisk(mob(M, BASE[1])), w1 = toDisk(mob(M, BASE[2])), wh = toDisk(mob(M, BASE[3]));
+      var six = [[U, wi], [wi, V], [V, w1], [w1, N], [N, wh], [wh, U]];
+      for (var k = 0; k < 6; k++) tile([six[k][0], six[k][1], wc], k & 1, (depth + (k >> 1)) % 5);
+    }
+    function region(a, b, t, depth) {   // 辺 a–b の、t と反対の側
+      var s = [a[0] + b[0], a[1] + b[1]];
+      if ((s[0] === t[0] && s[1] === t[1]) || (s[0] === -t[0] && s[1] === -t[1])) s = [a[0] - b[0], a[1] - b[1]];
+      var A = ideal(a), B = ideal(b), chord = Math.hypot(A[0] - B[0], A[1] - B[1]) * Rd;
+      // 残りの領域（測地線 A–B と円周の弧）の点列。t の無い側の弧を回る
+      var aa = Math.atan2(A[1], A[0]), ab = Math.atan2(B[1], B[0]), T = ideal(t), at = Math.atan2(T[1], T[0]);
+      function between(x, lo, hi) { var d1 = ((hi - lo) % TAU + TAU) % TAU, d2 = ((x - lo) % TAU + TAU) % TAU; return d2 < d1; }
+      var d = ((aa - ab) % TAU + TAU) % TAU; if (between(at, ab, aa)) d -= TAU;   // B から A へ回る角
+      var n = Math.max(1, Math.ceil(Math.abs(d) * Rd / STEP)), arcP = [];
+      for (var k = 0; k < n; k++) { var th = ab + d * k / n; arcP.push([Math.cos(th), Math.sin(th)]); }
+      var poly = geo(A, B).concat(arcP);
+      if (!onScreen(g, poly.map(scr), 0) && !onScreen(g, mirror(poly).map(scr), 0)) return;
+      if (chord < g.edge * 0.8) { emit(poly, depth & 1, depth % 5); return; }
+      var bb2 = (s[0] === a[0] + b[0] && s[1] === a[1] + b[1]) ? b : [-b[0], -b[1]];
+      triangle(a, bb2, depth);
+      region(a, s, b, depth + 1);
+      region(s, b, a, depth + 1);
+    }
+    var u0 = [0, 1], v0 = [1, 0], n0 = [1, 1];
+    triangle(u0, v0, 0);
+    region(u0, n0, v0, 1); region(n0, v0, u0, 1); region(v0, u0, n0, 1);
+    return out;
+  }
+
+  /* ---------- パドバンの三角渦：正三角形を渦に並べる。外形を六角形（辺の長さ s[0..5]、向きは60°刻み）で持ち、
+     辺 i に外向きの正三角形を足すと s[i-1]・s[i+1] が s[i] だけ伸びて s[i] は0になる。i を1つずつ回すと辺は
+     1,1,1,2,2,3,4,5,7,9,12…（パドバン数）。各三角形を、どれも同じくらいの大きさのタイルになるよう三角格子で割る（小さい三角形は1枚のまま）。どの三角形も縁から中心まで同じ比で入れ子の3段に分け、段ごと・三角形ごとに色を交互にする（大きい三角形ほど段が太い＝相似の入れ子） ---------- */
+  function padovan(g) {
+    var tsz = g.edge * 1.15, u = g.edge * 0.22, far = farthest(g) + tsz * 2, out = [];   // u＝パドバンの1、tsz＝タイルの1辺
+    var DV = []; for (var k = 0; k < 6; k++) DV.push([Math.cos(k * Math.PI / 3), -Math.sin(k * Math.PI / 3)]);
+    var V = [[0, 0], [1, 0], [1, 0], [0.5, -SQ3 / 2], [0.5, -SQ3 / 2], [0, 0]], s = [1, 0, 1, 0, 1, 0];
+    // 最初の三角形の重心を育ち始める点に置く
+    var gx = 0.5, gy = -SQ3 / 6;
+    V = V.map(function (p) { return [p[0] - gx, p[1] - gy]; });
+    function emit(P0, P1, P2, Lm, idx) {
+      var pts = [P0, P1, P2].map(function (p) { return [g.ox + p[0] * u, g.oy + p[1] * u]; });
+      if (!onScreen(g, pts, u * Lm * 0.1)) return;
+      var m = Math.max(1, Math.round(Lm * u / tsz));   // 1辺を m 等分して、どの三角形も同じくらいの大きさのタイルに割る
+      var ex = [(pts[1][0] - pts[0][0]) / m, (pts[1][1] - pts[0][1]) / m], ey = [(pts[2][0] - pts[0][0]) / m, (pts[2][1] - pts[0][1]) / m];
+      function P(a, b) { return [pts[0][0] + a * ex[0] + b * ey[0], pts[0][1] + a * ex[1] + b * ey[1]]; }
+      function band(r) { return Math.floor(r * 6 / m); }   // 縁から中心まで同じ比で3段（相似の入れ子）
+      for (var a = 0; a < m; a++) for (var b = 0; a + b < m; b++) {
+        var c = m - 1 - a - b, ring = Math.min(a, b, c), tri = [P(a, b), P(a + 1, b), P(a, b + 1)];
+        if (onScreen(g, tri, 0)) out.push({ p: tri, cls: (band(ring) + idx) & 1, dir: (idx + (ring >> 1)) % 5 });
+        if (a + b < m - 1) {
+          var c2 = m - 2 - a - b, ring2 = Math.min(a, b, c2), tri2 = [P(a + 1, b), P(a + 1, b + 1), P(a, b + 1)];
+          if (onScreen(g, tri2, 0)) out.push({ p: tri2, cls: (band(ring2) + idx) & 1, dir: (idx + (ring2 >> 1) + 2) % 5 });
+        }
+      }
+    }
+    emit(V[0], V[1], V[3], 1, 0);
+    var i = 0, idx = 1, Lm = 1;
+    function covers() {   // 画面の四隅（＋余白）が外形の六角形の内側か
+      var C = [[-tsz, -tsz], [g.W + tsz, -tsz], [-tsz, g.H + tsz], [g.W + tsz, g.H + tsz]];
+      return C.every(function (c) {
+        var x = (c[0] - g.ox) / u, y = (c[1] - g.oy) / u;
+        for (var e = 0; e < 6; e++) {
+          if (s[e] === 0) continue;
+          var a = V[e], d = DV[e];   // 最初の三角形の重心（原点）と同じ側にあるか
+          if (((x - a[0]) * d[1] - (y - a[1]) * d[0]) * ((0 - a[0]) * d[1] - (0 - a[1]) * d[0]) < 0) return false;
+        }
+        return true;
+      });
+    }
+    while (!covers() && Lm * u < far * 12) {
+      Lm = s[i];
+      var im = (i + 5) % 6, ip = (i + 1) % 6, A = [V[i][0] + Lm * DV[im][0], V[i][1] + Lm * DV[im][1]];
+      emit(V[i], V[ip], A, Lm, idx);
+      s[im] += Lm; s[ip] += Lm; s[i] = 0; V[i] = A; V[ip] = A.slice();
+      i = (i + 1) % 6; idx++;
+    }
+    return out;
+  }
+
+  /* ---------- 十進の渦：対数極座標 (θ, s=log r) で、腕の線 s − kθ = 一定（k = ln10/2π、1周で10倍）と
+     放射の線 θ = 一定 で切る。半径が2倍になる円（仕切り）ごとに腕と放射の本数を2倍にして、マスの大きさをそろえる。
+     中心は10等分の輪と円。色は腕ごとに交互 ---------- */
+  function decimal(g) {
+    var K = Math.log(10) / TAU, n0 = 10, c0 = 30;
+    var R0 = g.edge * 0.8 * n0 / Math.log(10), far = farthest(g) + g.edge * 2, out = [];
+    function toXY(th, s) { var r = Math.exp(s); return [g.ox + r * Math.cos(th), g.oy + r * Math.sin(th)]; }
+    function edgePts(P, Q) {   // (θ,s) の線分を、画面で細かく打った点列に（P を含み Q を含まない）
+      var r = Math.exp(Math.max(P[1], Q[1])), len = Math.hypot((Q[0] - P[0]) * r, (Q[1] - P[1]) * r);
+      var n = Math.max(1, Math.ceil(len / 4)), pts = [];
+      for (var k = 0; k < n; k++) pts.push(toXY(P[0] + (Q[0] - P[0]) * k / n, P[1] + (Q[1] - P[1]) * k / n));
+      return pts;
+    }
+    function clip(poly, lo, hi) {   // s の範囲で切る
+      function cut(pl, keep, val) {
+        var o = [];
+        for (var i = 0; i < pl.length; i++) {
+          var A = pl[i], B = pl[(i + 1) % pl.length], ia = keep(A[1]), ib = keep(B[1]);
+          if (ia) o.push(A);
+          if (ia !== ib) { var t = (val - A[1]) / (B[1] - A[1]); o.push([A[0] + (B[0] - A[0]) * t, val]); }
+        }
+        return o;
+      }
+      poly = cut(poly, function (s) { return s >= lo; }, lo);
+      if (poly.length < 3) return poly;
+      return cut(poly, function (s) { return s <= hi; }, hi);
+    }
+    // 中心：円と10等分の輪
+    var rc = R0 * 0.45, cpts = [];
+    for (var q = 0; q < 60; q++) cpts.push([g.ox + rc * Math.cos(q * TAU / 60), g.oy + rc * Math.sin(q * TAU / 60)]);
+    out.push({ p: cpts, cls: 1, dir: 0 });
+    for (var j = 0; j < 10; j++) {
+      var P = edgePts([j * TAU / 10, Math.log(rc)], [(j + 1) * TAU / 10, Math.log(rc)]).concat([toXY((j + 1) * TAU / 10, Math.log(rc))]);
+      var Q = edgePts([(j + 1) * TAU / 10, Math.log(R0)], [j * TAU / 10, Math.log(R0)]).concat([toXY(j * TAU / 10, Math.log(R0))]);
+      out.push({ p: P.concat(Q), cls: j & 1, dir: j % 5 });
+    }
+    for (var b = 0; R0 * Math.pow(2, b) < far; b++) {
+      var n = n0 << b, c = c0 << b, du = Math.log(10) / n, dth = TAU / c;
+      var lo = Math.log(R0) + b * Math.LN2, hi = lo + Math.LN2;
+      var rb = Math.exp(hi), tsz = rb * Math.max(dth, du) * 2 + g.edge;
+      for (var jj = 0; jj < c; jj++) {
+        var t0 = jj * dth, t1 = t0 + dth;
+        // 帯の中のこの扇が画面から遠ければ、形を作らずに飛ばす（外側の帯は大半が画面の外）
+        var ex0 = 1e9, ex1 = -1e9, ey0 = 1e9, ey1 = -1e9;
+        [[t0, lo], [t1, lo], [t0, hi], [t1, hi]].forEach(function (q) { var xy = toXY(q[0], q[1]); ex0 = Math.min(ex0, xy[0]); ex1 = Math.max(ex1, xy[0]); ey0 = Math.min(ey0, xy[1]); ey1 = Math.max(ey1, xy[1]); });
+        if (ex1 < -tsz || ex0 > g.W + tsz || ey1 < -tsz || ey0 > g.H + tsz) continue;
+        var i0 = Math.floor((lo - K * t1) / du) - 1, i1 = Math.ceil((hi - K * t0) / du) + 1;
+        for (var i = i0; i < i1; i++) {
+          var ua = i * du, ub = ua + du;
+          var poly = clip([[t0, ua + K * t0], [t1, ua + K * t1], [t1, ub + K * t1], [t0, ub + K * t0]], lo, hi);
+          if (poly.length < 3) continue;
+          var pts = [];
+          for (var e = 0; e < poly.length; e++) pts = pts.concat(edgePts(poly[e], poly[(e + 1) % poly.length]));
+          if (!onScreen(g, pts, 0)) continue;
+          var arm = ((i % n) + n) % n;
+          out.push({ p: pts, cls: arm & 1, dir: jj % 5 });
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ================================================================
+   *  鱗のピル（利用者の評価でストックとして採用：輪ごとに逆×渦の腕、同じ向き×フィボナッチ）
+   *  ピル＝長方形の短辺に半円（直径＝帯の幅）が付いた形。曲がったピルは同心の2本の弧を半円2つで結んだ形。
+   *  試作の経緯（輪郭のある版・すき間のある版・3つのパラメータの8通り）は ideas/pills.js
+   * ================================================================ */
+  /* 鱗のピル：曲がる・隙間なし。どの継ぎ目でも、片方のピルの端をもう片方の端の後ろに入れ、輪をピルだけで埋める。
+     見える形はどれも「片方の端がふくらみ、もう片方がえぐれた」同じ形（鱗）。中心の円は長さ0のピル。
+     dirMode：'same'＝どの輪も同じ向きに重ねる、'alt'＝輪ごとに向きを逆にする（隣の輪が逆回りに見える）
+     colMode：'alt'＝輪の中で A/B 交互、'fib'＝フィボナッチ語、'arm'＝対数螺旋の腕（色の層に渦が浮かぶ） */
+  function pillFib(j) { return Math.floor((j + 2) / PHI) - Math.floor((j + 1) / PHI); }   // フィボナッチ語（1 が約62%）
+  function makeScales(dirMode, colMode) {
+    return function (g) {
+      var w = g.edge * 0.72, SLOT = 2.6 * w, r0 = w * 0.8, far = farthest(g) + w * 2, out = [];
+      function P(u, v) { return [g.ox + v * Math.cos(u), g.oy + v * Math.sin(u)]; }
+      function side(v, ua, ub) {
+        var d = ub - ua, n = Math.max(1, Math.ceil(Math.abs(d) / Math.min(0.25, Math.sqrt(0.2 / v)))), o = [];
+        for (var k = 0; k < n; k++) o.push(P(ua + d * k / n, v));
+        return o;
+      }
+      function cap(v0, v1, u, s) {
+        var c = P(u, (v0 + v1) / 2), h = (v1 - v0) / 2, cr = [Math.cos(u), Math.sin(u)], ct = [-Math.sin(u) * s, Math.cos(u) * s];
+        var n = Math.max(6, Math.ceil(Math.PI * h / 3)), o = [];
+        for (var k = 0; k < n; k++) {
+          var a = Math.PI * k / n;
+          o.push([c[0] + h * (Math.cos(a) * cr[0] + Math.sin(a) * ct[0]), c[1] + h * (Math.cos(a) * cr[1] + Math.sin(a) * ct[1])]);
+        }
+        return o;
+      }
+      function rev(pts, first) { return [first].concat(pts.slice(1).reverse()); }
+      var ARMS = 8, TW = 1.6;
+      function color(k, i, n, uc, vm) {
+        if (colMode === 'alt') return i & 1;
+        if (colMode === 'fib') return pillFib(i + k * 7);
+        var t = uc - TW * Math.log(vm / r0 + 1);
+        return Math.floor((((t / TAU) % 1 + 1) % 1) * ARMS) & 1;
+      }
+      var disk = []; for (var q = 0; q < 60; q++) disk.push(P(q * TAU / 60, r0));
+      out.push({ p: disk, cls: 1, dir: 0 });
+      for (var k = 0, v0 = r0; v0 < far; k++, v0 += w) {
+        var v1 = v0 + w, vm = v0 + w / 2, n = Math.max(3, Math.round(TAU * vm / SLOT));
+        if (colMode === 'alt' && n % 2) n++;                       // 交互は偶数でないと1周で食い違う
+        var al = TAU / n, off = k * Math.PI * (3 - Math.sqrt(5)), fwd = dirMode === 'same' || (k & 1) === 0;
+        // fwd：どのピルも終わりの端が次のピルの始まりの後ろ（始まり＝ふくらむ、終わり＝えぐれる）。逆はその鏡
+        for (var i = 0; i < n; i++) {
+          var s0 = off + i * al, s1 = s0 + al;
+          var mc = P(s0 + al / 2, vm), rad = vm * al / 2 + w * 2;
+          if (mc[0] < -rad || mc[0] > g.W + rad || mc[1] < -rad || mc[1] > g.H + rad) continue;
+          var sg = fwd ? -1 : 1;   // 継ぎ目の半円がふくらむ向き（手前のピルの端）
+          var poly = side(v1, s0, s1).concat(cap(v0, v1, s1, sg), side(v0, s1, s0), rev(cap(v0, v1, s0, sg), P(s0, v0)));
+          if (!onScreen(g, poly, 0)) continue;
+          out.push({ p: poly, cls: color(k, i, n, s0 + al / 2, vm), dir: (k + i) % 5 });
+        }
+      }
+      return out;
+    };
+  }
+
+
+
+  /* ================================================================
+   *  円と球（起点が2つ。利用者の評価で採用、単元「円と球」の床）
+   *  円＝鱗のピル・渦（makeScales('alt','arm')）を育ち始める点 (ox, oy) から。
+   *  球＝フィボナッチ球を、画面の反対側の隅寄りに置いた円板に写したもの。球は床（円の模様）の上に乗っている：
+   *  円のタイルは球の輪郭で削り（minusDisk）、球の中にまるごと入るタイルは持たない。
+   *  育つ順：タイルに o（0〜1）を持たせる。円と球それぞれの中で起点からの距離の順位を枚数で割った値なので、
+   *  共通エンジンが o の順に並べると、円と球が同じ割合ずつ交互に育つ（どちらも同じ正答数で全部そろう）。
+   *  球：点 i を z=1-(2i+1)/N、経度 i×黄金角に置き、x 軸まわりに −0.62、y 軸まわりに 0.38 傾けて正射影する。
+   *  手前の半球の点のボロノイ細胞（円板で切る）をタイルにする（縁に近いほど細胞が詰まり、球に見える）。
+   *  色は元の経度で8つの舟形に分けて交互（ビーチボールの縫い目）。明暗は光（左上手前から）の当たり方を5段の dir に写す
+   * ================================================================ */
+  function sphereCenter(g) {
+    var wide = g.W >= g.H;
+    return { c: wide ? [g.W * 0.86, g.H * 0.28] : [g.W * 0.5, g.H * 0.7], R: Math.min(g.W, g.H) * 0.3 };
+  }
+  function fibSphere(g, c, R) {
+    var edge = g.edge, N = Math.max(80, Math.round(2 * Math.PI * R * R / (edge * edge * 0.95))), GA = Math.PI * (3 - Math.sqrt(5));
+    var cx = Math.cos(-0.62), sx = Math.sin(-0.62), cy = Math.cos(0.38), sy = Math.sin(0.38), pts = [];
+    for (var i = 0; i < N; i++) {
+      var z = 1 - (2 * i + 1) / N, r = Math.sqrt(1 - z * z), th = i * GA, x = r * Math.cos(th), y = r * Math.sin(th);
+      var lon = Math.atan2(y, x), y1 = y * cx - z * sx, z1 = y * sx + z * cx, x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
+      if (z2 < -0.02) continue;
+      pts.push({ X: c[0] + R * x2, Y: c[1] - R * y1, n: [x2, y1, z2], gore: Math.floor((lon + Math.PI) / (Math.PI / 4)) & 7 });
+    }
+    var disk = []; for (var q = 0; q < 120; q++) disk.push([c[0] + R * Math.cos(q * Math.PI / 60), c[1] + R * Math.sin(q * Math.PI / 60)]);
+    function clip(poly, p, o) {
+      var mx = (p.X + o.X) / 2, my = (p.Y + o.Y) / 2, nx = o.X - p.X, ny = o.Y - p.Y, out = [];
+      for (var i = 0; i < poly.length; i++) {
+        var A = poly[i], B = poly[(i + 1) % poly.length], da = (A[0] - mx) * nx + (A[1] - my) * ny, db = (B[0] - mx) * nx + (B[1] - my) * ny;
+        if (da <= 0) out.push(A);
+        if ((da < 0 && db > 0) || (da > 0 && db < 0)) { var u = da / (da - db); out.push([A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u]); }
+      }
+      return out;
+    }
+    var L = [-0.45, 0.55, 0.7], ll = Math.sqrt(L[0] * L[0] + L[1] * L[1] + L[2] * L[2]), rr = edge * 4.5, out = [];
+    // 明るさ k（−0.28〜0.22）を、共通エンジンの5段の明暗（dir 0..4 ＝ 0, −0.1, +0.14, −0.18, +0.24）の近い段に写す
+    var STEP = [[-0.18, 3], [-0.1, 1], [0, 0], [0.14, 2], [0.24, 4]];
+    pts.forEach(function (p) {
+      var poly = disk;
+      for (var j = 0; j < pts.length; j++) {
+        var o = pts[j]; if (o === p) continue;
+        var dx = o.X - p.X, dy = o.Y - p.Y; if (dx * dx + dy * dy < rr * rr) poly = clip(poly, p, o);
+      }
+      if (poly.length < 3) return;
+      var lam = Math.max(0, (p.n[0] * L[0] + p.n[1] * L[1] + p.n[2] * L[2]) / ll), k = -0.28 + 0.5 * lam, best = 0;
+      for (var s = 1; s < 5; s++) if (Math.abs(STEP[s][0] - k) < Math.abs(STEP[best][0] - k)) best = s;
+      out.push({ p: poly, cls: p.gore & 1, dir: STEP[best][1] });
+    });
+    return out;
+  }
+  function circleSphere(g) {
+    var S = sphereCenter(g), R2 = S.R * S.R, circ = [], sph;
+    function vis(p) {
+      var x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (var i = 0; i < p.length; i++) { x0 = Math.min(x0, p[i][0]); x1 = Math.max(x1, p[i][0]); y0 = Math.min(y0, p[i][1]); y1 = Math.max(y1, p[i][1]); }
+      return !(x1 <= 0 || x0 >= g.W || y1 <= 0 || y0 >= g.H);
+    }
+    makeScales('alt', 'arm')(g).forEach(function (t) {
+      if (!vis(t.p)) return;
+      var p = t.p, any = false;
+      for (var i = 0; i < p.length; i++) { var dx = p[i][0] - S.c[0], dy = p[i][1] - S.c[1]; if (dx * dx + dy * dy < R2) { any = true; break; } }
+      if (any) { p = minusDisk(p, S.c, S.R, true); if (!p || p.length < 3) return; }
+      circ.push({ p: p, cls: t.cls, dir: t.dir });
+    });
+    sph = fibSphere(g, S.c, S.R).filter(function (t) { return vis(t.p); });
+    function order(list, o) {
+      list.forEach(function (t) {
+        var cx = 0, cy = 0; t.p.forEach(function (q) { cx += q[0]; cy += q[1]; });
+        cx /= t.p.length; cy /= t.p.length; t._d = (cx - o[0]) * (cx - o[0]) + (cy - o[1]) * (cy - o[1]);
+      });
+      list.sort(function (a, b) { return a._d - b._d; });
+      list.forEach(function (t, i) { t.o = (i + 0.5) / list.length; delete t._d; });
+    }
+    order(circ, [g.ox, g.oy]); order(sph, S.c);
+    return circ.concat(sph);
+  }
+
   var GENERATORS = {
     penrose:   { name: 'ペンローズ（5回対称）', make: penrose },
     octagon:   { name: '八角の星（8回対称）',   make: multigrid(4) },
@@ -1050,7 +1486,17 @@ function floorFam_(hex){
     mandala:   { name: '円弧の曼荼羅（4回対称）', make: mandala },
     decagon:   { name: '十角の星（10回対称）',   make: multigrid(5, 0.5) },
     petals:    { name: '渦の花びら（6回対称）',  make: petals },
-    tape:      { name: '巻き尺の渦',             make: tape }
+    tape:      { name: '巻き尺の渦',             make: tape },
+    clockstar: { name: '文字盤の星（12回対称・正方形と三角形）', make: clockstar },
+    pascal:    { name: 'パスカルの偶奇（六角のマス）',          make: pascal },
+    chair:     { name: '椅子のタイル（L字の置き換え）',         make: chair },
+    fibgrid:   { name: 'フィボナッチの格子',                    make: fibgrid },
+    farey:     { name: 'ファレイの円盤（ポアンカレ円板）',      make: farey },
+    padovan:   { name: 'パドバンの三角渦',                      make: padovan },
+    decimal:   { name: '十進の渦（1周で10倍）',                 make: decimal },
+    scaleswirl: { name: '鱗のピル・渦（輪ごとに逆向き・渦の腕で染め分け）', make: makeScales('alt', 'arm') },
+    scalefib:   { name: '鱗のピル・フィボナッチ（同じ向き・フィボナッチ語で染め分け）', make: makeScales('same', 'fib') },
+    circlesphere: { name: '円と球（起点2つ：鱗のピルの渦とフィボナッチ球）', make: circleSphere }
   };
 
   var api = { GENERATORS: GENERATORS, multigrid: multigrid };
@@ -1082,9 +1528,11 @@ function floorGen_(){
     if(bx1 <= 0 || bx0 >= W || by1 <= 0 || by0 >= H) continue;
     var one = t.cls === 1;                         // 1＝色1（学年の色）の層、0＝色2（サイトの色）の層
     tiles.push({ p: p, h: t.h, thick: one, rgb: (one ? fam1 : fam2)[t.dir],
-                 d: Math.sqrt((cx-F.ox)*(cx-F.ox) + (cy-F.oy)*(cy-F.oy)), cx: cx, cy: cy, m: 1 });
+                 d: Math.sqrt((cx-F.ox)*(cx-F.ox) + (cy-F.oy)*(cy-F.oy)), o: t.o, cx: cx, cy: cy, m: 1 });
   }
-  tiles.sort(function(a, b){ return a.d - b.d; });
+  // 育つ順：生成器がタイルに o（0〜1）を持たせた図形（起点が複数。円と球など）はその順、無ければ育ち始める点からの距離の順
+  F.byO = tiles.length > 0 && tiles[0].o != null;
+  tiles.sort(F.byO ? function(a, b){ return a.o - b.o; } : function(a, b){ return a.d - b.d; });
   F.tiles = tiles;
   F.thick = tiles.filter(function(t){ return t.thick; });
   F.thin  = tiles.filter(function(t){ return !t.thick; });
@@ -1156,7 +1604,8 @@ function floorDraw_(g){
   if(g.line && g.line < F.tiles.length){
     var front = F.tiles[g.line - 1].d, band = F.edge * 6;
     for(i = g.line; i < F.tiles.length; i++){
-      var t = F.tiles[i], f = 1 - (t.d - front) / band; if(f <= 0) break;
+      // o の順の図形は距離が単調でないので、枚数（次の60枚）でにじませる
+      var t = F.tiles[i], f = F.byO ? 1 - (i - g.line) / 60 : 1 - (t.d - front) / band; if(f <= 0) break;
       hints.add(FLOOR_LINE + '|' + floorQ_(0.12 * f * f * t.m), t);
     }
   }
