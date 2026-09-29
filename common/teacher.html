@@ -121,7 +121,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
  * ステージは箱の中では16:9の枠、「全画面でうつす」で fixed に変わる（モニターうつし）。
  * 時計・正答数・名札は白い下地付きの札にして、図形が一面に育っても埋もれない。 */
 #coopStage{position:relative;width:100%;aspect-ratio:16/9;border:1.5px solid var(--line);
-  border-radius:10px;overflow:hidden;background:#F2F1EC;margin-top:.8rem;display:none}
+  border-radius:10px;overflow:hidden;background:#F2F1EC;margin-top:.8rem}
 #coopStage.full{position:fixed;inset:0;z-index:40;aspect-ratio:auto;border-radius:0;border:none;margin:0}
 #coopStage canvas{position:absolute;inset:0;width:100%;height:100%}
 #coopHud{position:absolute;top:2.4vmin;right:2.4vmin;display:flex;gap:1.2vmin;align-items:flex-start;z-index:2}
@@ -310,8 +310,8 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     <canvas id="coopGrow"></canvas>
     <button id="coopClose" class="ghost" type="button">× もどる</button>
     <div id="coopHud">
-      <span class="tag"><span class="t" id="coopClock">--:--</span></span>
-      <span class="tag"><span class="n" id="coopScore">0</span><div class="l">せいかい</div></span>
+      <div class="tag"><span class="t" id="coopClock">--:--</span></div>
+      <div class="tag"><span class="n" id="coopScore">0</span><div class="l">せいかい</div></div>
     </div>
     <div id="coopReplay">
       <button id="coopRplay" type="button">▶</button>
@@ -464,7 +464,7 @@ var KEYS = BASE_KEYS.slice();
 var SETTINGS = [];
 
 /* この画面が前提にする Core.gs の版。貼り替えを片方だけ忘れたときに検知する */
-var WANT_VER = 2;
+var WANT_VER = 3;
 
 function showWarn(msgs){
   var el = document.getElementById('verWarn');
@@ -719,7 +719,7 @@ function showPage(p){
 }
 document.getElementById('tabSet').onclick = function(){ showPage('set'); };
 document.getElementById('tabAna').onclick = function(){ showPage('ana'); };
-document.getElementById('tabCoop').onclick = function(){ showPage('coop'); };
+document.getElementById('tabCoop').onclick = function(){ showPage('coop'); coopTabShow_(); };
 
 function loadAnalysis(fresh){
   document.getElementById('anaStat').textContent = '集計中…';
@@ -1272,8 +1272,8 @@ function coopUseSession(s, evAll){
   CP.COLORS = coopPalette(CP.names.length || 1, s.seed || 1); CP.FAMS = CP.COLORS.map(coopFam);
   CP.GCOLORS = coopPalette(CP.GN, (s.seed || 1) * 31 + 11); CP.GFAMS = CP.GCOLORS.map(coopFam);
   CP.sel = -1; CP.EDIT = false; CP.off = 0;
+  document.getElementById('coopStage').style.display = '';   // 先に出さないと幅が取れずタイルが作れない
   coopGen(); coopRoster(); coopRecompute(CP.ev.length);
-  document.getElementById('coopStage').style.display = '';
   document.getElementById('coopClock').classList.remove('end');
   document.getElementById('coopReplay').classList.toggle('on', s.status !== 'run');
   document.getElementById('coopSeek').max = coopDur();
@@ -1307,27 +1307,38 @@ function coopMerge(r){                 // 進行中セッションの差分を�
   coopShowT();
 }
 
-/* ---- ポーリング（進行中は3秒ごと。確定した児童の提出が差分で届く） ---- */
+/* ---- ポーリング（きょうりょくタブを開いている間だけ3秒ごと。確定した児童の提出が差分で届く） ---- */
 function coopPoll(){
-  if(CP.polling || CP.loaded) return; CP.polling = true;
+  if(CP.polling || CP.loaded) return;
+  var pg = document.getElementById('pageCoop');
+  if(pg && pg.style.display === 'none') return;  // 見ていないタブの分は取らない
+  CP.polling = true;
   google.script.run.withSuccessHandler(function(r){
     CP.polling = false;
     if(!r || !r.ok) return;
     if(r.status === 'none'){ CP.sess = null; return; }
     if(!CP.sess || CP.sess.id !== r.id){
       // 別のセッション（または最初の読み込み）。since=0 で全件取り直す
+      CP.polling = true;
       google.script.run.withSuccessHandler(function(r2){
+        CP.polling = false;
         if(r2 && r2.ok && r2.status !== 'none'){
           coopUseSession(r2, r2.ev || []);
           CP.off = (r2.now || Date.now()) - Date.now();
           CP.simT = Math.max(0, Math.min(coopDur(), (r2.now || Date.now()) - r2.start));
           if(r2.ended) document.getElementById('coopClock').classList.add('end');
         }
-      }).coopState(0);
+      }).withFailureHandler(function(){ CP.polling = false; }).coopState(0);
       return;
     }
     coopMerge(r);
   }).withFailureHandler(function(){ CP.polling = false; }).coopState(CP.sess ? CP.ev.length : 0);
+}
+
+/* 別タブに居る間にセッションを拾った時は、画面を開いた時点でタイルを組み直す（幅が取れてから） */
+function coopTabShow_(){
+  if(CP.sess && !CP.tiles.length){ coopGen(); coopRecompute(CP.evI); }
+  coopPoll();                                       // 開いた瞬間にも取りに行く
 }
 
 /* ---- 画面時計：残り時間はサーバー時刻のずれを差し引いて数える ---- */
@@ -1342,7 +1353,8 @@ setInterval(function(){
   }
   document.getElementById('coopClock').textContent = coopFmt(remain);
 }, 250);
-setInterval(coopPoll, 3000);
+setInterval(function(){ if(!document.getElementById('pageCoop') ||
+  document.getElementById('pageCoop').style.display !== 'none') coopPoll(); }, 3000);
 
 /* ---- 単元・クラスが読めた時点の初期化（getConfigForUI / listClasses の成功後に呼ばれる） ---- */
 function coopInitUnit(u){
@@ -1485,7 +1497,6 @@ addEventListener('resize', function(){
   clearTimeout(coopRt);
   coopRt = setTimeout(function(){ if(CP.sess){ coopGen(); coopRecompute(CP.evI); } }, 200);
 });
-coopPoll();
 </script>
 </body>
 </html>

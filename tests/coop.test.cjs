@@ -127,18 +127,28 @@ assert.equal(ctx.coopState(2).ev.length, 1); // 差分で1件
 assert.equal(sheets.coop_log.values.length - 1, 3);
 assert.equal(sheets.coop_log.values[1][2], 'k01@kyoiku.edu.nishi.or.jp');
 
-/* ---- 打ち切り：終了時刻を超えた提出は数えない ---- */
+/* ---- 打ち切り：終了時刻を超えた提出は数えない。coopState が時刻を見て自動で閉じる ---- */
 const live = ctx.coopLive_();
 live.end = Date.now() - 1;
 ctx.coopPutLive_(live);
 ctx.coopNote_(c1, 1, 50);
 assert.equal(ctx.coopState(0).ev.length, 3); // 増えない
 assert.equal(ctx.coopState(0).total, 47);
+assert.equal(ctx.coopLive_().status, 'done'); // 押し忘れでも時刻で閉じている
+
+/* ---- 続きは新しいセッションで見る（前の分は履歴に残る） ---- */
+const st3 = ctx.coopStart({ reset: true });
+assert.ok(st3.ok && st3.session.id !== s.id && st3.session.status === 'run');
+ctx.coopNote_(c1, 1, 18);
+ctx.coopNote_(c3, 2, 22);
+ctx.coopNote_(c1, 1, 7);
+assert.equal(ctx.coopState(0).ev.length, 3);
+assert.equal(ctx.coopState(0).total, 47);
 
 /* ---- 児童側：自分の色に必要な分だけ届く ---- */
 const mine = ctx.coopForChild_(c1);
 assert.equal(mine.active, true); assert.equal(mine.i, 0); assert.equal(mine.n, 8);
-assert.equal(mine.seed, s.seed); assert.equal(mine.pat, 'sunflower');
+assert.equal(mine.seed, st3.session.seed); assert.equal(mine.pat, 'sunflower');
 assert.equal(mine.g, undefined);             // 児童ごとなら組は出さない
 assert.equal(ctx.coopForChild_(cx).active, false);
 assert.equal(ctx.coopForChild_(null).active, false);
