@@ -155,6 +155,18 @@ assert.equal(mine.g, undefined);             // 児童ごとなら組は出さ�
 assert.equal(ctx.coopForChild_(cx).active, false);
 assert.equal(ctx.coopForChild_(null).active, false);
 
+/* ---- coopPeek：児童側の軽い問い合わせ。呼んだ本人の分だけ返る ---- */
+const teacherSession = ctx.Session;
+ctx.Session = { getActiveUser: () => ({ getEmail: () => 'k01@kyoiku.edu.nishi.or.jp' }),
+                getScriptTimeZone: () => 'Asia/Tokyo' };
+let peek = ctx.coopPeek(60);
+assert.equal(peek.active, true); assert.equal(peek.i, 0); assert.equal(peek.seed, st3.session.seed);
+assert.equal(peek.counts, true);              // いま始めれば終わりまでに遊び終わる
+ctx.Session = { getActiveUser: () => ({ getEmail: () => 'other@kyoiku.edu.nishi.or.jp' }),
+                getScriptTimeZone: () => 'Asia/Tokyo' };
+assert.equal(ctx.coopPeek(60).active, false);  // 別クラスには出ない
+ctx.Session = teacherSession;
+
 /* ---- 組（グループ色） ---- */
 ctx.coopSetGroups([0, 0, 1, 1, 2, 2, 0, 1]);
 assert.equal(JSON.stringify(ctx.coopLive_().gi), '[0,0,1,1,2,2,0,1]');

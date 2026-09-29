@@ -49,8 +49,9 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 3;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
+var ENGINE_VER = 4;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
                       // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
+                      // 4 = coopPeek（児童画面の定期確認。開いたままの画面に印をすぐ出す）
 /**
  * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
  *
@@ -1617,6 +1618,14 @@ function coopForChild_(c, lim) {
   if (lim) r.counts = Date.now() + Number(lim) * 1000 <= s.end + COOP_SLACK_MS;
   if (s.mode === 'group') { r.g = s.gi[i]; r.gn = s.gn; }
   return r;
+}
+
+/**
+ * 児童画面の定期確認用。boot よりはるかに軽い応答だけ返す（キャッシュ読み2つ程度）。
+ * 開いたままの画面に「協力プレイ中」の印をすぐ出すため、児童側が間を置いて聞き続ける
+ */
+function coopPeek(lim) {
+  return coopForChild_(child_(email_()), Number(lim) || 0);
 }
 
 /* ---- 集計 ---- */
