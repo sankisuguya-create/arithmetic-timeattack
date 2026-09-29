@@ -38,6 +38,14 @@ button{font:inherit;font-weight:700;padding:.65rem 1.3rem;border:none;border-rad
   background:var(--ink);color:#fff;cursor:pointer}
 button.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
 button:disabled{opacity:.45;cursor:default}
+/* 背景の床のプレビュー。児童の Chromebook（1366×768）と同じ図形を、同じ比の枠に縮めて描く */
+.fpFrame{position:relative;width:100%;aspect-ratio:1366/768;border:1.5px solid var(--line);border-radius:10px;
+  overflow:hidden;background:var(--paper);margin:.2rem 0 .8rem}
+.fpFrame canvas{position:absolute;inset:0;width:100%;height:100%}
+.fpInfo{display:flex;flex-wrap:wrap;gap:.3rem 1.2rem;font-size:.84rem;margin-bottom:.6rem}
+.fpInfo b{font-size:1rem}
+.fpInfo .stage{color:var(--mute);font-weight:700}
+#floorBox .bar button{padding:.5rem .9rem}
 .bar{display:flex;gap:.7rem;align-items:center;margin-top:1.2rem;flex-wrap:wrap}
 .stat{font-size:.82rem;color:var(--mute);min-height:1.3rem}
 /* 失敗は目立たせる。灰色の小さい字で出していると、保存できていないことに気づかず
@@ -150,6 +158,27 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     </div>
   </div>
 
+  <div class="box" id="floorBox" style="display:none">
+    <h2>背景（成長する図形）のプレビュー</h2>
+    <p style="font-size:.88rem;margin-bottom:.7rem">
+      児童のメニュー画面の背景です。本番の正答で <b>輪郭 → 学年の色 → 第二の色</b> の順に、画面全体を覆うたびに次の段へ育ちます。
+      上の「1正答あたりの育ち」を書きかえると、保存する前にここへ反映されます。
+    </p>
+    <div class="fpInfo">
+      <span>正答 <b id="fpTc">0</b> 問（1分20問の速さで換算）</span>
+      <span class="stage" id="fpStage"></span>
+      <span id="fpAll"></span>
+    </div>
+    <div class="fpFrame"><canvas id="fpCanvas" aria-label="背景の床のプレビュー"></canvas></div>
+    <div class="bar">
+      <button id="fp1" class="ghost" type="button">＋20問</button>
+      <button id="fp10" class="ghost" type="button">＋200問</button>
+      <button id="fp50" class="ghost" type="button">＋1000問</button>
+      <button id="fp0" class="ghost" type="button">0にもどす</button>
+      <span class="stat" id="fpStat"></span>
+    </div>
+  </div>
+
   <div class="box" id="clsBox">
     <h2>クラスごとの もーど</h2>
     <p style="font-size:.88rem;margin-bottom:.4rem">
@@ -205,6 +234,111 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   </div><!-- /pageAna -->
 </div>
 
+<script>
+/* 背景の床の生成器。児童の画面（index.html）の写しを、サーバーが切り出して埋め込む（Core.gs の floorGenForTeacher_） */
+try{
+<?!= floorGenForTeacher_() ?>
+}catch(e){ window.FLOOR_GEN_ERR = e; }
+</script>
+<script>
+/* ===== 背景の床のプレビュー =====
+ * 児童の画面の床（index.html の floorGen_ / floorProg_ / floorDraw_）と同じ規則で、
+ * Chromebook の画面（1366×768）ぶんの床を作り、枠の大きさに縮めて描く。
+ * 文字やカードの際で薄める処理と、演出の細かい段取りは省く（教師が見たいのは図形と育ちの速さ）。
+ * 進みは「標準の分数」ではなく「1分20問の速さで解いた正答数」で数える（標準の分数 × 20 と同じ）。 */
+var FP = { on: false, W: 1366, H: 768, tiles: [], thick: [], thin: [], tc: 0, shown: 0, anim: 0, ref: 20, per: 0.75 };
+function fpFam(hex){
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'').trim());
+  var c = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [53,208,165];
+  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
+    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
+  });
+}
+function floorPreviewInit(f){
+  var box = document.getElementById('floorBox');
+  if(!f || !document.getElementById('floor_per_answer')) return;      // 床を宣言していない単元には出さない
+  box.style.display = '';
+  var GF = window.GrowingFigures;
+  if(!GF || !GF.GENERATORS){ setStat('fpStat', '図形を読み込めません（index.html と Core.gs を同じ版に貼り直してください）', true); return; }
+  var gen = GF.GENERATORS[f.pattern] || GF.GENERATORS.penrose, W = FP.W, H = FP.H;
+  var edge = Math.max(15, Math.min(28, Math.sqrt(W * H) / 40)), ox = W * 0.14, oy = H * 0.78;
+  var raw = gen.make({ W: W, H: H, ox: ox, oy: oy, edge: edge, margin: edge * 2 });
+  var f1 = fpFam(f.c1), f2 = fpFam(f.c2), tiles = [];
+  raw.forEach(function(t){
+    var p = t.p, cx = 0, cy = 0, x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    p.forEach(function(q){ cx += q[0]; cy += q[1]; x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); });
+    if(x1 <= 0 || x0 >= W || y1 <= 0 || y0 >= H) return;
+    cx /= p.length; cy /= p.length;
+    tiles.push({ p: p, h: t.h, thick: t.cls === 1, rgb: (t.cls === 1 ? f1 : f2)[t.dir], d: Math.hypot(cx - ox, cy - oy) });
+  });
+  tiles.sort(function(a, b){ return a.d - b.d; });
+  FP.tiles = tiles; FP.thick = tiles.filter(function(t){ return t.thick; }); FP.thin = tiles.filter(function(t){ return !t.thick; });
+  FP.ref = Number(f.ref) || 20; FP.on = true;
+  var inp = document.getElementById('floor_per_answer');
+  inp.addEventListener('input', function(){ fpDraw(FP.tc); fpInfo(); });
+  var sw = document.getElementById('floor_on');
+  if(sw) sw.addEventListener('change', fpInfo);
+  addEventListener('resize', function(){ fpDraw(FP.shown); });
+  fpDraw(0); fpInfo();
+}
+function fpPer(){
+  var v = Number((document.getElementById('floor_per_answer') || {}).value);
+  return v > 0 ? v : 0.75;
+}
+/* 正答 tc 問（1分20問の速さ）での3つの層の進み。児童の画面の floorProg_ と同じ：枚数 ＝ 標準の分数 × 20 × 1正答あたりの育ち */
+function fpProg(tc){
+  var u = Math.floor(tc * fpPer()), N = FP.tiles.length, K = FP.thick.length;
+  return { line: Math.min(u, N), thick: Math.max(0, Math.min(u - N, K)), thin: Math.max(0, Math.min(u - N - K, FP.thin.length)) };
+}
+function fpPoly(P, t){
+  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.closePath();
+  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.closePath(); }
+}
+function fpDraw(tc){
+  if(!FP.on) return;
+  var cv = document.getElementById('fpCanvas'), w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  if(!w || !h) return;
+  cv.width = w * dpr; cv.height = h * dpr;
+  var ctx = cv.getContext('2d'), k = w / FP.W;
+  ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0); ctx.clearRect(0, 0, FP.W, FP.H); ctx.lineJoin = 'round';
+  var g = fpProg(tc), fills = {}, line = new Path2D(), i;
+  function add(t, a){ var key = t.rgb + '|' + a; (fills[key] = fills[key] || new Path2D()); fpPoly(fills[key], t); }
+  for(i = 0; i < g.thick; i++) add(FP.thick[i], 0.30);
+  for(i = 0; i < g.thin; i++) add(FP.thin[i], 0.26);
+  for(i = 0; i < g.line; i++) fpPoly(line, FP.tiles[i]);
+  for(var key in fills){ var s = key.split('|'); ctx.fillStyle = 'rgba(' + s[0] + ',' + s[1] + ')'; ctx.fill(fills[key]); }
+  ctx.lineWidth = 1 / k * 0.9; ctx.strokeStyle = 'rgba(16,23,40,.22)'; ctx.stroke(line);
+  FP.shown = tc;
+}
+function fpInfo(){
+  var g = fpProg(FP.tc), N = FP.tiles.length, all = Math.ceil(2 * N / fpPer());
+  document.getElementById('fpTc').textContent = Math.round(FP.tc).toLocaleString();
+  document.getElementById('fpStage').textContent =
+    g.thin >= FP.thin.length ? 'ぜんぶ そろった' : g.thick >= FP.thick.length ? '③ 第二の色' :
+    g.line >= N ? '② 学年の色' : g.line ? '① 輪郭' : '無地';
+  document.getElementById('fpAll').textContent = '全部そろうまで 約' + all.toLocaleString() + '問（' + N.toLocaleString() + '枚）';
+  var sw = document.getElementById('floor_on');
+  setStat('fpStat', sw && sw.value === '0' ? 'いまは「表示しない」なので、児童の画面には出ません' : '', false);
+}
+/* ＋ボタン：増えた分を短く育てて見せる（児童の画面では本番のあとメニューに戻った時の演出にあたる） */
+function fpAdd(n){
+  if(!FP.on) return;
+  var from = FP.shown, to = n < 0 ? 0 : FP.tc + n;
+  FP.tc = to; fpInfo();
+  cancelAnimationFrame(FP.anim);
+  if(n < 0 || matchMedia('(prefers-reduced-motion: reduce)').matches){ fpDraw(to); return; }
+  var t0 = performance.now(), DUR = 900;
+  (function step(now){
+    var p = Math.min(1, (now - t0) / DUR), e = 1 - (1 - p) * (1 - p);
+    fpDraw(from + (to - from) * e);
+    if(p < 1) FP.anim = requestAnimationFrame(step);
+  })(t0);
+}
+document.getElementById('fp1').onclick = function(){ fpAdd(20); };
+document.getElementById('fp10').onclick = function(){ fpAdd(200); };
+document.getElementById('fp50').onclick = function(){ fpAdd(1000); };
+document.getElementById('fp0').onclick = function(){ fpAdd(-1); };
+</script>
 <script>
 /* いま設定している写しを名指す。名前は写しても同じになるので、ID まで出す
    （スプレッドシートの URL の /d/ と /edit のあいだと突き合わせる） */
@@ -290,6 +424,7 @@ google.script.run.withSuccessHandler(function(r){
     var el = document.getElementById(k);
     if(el) el.value = c[k];
   });
+  floorPreviewInit(u.floor);
 }).withFailureHandler(function(e){
   setStat('saveStat', '読み込めません: ' + e.message, true);
 }).getConfigForUI();

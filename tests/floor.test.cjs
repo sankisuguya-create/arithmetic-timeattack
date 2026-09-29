@@ -67,4 +67,17 @@ assert.equal(Number((/var FLOOR_REF = (\d+);/.exec(ui) || [])[1]), ctx.FLOOR_REF
 const genIds = [...ui.matchAll(/^    (\w+):\s+\{ name: '/gm)].map(m => m[1]);
 assert.deepEqual([...ctx.FLOOR_PATTERNS_].sort(), [...genIds].sort());
 
+// 教師画面の床のプレビュー：児童の画面と同じ生成器を、index.html の印の間から切り出して埋め込む（写しを2つにしない）
+const vm = require('vm');
+const src = ctx.floorGenSource_(ui);
+assert.ok(src.length > 1000, '印（FLOOR_GEN_BEGIN / FLOOR_GEN_END）の間が見つからない');
+const win = {}; vm.runInNewContext(src, { window: win });
+assert.deepEqual(Object.keys(win.GrowingFigures.GENERATORS).sort(), [...ctx.FLOOR_PATTERNS_].sort());
+assert.equal(ctx.floorGenSource_('印の無い html'), '');
+const th = fs.readFileSync(path.join(__dirname, '..', 'common', 'teacher.html'), 'utf8');
+assert.ok(th.includes('<?!= floorGenForTeacher_() ?>') && th.includes('floorPreviewInit(u.floor)'));
+assert.ok(/floor: \{ pattern: UNIT\.floorPattern/.test(fs.readFileSync(path.join(__dirname, '..', 'common', 'Core.gs'), 'utf8')));
+
+// 児童の見返しボタン：左下に1つ。模様はその際で薄める（ボタンの上に模様が濃く重ならない）
+assert.ok(ui.includes('id="floorReplay"') && /FLOOR_MASK_SEL = '[^']*#floorReplay/.test(ui));
 console.log('floor: ok');
