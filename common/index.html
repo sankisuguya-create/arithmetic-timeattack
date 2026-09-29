@@ -127,6 +127,8 @@ body{
 #coop .b{display:flex;align-items:center;gap:.32em;font-size:.7rem;color:#9AA0B0;font-weight:700;margin-top:.15em}
 #coop .b .dot{width:.9em;height:.9em;border-radius:50%;border:1.5px solid rgba(255,255,255,.7)}
 #play:not(.coopOn) #coop{display:none}
+#coop.off .emblem{opacity:.35;filter:grayscale(1)}
+#coop.off .b .dot{display:none}
 #play.coopOn .hud,#play.coopOn.dial-mode .hud{padding-left:160px}
 .stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;padding-bottom:2vh}
 
@@ -414,8 +416,8 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   <!-- 協力モード中だけ出る自分の色の印（Core.gs の coop が active のとき） -->
   <div id="coop">
     <span class="emblem"><canvas id="coopEmblem"></canvas></span>
-    <span><span class="a">協力プレイ中</span>
-    <span class="b"><span class="dot" id="coopDot"></span>あなたの色</span></span>
+    <span><span class="a" id="coopA">協力プレイ中</span>
+    <span class="b"><span class="dot" id="coopDot"></span><span id="coopB">あなたの色</span></span></span>
   </div>
   <div class="stage">
     <div class="cntbox"><span class="n" id="count">0</span><span class="l">せいかい</span></div>
@@ -637,6 +639,13 @@ function coopBadge_(practice){
   var on = !practice && !!(COOP.active && cv && window.GrowingFigures);
   $('play').classList.toggle('coopOn', on);
   if(!on) return;
+  // 協力の残りが1回分より短いと、この回は時間内に終わらないので数えない。色の印のままだと
+  // 数えられていると思わせるので、印を薄くして「数えません」と出す（サーバーが counts=false を返す）
+  var off = COOP.counts === false;
+  $('coop').classList.toggle('off', off);
+  $('coopA').textContent = off ? '数えません' : '協力プレイ中';   // 右の表示（padding-left 160px）に重ならない長さ
+  $('coopB').textContent = off ? '協力の 時間ぎれ'
+                         : COOP.mode === 'group' ? 'あなたの組の色' : 'あなたの色';
   try{
     var col = coopMyColor_(), d = 104, ctx = cv.getContext('2d');
     $('coopDot').style.background = 'rgb(' + col + ')';

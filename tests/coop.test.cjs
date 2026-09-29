@@ -81,6 +81,8 @@ for (let i = 1; i <= 8; i++) {
   sheets.roster.values.push([`k${String(i).padStart(2, '0')}@kyoiku.edu.nishi.or.jp`, 3, '1', i, `児童${i}`]);
 }
 sheets.roster.values.push(['other@kyoiku.edu.nishi.or.jp', 4, '2', 1, '他クラス']);
+sheets.roster.values.push(['noname@kyoiku.edu.nishi.or.jp', 3, '1', 9, '']);   // 氏名のない行（数えない。人数だけ出す）
+sheets.config = new Sheet('config', ['key', 'value']);
 sheets.coop = new Sheet('coop', ['id', 'class', 'pattern', 'seed', 'mode', 'gn', 'groups', 'names', 'nos', 'start', 'end', 'status', 'total']);
 sheets.coop_log = new Sheet('coop_log', ['session', 't', 'email', 'correct', 'mode']);
 sheets.coop_save = new Sheet('coop_save', ['save_id', 'name', 'saved', 'session', 'payload']);
@@ -177,7 +179,8 @@ assert.ok(!ctx.coopLoad('no_such').ok);
 const st4 = ctx.coopStart({ cls: '3-1' });
 assert.ok(st4.ok);
 ctx.coopNote_(c1, 1, 10);
-Object.keys(store).filter(k => k === 'coop_live' || k.startsWith('coop_ev_')).forEach(k => { delete store[k]; });
+ctx.coopState(0);                            // 教師画面の問い合わせで、まとめてシートへ書かれる
+Object.keys(store).filter(k => k === 'coop_live' || k.startsWith('coop_ev_') || k.startsWith('coop_fl_')).forEach(k => { delete store[k]; });
 const re = ctx.coopLive_();
 assert.equal(re.id, st4.session.id); assert.equal(re.status, 'run'); assert.equal(re.total, 10);
 assert.equal(re.kids['k03@kyoiku.edu.nishi.or.jp'], 2);
@@ -209,11 +212,93 @@ assert.equal(store.coop_live, 'null');
 sheets.coop = realCoop; delete store.coop_live;
 
 /* ---- 協力モードの失敗で、採点の記録を失敗扱いにしない（submitSession の中で try に包む） ---- */
-assert.ok(/try \{ coopNote_\(c, s\.mode, correct\); \} catch/.test(read('common/Core.gs')));
+assert.ok(/try \{ coopNote_\(c, s\.mode, correct, s\); \} catch/.test(read('common/Core.gs')));
 
 /* ---- 児童の画面：れんしゅうでは協力の印を出さない（数えないので） ---- */
 const ui = read('common/index.html');
 assert.ok(/function beginPractice\(timed\)\{\n  practice = true; pTimed = !!timed;\n  coopBadge_\(true\);/.test(ui));
 assert.ok(/var on = !practice && !!\(COOP\.active/.test(ui));
+
+/* ---- 混雑対策 A：提出はシートに書かず、教師画面の問い合わせでまとめて書く（二重に書かれても1件と数える） ---- */
+const st5 = ctx.coopStart({ reset: true });
+const logRows = () => sheets.coop_log.values.filter(r => r[0] === st5.session.id).length;
+ctx.coopNote_(c1, 1, 3); ctx.coopNote_(c3, 1, 4);
+assert.equal(logRows(), 0);                  // 提出の時点ではまだ書かない（ロックの時間を延ばさない）
+ctx.coopState(0);
+assert.equal(logRows(), 2);                  // 問い合わせでまとめて書く
+ctx.coopState(0);
+assert.equal(logRows(), 2);                  // 書いた分は2度書かない
+const dupRow = sheets.coop_log.values.find(r => r[0] === st5.session.id);
+sheets.coop_log.values.push(dupRow.slice());  // 2人の教師のまとめ書きが重なった場合
+Object.keys(store).filter(k => k.startsWith('coop_ev_' + st5.session.id) || k.startsWith('coop_fl_')).forEach(k => { delete store[k]; });
+assert.equal(ctx.coopState(0).ev.length, 2); // 読み直しで重複を除く
+
+/* ---- 混雑対策 B：締め切りは届いた時刻ではなく遊び終えた時刻（開始＋制限時間）で見る ---- */
+const st6 = ctx.coopStart({ reset: true });
+const L6 = ctx.coopLive_(); const T0 = L6.start;
+L6.end = Date.now() - 120000; L6.start = L6.end - 600000; ctx.coopPutLive_(L6);   // 2分前に終わった協力
+const before = ctx.coopState(0).total;
+ctx.coopNote_(c1, 1, 11, { t: L6.end - 70000, lim: 60 });   // 終了前に遊び終えた回が、混雑で2分遅れて届いた：数える
+assert.equal(ctx.coopState(0).total, before + 11);
+const lateEv = ctx.coopState(0).ev.slice(-1)[0];
+assert.equal(lateEv[0], L6.end - L6.start);  // 画面の時間軸では終了の時点に置く（再生の順が崩れない）
+ctx.coopNote_(c1, 1, 13, { t: L6.end - 30000, lim: 60 });   // 終了の後に遊び終えた回（余裕10秒を超える）：数えない
+ctx.coopNote_(c1, 1, 17, { t: L6.start - 90000, lim: 60 }); // 始まる前に遊び終えた回：数えない
+assert.equal(ctx.coopState(0).total, before + 11);
+const L7 = ctx.coopLive_(); L7.end = Date.now() - 11 * 60000; ctx.coopPutLive_(L7);
+ctx.coopNote_(c1, 1, 19, { t: L7.end - 70000, lim: 60 });   // 終了から10分を過ぎて届いた：数えない
+assert.equal(ctx.coopState(0).total, before + 11);
+assert.ok(/coopNote_\(c, s\.mode, correct, s\)/.test(read('common/Core.gs')));   // 提出は回の記録を渡す
+
+/* ---- エラーに見える構造 1：次を始めても、直前の協力の送り直しは直前の方に数える ---- */
+const stA = ctx.coopStart({ reset: true });
+const LA = ctx.coopLive_(); LA.end = Date.now() - 30000; LA.start = LA.end - 600000; ctx.coopPutLive_(LA);
+ctx.coopState(0);                                                   // 時刻で閉じる
+const stB = ctx.coopStart({ cls: '3-1' });                           // 締め切り直後に次を始めた
+assert.ok(stB.ok);
+ctx.coopNote_(c3, 1, 8, { t: LA.end - 65000, lim: 60 });            // 前の協力の中で遊び終えた回が、次の開始の後に届いた
+assert.equal(ctx.coopState(0).total, 0);                             // 新しい方には数えない
+assert.equal(JSON.parse(store.coop_prev).total, 8);                   // 直前の方に数える
+const rowA = () => sheets.coop.values.find(r => r[0] === stA.session.id);
+assert.equal(rowA()[12], 8);                                         // 教師画面の問い合わせで、行の合計も追いつく
+assert.equal(sheets.coop_log.values.filter(r => r[0] === stA.session.id).length, 1);
+ctx.coopNote_(c3, 1, 5, { t: Date.now() - 55000, lim: 60 });         // 新しい方の中で遊び終えた回は新しい方へ
+assert.equal(ctx.coopState(0).total, 5);
+
+/* ---- リセットで途中から切り直すと、前の協力の終わりはその時点になる（遊び終える回は新しい方へ） ---- */
+const stC = ctx.coopStart({ reset: true });
+const prevB = JSON.parse(store.coop_prev);
+assert.equal(prevB.id, stB.session.id); assert.equal(prevB.status, 'done');
+assert.ok(prevB.end <= stC.session.start);
+assert.ok(sheets.coop.values.find(r => r[0] === stB.session.id)[10].getTime() <= stC.session.start);
+
+/* ---- エラーに見える構造 2：残り1分を切ってから始めた本番は、児童に「数えません」と出す ---- */
+const LC = ctx.coopLive_(); LC.end = Date.now() + 30000; ctx.coopPutLive_(LC);
+assert.equal(ctx.coopForChild_(c1, 60).counts, false);
+LC.end = Date.now() + 55000; ctx.coopPutLive_(LC);                   // 余裕（10秒）の内側なら数える
+assert.equal(ctx.coopForChild_(c1, 60).counts, true);
+LC.end = Date.now() + 300000; ctx.coopPutLive_(LC);
+assert.equal(ctx.coopForChild_(c1, 60).counts, true);
+assert.equal(ctx.coopForChild_(c1).counts, undefined);              // lim を渡さない呼び出し（boot）は出さない
+assert.ok(/coop: coopForChild_\(c, Number\(cfg\.limit_sec\) \|\| 60\)/.test(read('common/Core.gs')));
+
+/* ---- 教師画面の案内に使う値：1回の秒数・送り直しの締め切り・氏名のない児童の数 ---- */
+const pub = ctx.coopState(0);
+assert.equal(pub.lim, 60); assert.equal(pub.skip, 1); assert.equal(pub.lateUntil, pub.end + 600000);
+
+/* ---- 教師画面が閉じていても、溜まりすぎたら提出の側でまとめ書きする（キャッシュが消えても失う分を限る） ---- */
+const stD = ctx.coopStart({ reset: true });
+const rowsD = () => sheets.coop_log.values.filter(r => r[0] === stD.session.id).length;
+for (let k = 0; k < 39; k++) ctx.coopNote_(c1, 1, 1);
+assert.equal(rowsD(), 0);
+ctx.coopNote_(c1, 1, 1);
+assert.equal(rowsD(), 40);
+
+/* ---- 画面側：数えない回・締め切り後・列の縮みを、エラーに見せない ---- */
+assert.ok(/var off = COOP\.counts === false;/.test(ui));                 // 児童：残り1分からの本番は「数えません」
+const tui = read('common/teacher.html');
+assert.ok(/function coopGuideText\(\)/.test(tui));                    // 教師：理由の案内
+assert.ok(/&& !CP\.endSeen\)\{/.test(tui));                           // 終わりの位置送りは最初の1回だけ（シークが飛ばない）
+assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));   // 列が縮んだら取り直す
 
 console.log('coop.test.cjs: all assertions passed.');
