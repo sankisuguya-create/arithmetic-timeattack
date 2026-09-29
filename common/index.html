@@ -631,9 +631,10 @@ function coopMyColor_(){
     : coopPalette_(COOP.n || 1, COOP.seed)[COOP.i || 0];
 }
 /* 自分の色のフラクタル球（っぽい平面図）：協力画面と同じ生成器を小さい円に描く */
-function coopBadge_(){
+function coopBadge_(practice){
   var cv = $('coopEmblem');
-  var on = !!(COOP.active && cv && window.GrowingFigures);
+  // れんしゅうは協力の正答に数えないので、印を出さない（出すと数えられていると思わせる）
+  var on = !practice && !!(COOP.active && cv && window.GrowingFigures);
   $('play').classList.toggle('coopOn', on);
   if(!on) return;
   try{
@@ -2709,6 +2710,7 @@ function pServe(){
 
 function beginPractice(timed){
   practice = true; pTimed = !!timed;
+  coopBadge_(true);                         // 前の本番の協力の印を残さない（れんしゅうは数えない）
   // 記録する経路では型を絞らない。同じ型ばかりの記録が入ると
   // weak_child の平均がその型だけ短く出て、診断が壊れる
   if(timed) pType = '';
@@ -2737,7 +2739,8 @@ function beginPractice(timed){
                 rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
       });
       qi = 0; clearTyped(); ready = true;
-      if(r.coop){ COOP = r.coop; coopBadge_(); }   // 開いたまま協力モードが始まっても印が出る
+      if(r.coop) COOP = r.coop;                    // 開いたまま協力モードが始まっても、次の本番で印が出る
+      coopBadge_(true);                           // れんしゅうは数えないので、印は出さない
     }).withFailureHandler(function(){
       startAborted = true;
       busy('サーバーが こんでいます。すこし まってから もういちど おしてね');

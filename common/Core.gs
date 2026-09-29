@@ -727,8 +727,10 @@ function submitSession(token, items) {
     // 索引を作り直させる。次に起動した児童が古いベストを見ないように
     cache_().remove('sumidx_' + limSec);
     if (!isPractice) cache_().remove('top3_' + classKey_(c) + '_' + limSec);
-    // 協力モード：本番の提出だけを、終了時刻までに届いた分だけ数える
-    if (!isPractice) coopNote_(c, s.mode, correct);
+    // 協力モード：本番の提出だけを、終了時刻までに届いた分だけ数える。
+    // 協力モードは表示だけの仕組みなので、ここで失敗しても採点の記録（上で書き終えている）は成功として返す。
+    // catch の外へ投げると「記録に失敗しました」になり、token を消した後なので再送も 'gone' になって結果が出ない
+    if (!isPractice) { try { coopNote_(c, s.mode, correct); } catch (eCoop) {} }
   } catch (err) {
     return { ok: false, msg: '記録に失敗しました。' };   // code 無し = 再送する
   } finally {
@@ -1223,8 +1225,49 @@ function listClassesCore_(over) {
 var COOP_DEF_MIN = 10;
 var COOP_GN_MAX = 10;
 
-/** 進行中（または最後に開いていた）セッション。終了しても coopStop されるまで残す */
-function coopLive_() { var h = cache_().get('coop_live'); return h ? JSON.parse(h) : null; }
+/**
+ * 進行中（または最後に開いていた）セッション。終了しても coopStop されるまで残す。
+ * キャッシュは期限前に消えることがある（CacheService は保存を保証しない）。消えたら coop シートの最後の行から
+ * 組み直す（児童の並びは名簿から、合計は coop_log から）。セッションが1つも無いときは null を置いて、
+ * 起動のたびにシートを読みに行かないようにする（boot と startSession が毎回ここを通る）
+ */
+function coopLive_() {
+  var h = cache_().get('coop_live');
+  if (h) return JSON.parse(h);
+  var s = coopFromSheet_();
+  cache_().put('coop_live', JSON.stringify(s), TTL.session);
+  return s;
+}
+function coopFromSheet_() {
+  var sh = ss_().getSheetByName(SHEETS.COOP);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var r = sh.getRange(sh.getLastRow(), 1, 1, 13).getValues()[0];
+  var id = String(r[0] || '');
+  if (!id) return null;
+  function ms(v) { return v instanceof Date ? v.getTime() : new Date(v).getTime(); }
+  function arr(v) { try { var a = JSON.parse(String(v || '[]')); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  var cls = String(r[1] || ''), kids = coopKids_(cls), map = {}, order = [];
+  kids.forEach(function (k, i) { map[k.mail] = i; order.push(k.mail); });
+  var start = ms(r[9]), end = ms(r[10]);
+  var s = { id: id, cls: cls, pat: String(r[2] || 'penrose'), seed: Number(r[3]) || 1,
+            mode: String(r[4]) === 'group' ? 'group' : 'child', gn: Number(r[5]) || 6,
+            minutes: Math.max(1, Math.round((end - start) / 60000)),
+            start: start, end: end, status: String(r[11] || 'done') === 'run' ? 'run' : 'done', total: 0,
+            kids: map, order: order, names: arr(r[7]), nos: arr(r[8]), gi: arr(r[6]) };
+  s.total = coopEvents_(s).reduce(function (a, e) { return a + (Number(e[2]) || 0); }, 0);
+  return s;
+}
+
+/**
+ * 教師の操作（開始・終了・組の編集・時刻での打ち切り）は、提出（submitSession）と同じロックの内側で行う。
+ * どちらも coop_live を読んで書き戻すので、重なると後から書いた方が前の変更を消す
+ * （提出が教師の組の編集を古い組で上書きする、打ち切った状態を 'run' に戻す、など）
+ */
+function coopLocked_(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return { ok: false, msg: '混んでいます。少し待ってから、もう一度押してください。' };
+  try { return fn(); } finally { try { lock.releaseLock(); } catch (e) {} }
+}
 function coopPutLive_(s) { cache_().put('coop_live', JSON.stringify(s), TTL.session); }
 
 /**
@@ -1315,6 +1358,9 @@ function coopRowWrite_(id, patch) {
  */
 function coopStart(o) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
+  return coopLocked_(function () { return coopStart_(o); });
+}
+function coopStart_(o) {
   var prev = coopLive_();
   if (prev && prev.status === 'run' && !(o && o.reset)) {
     return { ok: false, msg: '進行中の協力プレイがあります。「おわる」を押してから始めてください。' };
@@ -1359,8 +1405,18 @@ function coopState(since) {
   if (!s) return { ok: true, status: 'none' };
   var now = Date.now();
   if (s.status === 'run' && now > s.end) {    // 時刻で打ち切り。おわるの押し忘れでも閉じる
-    s.status = 'done'; coopPutLive_(s);
-    coopRowWrite_(s.id, { status: 'done', total: s.total });
+    // 3秒ごとに呼ばれるので、ロックは閉じるときだけ取る。取れなければ次の呼び出しで閉じる（提出は時刻で弾かれている）
+    var lock = LockService.getScriptLock();
+    if (lock.tryLock(3000)) {
+      try {
+        var cur = coopLive_();
+        if (cur && cur.id === s.id && cur.status === 'run') {
+          cur.status = 'done'; coopPutLive_(cur);
+          coopRowWrite_(cur.id, { status: 'done', total: cur.total });
+        }
+        s = cur || s;
+      } finally { try { lock.releaseLock(); } catch (e) {} }
+    }
   }
   var r = coopPub_(s, since);
   r.ok = true; r.now = now; r.ended = now > s.end;
@@ -1370,12 +1426,14 @@ function coopState(since) {
 /** 打ち切り：これ以降の提出は数えず、画面は終了表示になる */
 function coopStop() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  var s = coopLive_();
-  if (!s) return { ok: false, msg: '協力プレイはありません。' };
-  s.status = 'done'; s.end = Math.min(s.end, Date.now());
-  coopPutLive_(s);
-  coopRowWrite_(s.id, { status: 'done', total: s.total });
-  return { ok: true, session: coopPub_(s, 0) };
+  return coopLocked_(function () {
+    var s = coopLive_();
+    if (!s) return { ok: false, msg: '協力プレイはありません。' };
+    s.status = 'done'; s.end = Math.min(s.end, Date.now());
+    coopPutLive_(s);
+    coopRowWrite_(s.id, { status: 'done', total: s.total });
+    return { ok: true, session: coopPub_(s, 0) };
+  });
 }
 
 /** 図形を消して同じ設定で始め直す（新しいセッション。前の分は履歴に残る） */
@@ -1387,15 +1445,17 @@ function coopReset() {
 /** 組の編成を一括で書き換える。gi = 児童indexごとの組番号（0〜gn-1） */
 function coopSetGroups(gi) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  var s = coopLive_();
-  if (!s) return { ok: false, msg: '協力プレイはありません。' };
-  if (!Array.isArray(gi) || gi.length !== s.names.length) {
-    return { ok: false, msg: '組の数が名簿と合いません。' };
-  }
-  s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
-  coopPutLive_(s);
-  coopRowWrite_(s.id, { gi: s.gi });
-  return { ok: true };
+  return coopLocked_(function () {
+    var s = coopLive_();
+    if (!s) return { ok: false, msg: '協力プレイはありません。' };
+    if (!Array.isArray(gi) || gi.length !== s.names.length) {
+      return { ok: false, msg: '組の数が名簿と合いません。' };
+    }
+    s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
+    coopPutLive_(s);
+    coopRowWrite_(s.id, { gi: s.gi });
+    return { ok: true };
+  });
 }
 
 /** いまのセッションを再生データとして保存する。終了前でもその時点までを保存 */
@@ -1445,7 +1505,7 @@ function coopLoad(id) {
 /** 児童画面用：協力モード中なら自分の色に必要な分だけ（他の児童の情報は出さない） */
 function coopForChild_(c) {
   var s = coopLive_();
-  if (!s || s.status !== 'run' || !c || classKey_(c) !== s.cls) return { active: false };
+  if (!s || s.status !== 'run' || Date.now() > s.end || !c || classKey_(c) !== s.cls) return { active: false };
   var i = s.kids[c.email];
   if (i === undefined) return { active: false };
   var r = { active: true, i: i, n: s.order.length, seed: s.seed, pat: s.pat, mode: s.mode };

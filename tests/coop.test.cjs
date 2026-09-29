@@ -173,4 +173,47 @@ assert.equal(JSON.stringify(p.gi), '[0,0,1,1,2,2,0,1]');
 assert.equal(p.names.length, 8);
 assert.ok(!ctx.coopLoad('no_such').ok);
 
+/* ---- キャッシュが消えても、進行中のセッションを失わない（coop シートの最後の行と coop_log から組み直す） ---- */
+const st4 = ctx.coopStart({ cls: '3-1' });
+assert.ok(st4.ok);
+ctx.coopNote_(c1, 1, 10);
+Object.keys(store).filter(k => k === 'coop_live' || k.startsWith('coop_ev_')).forEach(k => { delete store[k]; });
+const re = ctx.coopLive_();
+assert.equal(re.id, st4.session.id); assert.equal(re.status, 'run'); assert.equal(re.total, 10);
+assert.equal(re.kids['k03@kyoiku.edu.nishi.or.jp'], 2);
+assert.equal(re.names.length, 8);
+ctx.coopNote_(c3, 2, 4);                    // 組み直した後も数え続ける
+assert.equal(ctx.coopState(0).ev.length, 2);
+assert.equal(ctx.coopState(0).total, 14);
+
+/* ---- 時間を過ぎたら、教師画面が打ち切りを呼ばなくても児童の印は消える ---- */
+const L = ctx.coopLive_(); L.end = Date.now() - 1; ctx.coopPutLive_(L);
+assert.equal(ctx.coopForChild_(c1).active, false);
+
+/* ---- 教師の操作は提出と同じロックの内側。取れないときは例外にせず知らせる ---- */
+const realLock = ctx.LockService;
+ctx.LockService = { getScriptLock: () => ({ tryLock: () => false, releaseLock() {} }) };
+const busyG = ctx.coopSetGroups([0, 0, 0, 0, 0, 0, 0, 0]);
+assert.equal(busyG.ok, false); assert.ok(/混んで/.test(busyG.msg));
+assert.equal(ctx.coopStop().ok, false);
+assert.equal(ctx.coopState(0).status, 'run');   // 打ち切りも次の呼び出しに回す（落ちない）
+ctx.LockService = realLock;
+assert.equal(ctx.coopState(0).status, 'done');
+
+/* ---- セッションが1つも無いときは null を置き、起動のたびに coop シートを読みに行かない ---- */
+const realCoop = sheets.coop;
+sheets.coop = new Sheet('coop', realCoop.values[0]);
+delete store.coop_live;
+assert.equal(ctx.coopLive_(), null);
+assert.equal(store.coop_live, 'null');
+sheets.coop = realCoop; delete store.coop_live;
+
+/* ---- 協力モードの失敗で、採点の記録を失敗扱いにしない（submitSession の中で try に包む） ---- */
+assert.ok(/try \{ coopNote_\(c, s\.mode, correct\); \} catch/.test(read('common/Core.gs')));
+
+/* ---- 児童の画面：れんしゅうでは協力の印を出さない（数えないので） ---- */
+const ui = read('common/index.html');
+assert.ok(/function beginPractice\(timed\)\{\n  practice = true; pTimed = !!timed;\n  coopBadge_\(true\);/.test(ui));
+assert.ok(/var on = !practice && !!\(COOP\.active/.test(ui));
+
 console.log('coop.test.cjs: all assertions passed.');
