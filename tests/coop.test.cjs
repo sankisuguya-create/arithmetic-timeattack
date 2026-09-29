@@ -177,7 +177,8 @@ assert.ok(!ctx.coopLoad('no_such').ok);
 const st4 = ctx.coopStart({ cls: '3-1' });
 assert.ok(st4.ok);
 ctx.coopNote_(c1, 1, 10);
-Object.keys(store).filter(k => k === 'coop_live' || k.startsWith('coop_ev_')).forEach(k => { delete store[k]; });
+ctx.coopState(0);                            // 教師画面の問い合わせで、まとめてシートへ書かれる
+Object.keys(store).filter(k => k === 'coop_live' || k.startsWith('coop_ev_') || k.startsWith('coop_fl_')).forEach(k => { delete store[k]; });
 const re = ctx.coopLive_();
 assert.equal(re.id, st4.session.id); assert.equal(re.status, 'run'); assert.equal(re.total, 10);
 assert.equal(re.kids['k03@kyoiku.edu.nishi.or.jp'], 2);
@@ -209,11 +210,42 @@ assert.equal(store.coop_live, 'null');
 sheets.coop = realCoop; delete store.coop_live;
 
 /* ---- 協力モードの失敗で、採点の記録を失敗扱いにしない（submitSession の中で try に包む） ---- */
-assert.ok(/try \{ coopNote_\(c, s\.mode, correct\); \} catch/.test(read('common/Core.gs')));
+assert.ok(/try \{ coopNote_\(c, s\.mode, correct, s\); \} catch/.test(read('common/Core.gs')));
 
 /* ---- 児童の画面：れんしゅうでは協力の印を出さない（数えないので） ---- */
 const ui = read('common/index.html');
 assert.ok(/function beginPractice\(timed\)\{\n  practice = true; pTimed = !!timed;\n  coopBadge_\(true\);/.test(ui));
 assert.ok(/var on = !practice && !!\(COOP\.active/.test(ui));
+
+/* ---- 混雑対策 A：提出はシートに書かず、教師画面の問い合わせでまとめて書く（二重に書かれても1件と数える） ---- */
+const st5 = ctx.coopStart({ reset: true });
+const logRows = () => sheets.coop_log.values.filter(r => r[0] === st5.session.id).length;
+ctx.coopNote_(c1, 1, 3); ctx.coopNote_(c3, 1, 4);
+assert.equal(logRows(), 0);                  // 提出の時点ではまだ書かない（ロックの時間を延ばさない）
+ctx.coopState(0);
+assert.equal(logRows(), 2);                  // 問い合わせでまとめて書く
+ctx.coopState(0);
+assert.equal(logRows(), 2);                  // 書いた分は2度書かない
+const dupRow = sheets.coop_log.values.find(r => r[0] === st5.session.id);
+sheets.coop_log.values.push(dupRow.slice());  // 2人の教師のまとめ書きが重なった場合
+Object.keys(store).filter(k => k.startsWith('coop_ev_' + st5.session.id) || k.startsWith('coop_fl_')).forEach(k => { delete store[k]; });
+assert.equal(ctx.coopState(0).ev.length, 2); // 読み直しで重複を除く
+
+/* ---- 混雑対策 B：締め切りは届いた時刻ではなく遊び終えた時刻（開始＋制限時間）で見る ---- */
+const st6 = ctx.coopStart({ reset: true });
+const L6 = ctx.coopLive_(); const T0 = L6.start;
+L6.end = Date.now() - 120000; L6.start = L6.end - 600000; ctx.coopPutLive_(L6);   // 2分前に終わった協力
+const before = ctx.coopState(0).total;
+ctx.coopNote_(c1, 1, 11, { t: L6.end - 70000, lim: 60 });   // 終了前に遊び終えた回が、混雑で2分遅れて届いた：数える
+assert.equal(ctx.coopState(0).total, before + 11);
+const lateEv = ctx.coopState(0).ev.slice(-1)[0];
+assert.equal(lateEv[0], L6.end - L6.start);  // 画面の時間軸では終了の時点に置く（再生の順が崩れない）
+ctx.coopNote_(c1, 1, 13, { t: L6.end - 30000, lim: 60 });   // 終了の後に遊び終えた回（余裕10秒を超える）：数えない
+ctx.coopNote_(c1, 1, 17, { t: L6.start - 90000, lim: 60 }); // 始まる前に遊び終えた回：数えない
+assert.equal(ctx.coopState(0).total, before + 11);
+const L7 = ctx.coopLive_(); L7.end = Date.now() - 11 * 60000; ctx.coopPutLive_(L7);
+ctx.coopNote_(c1, 1, 19, { t: L7.end - 70000, lim: 60 });   // 終了から10分を過ぎて届いた：数えない
+assert.equal(ctx.coopState(0).total, before + 11);
+assert.ok(/coopNote_\(c, s\.mode, correct, s\)/.test(read('common/Core.gs')));   // 提出は回の記録を渡す
 
 console.log('coop.test.cjs: all assertions passed.');

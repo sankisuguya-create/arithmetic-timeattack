@@ -730,7 +730,7 @@ function submitSession(token, items) {
     // 協力モード：本番の提出だけを、終了時刻までに届いた分だけ数える。
     // 協力モードは表示だけの仕組みなので、ここで失敗しても採点の記録（上で書き終えている）は成功として返す。
     // catch の外へ投げると「記録に失敗しました」になり、token を消した後なので再送も 'gone' になって結果が出ない
-    if (!isPractice) { try { coopNote_(c, s.mode, correct); } catch (eCoop) {} }
+    if (!isPractice) { try { coopNote_(c, s.mode, correct, s); } catch (eCoop) {} }
   } catch (err) {
     return { ok: false, msg: '記録に失敗しました。' };   // code 無し = 再送する
   } finally {
@@ -1224,6 +1224,8 @@ function listClassesCore_(over) {
  * ============================================================ */
 var COOP_DEF_MIN = 10;
 var COOP_GN_MAX = 10;
+var COOP_SLACK_MS = 10000;    // 遊び終えた時刻の余裕（開始前のカウントダウン3秒と通信の遅れ）
+var COOP_LATE_MS = 600000;    // 送り直しを数える上限：協力の終了から10分（混雑で弾かれた回は次の起動で送り直される）
 
 /**
  * 進行中（または最後に開いていた）セッション。終了しても coopStop されるまで残す。
@@ -1290,7 +1292,7 @@ function coopEvents_(s) {
   var key = 'coop_ev_' + s.id;
   var hit = cache_().get(key);
   if (hit) return JSON.parse(hit);
-  var ev = [];
+  var ev = [], seen = {};
   var sh = ss_().getSheetByName(SHEETS.COOPLOG);
   if (sh && sh.getLastRow() > 1) {
     var v = sh.getDataRange().getValues();
@@ -1298,10 +1300,15 @@ function coopEvents_(s) {
       if (String(v[i][0]) !== s.id) continue;
       var idx = s.kids[String(v[i][2])];
       if (idx === undefined) continue;
-      ev.push([Number(v[i][1]) || 0, idx, Number(v[i][3]) || 0]);
+      // まとめ書き（coopFlush_）が重なって同じ行が2度書かれていても、1件として数える
+      var k = v[i][1] + '|' + v[i][2] + '|' + v[i][3];
+      if (seen[k]) continue;
+      seen[k] = 1;
+      ev.push([Number(v[i][1]) || 0, idx, Number(v[i][3]) || 0, Number(v[i][4]) || 0]);
     }
   }
   cache_().put(key, JSON.stringify(ev), TTL.session);
+  cache_().put('coop_fl_' + s.id, String(ev.length), TTL.session);   // シートから読んだ分は書き済み
   return ev;
 }
 
@@ -1316,26 +1323,64 @@ function coopPub_(s, since) {
 
 /**
  * 提出1件を協力セッションに数える。submitSession のロック内から呼ぶ（直列前提）。
- * 呼ぶ前に練習は弾いてある（!isPractice の中だけ）。
+ * 呼ぶ前に練習は弾いてある（!isPractice の中だけ）。game は startSession が置いた回の記録（t＝開始時刻、lim＝制限秒）。
+ *
+ * 締め切りは「届いた時刻」ではなく「遊び終えた時刻」（開始時刻＋制限時間）で見る。
+ * クラス全員が同じ1分の終わりに送るので、提出はロックを待ちきれずに弾かれることがある。弾かれた回は
+ * 次の起動で送り直されるが、届いた時刻で見ると協力の終了後になって数えられず、混んだ瞬間に送った子に片寄る。
+ * 協力の時間内に遊び終えた回なら、終了から COOP_LATE_MS（10分）以内に届いたものまで数える。
+ *
+ * ロックの内側では、キャッシュのイベント列に足すだけにする（シートは coopFlush_ がまとめて書く）。
+ * シートへの1行の書き込みが、混む瞬間の提出1件ごとのロックの時間を延ばしていたため。
  */
-function coopNote_(c, mode, correct) {
+function coopNote_(c, mode, correct, game) {
   var s = coopLive_();
-  if (!s || s.status !== 'run' || !c) return;
+  if (!s || !c) return;
   var now = Date.now();
-  if (now > s.end) return;                    // 打ち切り：終了後の提出は数えない
+  // 回の記録が無い呼び出し（古い経路）は届いた時刻で見る。余裕（カウントダウン分）は回の記録があるときだけ
+  var known = !!(game && game.t);
+  var played = known ? Number(game.t) + (Number(game.lim) || 60) * 1000 : now;
+  if (played < s.start || played > s.end + (known ? COOP_SLACK_MS : 0)) return;   // 協力の時間の外で遊び終えた回は数えない
+  if (now > s.end + COOP_LATE_MS) return;                            // 送り直しが遅すぎる
   if (classKey_(c) !== s.cls) return;
   var i = s.kids[c.email];
   if (i === undefined) return;
-  // シートが無い環境（まだ ensureSheets_ が走っていない）でも採点そのものは止めない
-  var sh = ss_().getSheetByName(SHEETS.COOPLOG);
-  if (!sh) return;
-  var t = now - s.start;
-  sh.appendRow([s.id, t, c.email, correct, mode]);
+  // 画面の時間軸は届いた時刻（終了後に届いた回は終了の時点に置く。再生の順が崩れないように）
+  var t = Math.min(now, s.end) - s.start;
   var ev = coopEvents_(s);
-  ev.push([t, i, correct]);
+  ev.push([t, i, correct, mode]);
   cache_().put('coop_ev_' + s.id, JSON.stringify(ev), TTL.session);
   s.total = (s.total || 0) + correct;
   coopPutLive_(s);
+}
+
+/**
+ * キャッシュのイベント列のうち、まだシート（coop_log）に書いていない分をまとめて1回で書く。
+ * 教師画面の問い合わせ（3秒ごと）・終了・保存・次の開始のときに呼ぶ。
+ * 書き込みは提出と同じロックの内側（coop_log の同じ行に2人の教師が書かないように）。混んでいれば
+ * 0.5秒で諦めて次の回に回す（提出を待たせない）。haveLock＝呼ぶ側がすでにロックを持っている。
+ * キャッシュが消えると、まだ書いていない分（最大で問い合わせ1回分）は失われる
+ */
+function coopFlush_(s, haveLock) {
+  if (!s) return;
+  var key = 'coop_fl_' + s.id, ev = coopEvents_(s);
+  if (Number(cache_().get(key) || 0) >= ev.length) return;
+  var lock = null;
+  if (!haveLock) { lock = LockService.getScriptLock(); if (!lock.tryLock(500)) return; }
+  try {
+    ev = coopEvents_(s);
+    var done = Number(cache_().get(key) || 0);
+    if (done >= ev.length) return;
+    var sh = ss_().getSheetByName(SHEETS.COOPLOG);
+    if (!sh) return;
+    var rows = ev.slice(done).map(function (e) { return [s.id, e[0], s.order[e[1]] || '', e[2], e[3] || '']; });
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
+    cache_().put(key, String(ev.length), TTL.session);
+  } catch (e) {
+    // 書けなくてもキャッシュには残っているので、次の回にもう一度書く
+  } finally {
+    if (lock) { try { lock.releaseLock(); } catch (e2) {} }
+  }
 }
 
 /** coop の行を id で探して status/total/gi を更新する */
@@ -1393,7 +1438,8 @@ function coopStart_(o) {
   sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
     JSON.stringify(s.names), JSON.stringify(s.nos), new Date(now), new Date(s.end), 'run', 0]);
   cache_().put('coop_ev_' + id, '[]', TTL.session);
-  if (prev) coopRowWrite_(prev.id, { status: 'done', total: prev.total });
+  cache_().put('coop_fl_' + id, '0', TTL.session);
+  if (prev) { coopFlush_(prev, true); coopRowWrite_(prev.id, { status: 'done', total: prev.total }); }
   coopPutLive_(s);
   return { ok: true, session: coopPub_(s, 0) };
 }
@@ -1418,6 +1464,7 @@ function coopState(since) {
       } finally { try { lock.releaseLock(); } catch (e) {} }
     }
   }
+  coopFlush_(s, false);
   var r = coopPub_(s, since);
   r.ok = true; r.now = now; r.ended = now > s.end;
   return r;
@@ -1431,6 +1478,7 @@ function coopStop() {
     if (!s) return { ok: false, msg: '協力プレイはありません。' };
     s.status = 'done'; s.end = Math.min(s.end, Date.now());
     coopPutLive_(s);
+    coopFlush_(s, true);
     coopRowWrite_(s.id, { status: 'done', total: s.total });
     return { ok: true, session: coopPub_(s, 0) };
   });
@@ -1463,6 +1511,7 @@ function coopSave(name) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var s = coopLive_();
   if (!s) return { ok: false, msg: '保存する協力プレイがありません。' };
+  coopFlush_(s, false);
   var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn,
                   start: s.start, end: s.end, total: s.total,
                   names: s.names, nos: s.nos, gi: s.gi, ev: coopEvents_(s) };
