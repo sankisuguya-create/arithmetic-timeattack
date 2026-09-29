@@ -636,26 +636,28 @@ function coopBadge_(){
   var on = !!(COOP.active && cv && window.GrowingFigures);
   $('play').classList.toggle('coopOn', on);
   if(!on) return;
-  var col = coopMyColor_(), d = 104, ctx = cv.getContext('2d');
-  $('coopDot').style.background = 'rgb(' + col + ')';
-  cv.width = d; cv.height = d;
-  ctx.clearRect(0, 0, d, d);
-  ctx.save();
-  ctx.beginPath(); ctx.arc(d / 2, d / 2, d / 2 - 1, 0, 6.2832); ctx.clip();
-  ctx.fillStyle = '#0A0F1E'; ctx.fillRect(0, 0, d, d);
-  var G = window.GrowingFigures.GENERATORS, gen = G[COOP.pat] || G.penrose;
-  var raw = gen.make({ W: d, H: d, ox: d / 2, oy: d / 2, edge: 7, margin: 3 });
-  var fm = coopFam_(col), bk = {}, i, j, t, P, p, h;
-  for(i = 0; i < raw.length; i++){
-    t = raw[i]; P = new Path2D(); p = t.p;
-    P.moveTo(p[0][0], p[0][1]); for(j = 1; j < p.length; j++) P.lineTo(p[j][0], p[j][1]); P.closePath();
-    if(t.h){ h = t.h; P.moveTo(h[0][0], h[0][1]); for(j = 1; j < h.length; j++) P.lineTo(h[j][0], h[j][1]); P.closePath(); }
-    (bk[t.dir] = bk[t.dir] || []).push(P);
-  }
-  for(var dir in bk){ ctx.fillStyle = 'rgb(' + fm[dir] + ')'; for(i = 0; i < bk[dir].length; i++) ctx.fill(bk[dir][i]); }
-  ctx.restore();
-  ctx.strokeStyle = 'rgb(' + col + ')'; ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.arc(d / 2, d / 2, d / 2 - 3, 0, 6.2832); ctx.stroke();
+  try{
+    var col = coopMyColor_(), d = 104, ctx = cv.getContext('2d');
+    $('coopDot').style.background = 'rgb(' + col + ')';
+    cv.width = d; cv.height = d;
+    ctx.clearRect(0, 0, d, d);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(d / 2, d / 2, d / 2 - 1, 0, 6.2832); ctx.clip();
+    ctx.fillStyle = '#0A0F1E'; ctx.fillRect(0, 0, d, d);
+    var G = window.GrowingFigures.GENERATORS, gen = G[COOP.pat] || G.penrose;
+    var raw = gen.make({ W: d, H: d, ox: d / 2, oy: d / 2, edge: 7, margin: 3 });
+    var fm = coopFam_(col), bk = {}, i, j, t, P, p, h;
+    for(i = 0; i < raw.length; i++){
+      t = raw[i]; P = new Path2D(); p = t.p;
+      P.moveTo(p[0][0], p[0][1]); for(j = 1; j < p.length; j++) P.lineTo(p[j][0], p[j][1]); P.closePath();
+      if(t.h){ h = t.h; P.moveTo(h[0][0], h[0][1]); for(j = 1; j < h.length; j++) P.lineTo(h[j][0], h[j][1]); P.closePath(); }
+      (bk[t.dir] = bk[t.dir] || []).push(P);
+    }
+    for(var dir in bk){ ctx.fillStyle = 'rgb(' + fm[dir] + ')'; for(i = 0; i < bk[dir].length; i++) ctx.fill(bk[dir][i]); }
+    ctx.restore();
+    ctx.strokeStyle = 'rgb(' + col + ')'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(d / 2, d / 2, d / 2 - 3, 0, 6.2832); ctx.stroke();
+  }catch(e){ /* 印が描けなくても遊びは止めない */ }
 }
 /* 協力の色は "r,g,b" 文字列。floorFam_（16進）と同じ5段の明暗にする */
 function coopFam_(rgb){

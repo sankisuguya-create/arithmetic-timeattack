@@ -40,7 +40,7 @@ var BASE_DEFAULTS = {
 
 var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
 var QN = 200;                              // 1セッションの出題数
-var SCHEMA_VERSION = 5;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし） / 5 = 年度ロールオーバー用トリガー
+var SCHEMA_VERSION = 6;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし） / 5 = 年度ロールオーバー用トリガー / 6 = 協力モードのシート
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
 
 /**
@@ -49,7 +49,7 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 3;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す）
+var ENGINE_VER = 3;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
                       // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
 /**
  * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
@@ -1283,8 +1283,11 @@ function coopNote_(c, mode, correct) {
   if (classKey_(c) !== s.cls) return;
   var i = s.kids[c.email];
   if (i === undefined) return;
+  // シートが無い環境（まだ ensureSheets_ が走っていない）でも採点そのものは止めない
+  var sh = ss_().getSheetByName(SHEETS.COOPLOG);
+  if (!sh) return;
   var t = now - s.start;
-  sh_(SHEETS.COOPLOG).appendRow([s.id, t, c.email, correct, mode]);
+  sh.appendRow([s.id, t, c.email, correct, mode]);
   var ev = coopEvents_(s);
   ev.push([t, i, correct]);
   cache_().put('coop_ev_' + s.id, JSON.stringify(ev), TTL.session);
@@ -1354,8 +1357,13 @@ function coopState(since) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var s = coopLive_();
   if (!s) return { ok: true, status: 'none' };
+  var now = Date.now();
+  if (s.status === 'run' && now > s.end) {    // 時刻で打ち切り。おわるの押し忘れでも閉じる
+    s.status = 'done'; coopPutLive_(s);
+    coopRowWrite_(s.id, { status: 'done', total: s.total });
+  }
   var r = coopPub_(s, since);
-  r.ok = true; r.now = Date.now(); r.ended = r.now > s.end;
+  r.ok = true; r.now = now; r.ended = now > s.end;
   return r;
 }
 
