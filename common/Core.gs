@@ -10,7 +10,8 @@
 var SHEETS = {
   CONFIG: 'config', ROSTER: 'roster', CLASS: 'class_config',
   LOG: 'log', DAILY: 'daily', SUMMARY: 'summary',
-  WCHILD: 'weak_child', WCLASS: 'weak_class'
+  WCHILD: 'weak_child', WCLASS: 'weak_class',
+  COOP: 'coop', COOPLOG: 'coop_log', COOPSAVE: 'coop_save'
 };
 
 /** 全単元で共通の既定値。UNIT.defaults で上書きできる */
@@ -48,7 +49,8 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 2;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す）
+var ENGINE_VER = 3;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す）
+                      // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
 /**
  * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
  *
@@ -530,6 +532,7 @@ function boot() {
   base.floor = b.floor;
   base.locked = lockNotes_(base.open, seqOffFor_(c.grade, c.cls), b.tries);
   base.medals = medals_(classKey_(c), mail, cfg.limit_sec);
+  base.coop = coopForChild_(c);   // 協力モード中なら自分の色（なければ active:false）
   return base;
 }
 
@@ -596,7 +599,9 @@ function startSession(mode, practice) {
   return {
     ok: true, token: token,
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit,
-    qs: packQueue_(genQueue_(seed, mode, QN))
+    qs: packQueue_(genQueue_(seed, mode, QN)),
+    // 協力モード中なら自分の色を教える（なければ active:false）
+    coop: coopForChild_(c)
   };
 }
 
@@ -722,6 +727,8 @@ function submitSession(token, items) {
     // 索引を作り直させる。次に起動した児童が古いベストを見ないように
     cache_().remove('sumidx_' + limSec);
     if (!isPractice) cache_().remove('top3_' + classKey_(c) + '_' + limSec);
+    // 協力モード：本番の提出だけを、終了時刻までに届いた分だけ数える
+    if (!isPractice) coopNote_(c, s.mode, correct);
   } catch (err) {
     return { ok: false, msg: '記録に失敗しました。' };   // code 無し = 再送する
   } finally {
@@ -1077,7 +1084,9 @@ function getConfigForUI() {
            settings: UNIT.settings || [],
            tips: UNIT.tips || '',
            // 床のプレビュー（教師画面）に使う。児童の画面と同じ図形・同じ2色
-           floor: { pattern: UNIT.floorPattern || 'penrose', c1: gradeAccent_(), c2: floorColor_(), ref: FLOOR_REF_PER_MIN_ } } };
+           floor: { pattern: UNIT.floorPattern || 'penrose', c1: gradeAccent_(), c2: floorColor_(), ref: FLOOR_REF_PER_MIN_ },
+           // 協力モードの図形の選択肢。宣言できるのは画面に写した生成器と同じ id だけ
+           coopPatterns: FLOOR_PATTERNS_ } };
 }
 
 /**
@@ -1194,6 +1203,246 @@ function listClassesCore_(over) {
   });
   out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
   return out;
+}
+
+/* ============================================================
+ *  協力モード
+ *
+ *  クラス全員の本番の正答で、教師画面の図形がいっしょに育つモード。
+ *
+ *  数えるもの：提出が確定した本番（practice ではない）の正答だけ。
+ *  集計はその単元サイト上の、クラスが一致する提出だけ。
+ *  終了時刻を超えて届いた提出は切り捨てる。
+ *  同時に動くセッションは1つ（coopStart が進行中を拒む）。
+ *
+ *  シート:
+ *    coop       … セッションの履歴（1開始＝1行）。live の行は status='run'
+ *    coop_log   … イベント列（1提出＝1行: session, t_ms, email, correct, mode）
+ *    coop_save  … 教師が名付けて保存した再生データ（payload=JSON）
+ * ============================================================ */
+var COOP_DEF_MIN = 10;
+var COOP_GN_MAX = 10;
+
+/** 進行中（または最後に開いていた）セッション。終了しても coopStop されるまで残す */
+function coopLive_() { var h = cache_().get('coop_live'); return h ? JSON.parse(h) : null; }
+function coopPutLive_(s) { cache_().put('coop_live', JSON.stringify(s), TTL.session); }
+
+/**
+ * 名簿からそのクラスの児童（氏名あり）を番号順に並べる。
+ * 色・組・タイルの割り当ては、この順の index で決まる。
+ */
+function coopKids_(ck) {
+  var kids = [];
+  rosterRows_().forEach(function (r) {
+    if (!r.name) return;
+    if (r.grade + '-' + r.cls !== ck) return;
+    kids.push({ mail: r.mail, no: r.no, name: r.name });
+  });
+  kids.sort(function (a, b) { return a.no - b.no || (a.mail < b.mail ? -1 : 1); });
+  return kids;
+}
+
+/** セッションのイベント列 [[t_ms, 児童index, 正答数], …]。キャッシュを欠いたら coop_log から組み直す */
+function coopEvents_(s) {
+  var key = 'coop_ev_' + s.id;
+  var hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
+  var ev = [];
+  var sh = ss_().getSheetByName(SHEETS.COOPLOG);
+  if (sh && sh.getLastRow() > 1) {
+    var v = sh.getDataRange().getValues();
+    for (var i = 1; i < v.length; i++) {
+      if (String(v[i][0]) !== s.id) continue;
+      var idx = s.kids[String(v[i][2])];
+      if (idx === undefined) continue;
+      ev.push([Number(v[i][1]) || 0, idx, Number(v[i][3]) || 0]);
+    }
+  }
+  cache_().put(key, JSON.stringify(ev), TTL.session);
+  return ev;
+}
+
+/** 教師画面へ返す形（個人情報は名札に必要な氏名と番号まで。mail は出さない） */
+function coopPub_(s, since) {
+  var ev = coopEvents_(s), n = ev.length;
+  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn,
+           start: s.start, end: s.end, status: s.status, total: s.total,
+           names: s.names, nos: s.nos, gi: s.gi,
+           evN: n, ev: ev.slice(Math.max(0, Number(since) || 0)) };
+}
+
+/**
+ * 提出1件を協力セッションに数える。submitSession のロック内から呼ぶ（直列前提）。
+ * 呼ぶ前に練習は弾いてある（!isPractice の中だけ）。
+ */
+function coopNote_(c, mode, correct) {
+  var s = coopLive_();
+  if (!s || s.status !== 'run' || !c) return;
+  var now = Date.now();
+  if (now > s.end) return;                    // 打ち切り：終了後の提出は数えない
+  if (classKey_(c) !== s.cls) return;
+  var i = s.kids[c.email];
+  if (i === undefined) return;
+  var t = now - s.start;
+  sh_(SHEETS.COOPLOG).appendRow([s.id, t, c.email, correct, mode]);
+  var ev = coopEvents_(s);
+  ev.push([t, i, correct]);
+  cache_().put('coop_ev_' + s.id, JSON.stringify(ev), TTL.session);
+  s.total = (s.total || 0) + correct;
+  coopPutLive_(s);
+}
+
+/** coop の行を id で探して status/total/gi を更新する */
+function coopRowWrite_(id, patch) {
+  var sh = ss_().getSheetByName(SHEETS.COOP);
+  if (!sh || sh.getLastRow() < 2) return;
+  var v = sh.getDataRange().getValues();
+  for (var i = v.length - 1; i >= 1; i--) {
+    if (String(v[i][0]) !== id) continue;
+    if (patch.gi !== undefined) sh.getRange(i + 1, 7).setValue(JSON.stringify(patch.gi));
+    if (patch.status !== undefined) sh.getRange(i + 1, 12).setValue(patch.status);
+    if (patch.total !== undefined) sh.getRange(i + 1, 13).setValue(patch.total);
+    return;
+  }
+}
+
+/**
+ * 協力プレイを開始する。{cls, pat, minutes, mode('child'|'group'), gn}
+ * リセットもここに来る（新しいセッションとして切り直す。旧分は coop_log に残る）。
+ */
+function coopStart(o) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var prev = coopLive_();
+  if (prev && prev.status === 'run' && !(o && o.reset)) {
+    return { ok: false, msg: '進行中の協力プレイがあります。「おわる」を押してから始めてください。' };
+  }
+  var old = prev || {};
+  var cls = String((o && o.cls) || old.cls || '');
+  var kids = coopKids_(cls);
+  if (!kids.length) return { ok: false, msg: 'そのクラスの児童が名簿にありません。' };
+  var pat = String((o && o.pat) || old.pat || UNIT.floorPattern || 'penrose');
+  if (FLOOR_PATTERNS_.indexOf(pat) < 0) pat = 'penrose';
+  var minutes = Math.max(1, Math.min(30, Number((o && o.minutes) || old.minutes || COOP_DEF_MIN)));
+  var mode = ((o && o.mode) || old.mode) === 'group' ? 'group' : 'child';
+  var gn = Math.max(2, Math.min(COOP_GN_MAX, Number((o && o.gn) || old.gn || 6)));
+  var seed = Math.floor(Math.random() * 2147483647);
+  var kidsMap = {}, order = [], gi = [];
+  kids.forEach(function (k, i) {
+    kidsMap[k.mail] = i; order.push(k.mail);
+    // 組の既定は番号順の等分。前回と同じ顔ぶつなら前の編成を引き継ぐ
+    gi.push(old.gi && old.order && old.order[i] === k.mail ? old.gi[i]
+         : Math.min(gn - 1, Math.floor(i * gn / kids.length)));
+  });
+  var id = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+  var now = Date.now();
+  var s = { id: id, cls: cls, pat: pat, seed: seed, mode: mode, gn: gn, minutes: minutes,
+            start: now, end: now + minutes * 60000, status: 'run', total: 0,
+            kids: kidsMap, order: order,
+            names: kids.map(function (k) { return k.name; }),
+            nos: kids.map(function (k) { return k.no; }),
+            gi: gi };
+  sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
+    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(now), new Date(s.end), 'run', 0]);
+  cache_().put('coop_ev_' + id, '[]', TTL.session);
+  if (prev) coopRowWrite_(prev.id, { status: 'done', total: prev.total });
+  coopPutLive_(s);
+  return { ok: true, session: coopPub_(s, 0) };
+}
+
+/** 進行中のセッションの様子。since 以降のイベントだけ返す（差分ポーリング用） */
+function coopState(since) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var s = coopLive_();
+  if (!s) return { ok: true, status: 'none' };
+  var r = coopPub_(s, since);
+  r.ok = true; r.now = Date.now(); r.ended = r.now > s.end;
+  return r;
+}
+
+/** 打ち切り：これ以降の提出は数えず、画面は終了表示になる */
+function coopStop() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var s = coopLive_();
+  if (!s) return { ok: false, msg: '協力プレイはありません。' };
+  s.status = 'done'; s.end = Math.min(s.end, Date.now());
+  coopPutLive_(s);
+  coopRowWrite_(s.id, { status: 'done', total: s.total });
+  return { ok: true, session: coopPub_(s, 0) };
+}
+
+/** 図形を消して同じ設定で始め直す（新しいセッション。前の分は履歴に残る） */
+function coopReset() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  return coopStart({ reset: true });
+}
+
+/** 組の編成を一括で書き換える。gi = 児童indexごとの組番号（0〜gn-1） */
+function coopSetGroups(gi) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var s = coopLive_();
+  if (!s) return { ok: false, msg: '協力プレイはありません。' };
+  if (!Array.isArray(gi) || gi.length !== s.names.length) {
+    return { ok: false, msg: '組の数が名簿と合いません。' };
+  }
+  s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
+  coopPutLive_(s);
+  coopRowWrite_(s.id, { gi: s.gi });
+  return { ok: true };
+}
+
+/** いまのセッションを再生データとして保存する。終了前でもその時点までを保存 */
+function coopSave(name) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var s = coopLive_();
+  if (!s) return { ok: false, msg: '保存する協力プレイがありません。' };
+  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn,
+                  start: s.start, end: s.end, total: s.total,
+                  names: s.names, nos: s.nos, gi: s.gi, ev: coopEvents_(s) };
+  var sid = 's' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+  var nm = String(name || '').trim() ||
+    (s.cls.replace('-', '年') + '組 ' +
+     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M/d H:mm'));
+  sh_(SHEETS.COOPSAVE).appendRow([sid, nm, new Date(), s.id, JSON.stringify(payload)]);
+  return { ok: true, id: sid, name: nm };
+}
+
+/** 保存済みの一覧（payload は返さない。読むときは coopLoad） */
+function coopList() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var sh = ss_().getSheetByName(SHEETS.COOPSAVE), out = [];
+  if (sh && sh.getLastRow() > 1) {
+    var v = sh.getDataRange().getValues();
+    for (var i = 1; i < v.length; i++) {
+      if (!v[i][0]) continue;
+      out.push({ id: String(v[i][0]), name: String(v[i][1]), saved: dstr_(v[i][2]) });
+    }
+  }
+  out.reverse();
+  return { ok: true, saves: out };
+}
+
+/** 保存データを読む（再生用。live のセッションは動かさない） */
+function coopLoad(id) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var sh = ss_().getSheetByName(SHEETS.COOPSAVE);
+  if (!sh || sh.getLastRow() < 2) return { ok: false, msg: '保存データがありません。' };
+  var v = sh.getDataRange().getValues();
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][0]) !== String(id)) continue;
+    return { ok: true, name: String(v[i][1]), payload: JSON.parse(v[i][4]) };
+  }
+  return { ok: false, msg: '保存データが見つかりません。' };
+}
+
+/** 児童画面用：協力モード中なら自分の色に必要な分だけ（他の児童の情報は出さない） */
+function coopForChild_(c) {
+  var s = coopLive_();
+  if (!s || s.status !== 'run' || !c || classKey_(c) !== s.cls) return { active: false };
+  var i = s.kids[c.email];
+  if (i === undefined) return { active: false };
+  var r = { active: true, i: i, n: s.order.length, seed: s.seed, pat: s.pat, mode: s.mode };
+  if (s.mode === 'group') { r.g = s.gi[i]; r.gn = s.gn; }
+  return r;
 }
 
 /* ---- 集計 ---- */
@@ -2229,7 +2478,8 @@ function migrateModeNameAndWrong_() {
 function applyFriendlyStyling_() {
   var ss = ss_();
   var technical = { config: '#B7B7B7', class_config: '#B7B7B7', roster: '#4A86E8',
-                     log: '#B7B7B7', daily: '#B7B7B7' };
+                     log: '#B7B7B7', daily: '#B7B7B7',
+                     coop: '#B7B7B7', coop_log: '#B7B7B7', coop_save: '#B7B7B7' };
   var friendly = { summary: '#93C47D', weak_child: '#93C47D', weak_class: '#93C47D' };
 
   Object.keys(technical).forEach(function (name) {
@@ -2249,7 +2499,10 @@ function applyFriendlyStyling_() {
                   '通常は教師用ページ（?page=teacher）から操作してください。直接編集した場合、児童への反映は最大1分遅れます。',
     log: '1回のプレイ（1試行）を1行で記録した内部データです。直接は読まなくてよいシートです。\n個々の誤答を読みたいときは mistakes シートを、傾向を見たいときは weak_child / weak_class を見てください。',
     daily: '当日の学級内ランキングを計算するための内部データです。直接は見なくてよいシートです。',
-    summary: '児童ごと・モードごと・制限時間ごとの累計成績とハイスコアです。kind列は r=本番／p=練習です。'
+    summary: '児童ごと・モードごと・制限時間ごとの累計成績とハイスコアです。kind列は r=本番／p=練習です。',
+    coop: '協力モードのセッション履歴です（1開始＝1行）。教師用ページの「きょうりょく」から操作してください。',
+    coop_log: '協力モードの提出記録（内部データ）です。直接は読まなくてよいシートです。',
+    coop_save: '協力モードの保存データです（再生用のスナップショット）。教師用ページの「きょうりょく」から読み込みます。'
   };
   Object.keys(notes).forEach(function (name) {
     var sh = ss.getSheetByName(name);
@@ -2269,6 +2522,10 @@ function ensureSheets_() {
                           'tries', 'total_correct', 'total_attempts', 'best', 'best_count'];
   defs[SHEETS.WCHILD] = [];
   defs[SHEETS.WCLASS] = [];
+  defs[SHEETS.COOP] = ['id', 'class', 'pattern', 'seed', 'mode', 'gn', 'groups',
+                       'names', 'nos', 'start', 'end', 'status', 'total'];
+  defs[SHEETS.COOPLOG] = ['session', 't', 'email', 'correct', 'mode'];
+  defs[SHEETS.COOPSAVE] = ['save_id', 'name', 'saved', 'session', 'payload'];
 
   // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
   // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。

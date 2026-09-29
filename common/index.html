@@ -116,6 +116,18 @@ body{
 .hud{display:flex;justify-content:space-between;align-items:center;padding:.6rem 1.5rem .1rem}
 .hud .medal{font-size:1.7rem;line-height:1}
 .hud .label{font-size:1.05rem;font-weight:700;color:#6E7690}
+
+/* 協力モード中の「自分の色」の印。左上に置き、メダルの場所は右へずらす */
+#coop{position:absolute;top:36px;left:10px;z-index:3;display:flex;align-items:center;gap:.55rem}
+#coop .emblem{width:52px;height:52px;border-radius:50%;overflow:hidden;flex:none;
+  box-shadow:0 0 0 2px rgba(255,255,255,.28),0 2px 10px rgba(0,0,0,.5)}
+#coop .emblem canvas{width:100%;height:100%;display:block;animation:coopspin 46s linear infinite}
+@keyframes coopspin{to{transform:rotate(360deg)}}
+#coop .a{display:block;font-size:1rem;font-weight:800;line-height:1.15}
+#coop .b{display:flex;align-items:center;gap:.32em;font-size:.7rem;color:#9AA0B0;font-weight:700;margin-top:.15em}
+#coop .b .dot{width:.9em;height:.9em;border-radius:50%;border:1.5px solid rgba(255,255,255,.7)}
+#play:not(.coopOn) #coop{display:none}
+#play.coopOn .hud,#play.coopOn.dial-mode .hud{padding-left:160px}
 .stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;padding-bottom:2vh}
 
 /* 正答数は式の左上、Enterと同じミント */
@@ -399,6 +411,12 @@ body.practice-result .stats,body.practice-result .rank{display:none}
     <div class="medal" id="playMedal"></div>
     <div class="label" id="playLabel"></div>
   </div>
+  <!-- 協力モード中だけ出る自分の色の印（Core.gs の coop が active のとき） -->
+  <div id="coop">
+    <span class="emblem"><canvas id="coopEmblem"></canvas></span>
+    <span><span class="a">協力プレイ中</span>
+    <span class="b"><span class="dot" id="coopDot"></span>あなたの色</span></span>
+  </div>
   <div class="stage">
     <div class="cntbox"><span class="n" id="count">0</span><span class="l">せいかい</span></div>
     <div class="eq" id="eq"></div>
@@ -456,7 +474,7 @@ var MODES = {}, MODES_ALL = [], LOCKED = {};
    通信が止まったように見えて教師・児童とも打つ手が分からなくなる。 */
 var BOOTED = false;
 /* この画面が前提にする Core.gs の版。貼り替えを片方だけ忘れたときに検知する */
-var WANT_VER = 2;
+var WANT_VER = 3;
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -581,6 +599,67 @@ function floorAdd(mode, n){
 function floorFam_(hex){
   var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'').trim());
   var c = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [53,208,165];
+  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
+    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
+  });
+}
+
+/* ---- 協力モード：自分の色の印 ----
+   boot() / startSession() が運んでくる coop で描く。
+   色の割り当ては教師画面（teacher.html）と同じ決まった手順：
+   シードから金色の角度で色を散らし、シードでシャッフルする。
+   サーバーから届くのは自分の index だけ（他の児童の色は届かない）。 */
+var COOP = { active: false };
+function coopRng_(seed){ var s = seed >>> 0; return function(){ s = (s * 1103515245 + 12345) >>> 0; return (s >>> 8) / 16777216; }; }
+function coopHsl_(h, s, l){ h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
+  var a = s * Math.min(l, 1 - l);
+  var f = function(n){ var k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return [f(0), f(8), f(4)].map(function(v){ return Math.round(v * 255); }).join(',');
+}
+function coopPalette_(n, seed){
+  var rand = coopRng_(seed * 7919), h0 = rand() * 360, cols = [], i;
+  for(i = 0; i < n; i++){
+    cols.push(coopHsl_(h0 + i * 137.508, [72, 58, 82][i % 3], [52, 66, 42, 58][i % 4]));
+  }
+  for(i = n - 1; i > 0; i--){ var j = Math.floor(rand() * (i + 1)), t = cols[i]; cols[i] = cols[j]; cols[j] = t; }
+  return cols;
+}
+/* 自分の色：児童ごとなら自分の index、グループなら自分の組の色（教師画面と同じ式） */
+function coopMyColor_(){
+  return COOP.mode === 'group'
+    ? coopPalette_(COOP.gn || 1, COOP.seed * 31 + 11)[COOP.g || 0]
+    : coopPalette_(COOP.n || 1, COOP.seed)[COOP.i || 0];
+}
+/* 自分の色のフラクタル球（っぽい平面図）：協力画面と同じ生成器を小さい円に描く */
+function coopBadge_(){
+  var cv = $('coopEmblem');
+  var on = !!(COOP.active && cv && window.GrowingFigures);
+  $('play').classList.toggle('coopOn', on);
+  if(!on) return;
+  var col = coopMyColor_(), d = 104, ctx = cv.getContext('2d');
+  $('coopDot').style.background = 'rgb(' + col + ')';
+  cv.width = d; cv.height = d;
+  ctx.clearRect(0, 0, d, d);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(d / 2, d / 2, d / 2 - 1, 0, 6.2832); ctx.clip();
+  ctx.fillStyle = '#0A0F1E'; ctx.fillRect(0, 0, d, d);
+  var G = window.GrowingFigures.GENERATORS, gen = G[COOP.pat] || G.penrose;
+  var raw = gen.make({ W: d, H: d, ox: d / 2, oy: d / 2, edge: 7, margin: 3 });
+  var fm = coopFam_(col), bk = {}, i, j, t, P, p, h;
+  for(i = 0; i < raw.length; i++){
+    t = raw[i]; P = new Path2D(); p = t.p;
+    P.moveTo(p[0][0], p[0][1]); for(j = 1; j < p.length; j++) P.lineTo(p[j][0], p[j][1]); P.closePath();
+    if(t.h){ h = t.h; P.moveTo(h[0][0], h[0][1]); for(j = 1; j < h.length; j++) P.lineTo(h[j][0], h[j][1]); P.closePath(); }
+    (bk[t.dir] = bk[t.dir] || []).push(P);
+  }
+  for(var dir in bk){ ctx.fillStyle = 'rgb(' + fm[dir] + ')'; for(i = 0; i < bk[dir].length; i++) ctx.fill(bk[dir][i]); }
+  ctx.restore();
+  ctx.strokeStyle = 'rgb(' + col + ')'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(d / 2, d / 2, d / 2 - 3, 0, 6.2832); ctx.stroke();
+}
+/* 協力の色は "r,g,b" 文字列。floorFam_（16進）と同じ5段の明暗にする */
+function coopFam_(rgb){
+  var c = rgb.split(',').map(Number);
   return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
     return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
   });
@@ -2656,6 +2735,7 @@ function beginPractice(timed){
                 rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
       });
       qi = 0; clearTyped(); ready = true;
+      if(r.coop){ COOP = r.coop; coopBadge_(); }   // 開いたまま協力モードが始まっても印が出る
     }).withFailureHandler(function(){
       startAborted = true;
       busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
@@ -2740,6 +2820,7 @@ function begin(m){
                 rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
       });
       ready = true; clearTyped();
+      if(r.coop){ COOP = r.coop; coopBadge_(); }
     }).withFailureHandler(function(){
       startAborted = true;
       busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
@@ -3016,6 +3097,8 @@ function applyBoot(r, live){
       tl.style.display = 'none';
     }
   }
+  COOP = r.coop || {active:false};           // 古い控えには無いので非表示に落とす
+  coopBadge_();
   if(r.keyGap >= 0) $('pad').style.gap = Math.min(Number(r.keyGap)||8, 40) + 'px';
   $('timelede').textContent = '1回 ' + r.limitSec + 'びょう';
   var bl0=$('bestLbl'); if(bl0) bl0.textContent = r.limitSec + 'びょう ベスト';
