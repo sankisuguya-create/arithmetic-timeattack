@@ -54,4 +54,17 @@ assert.equal(Number((/var FLOOR_REF = (\d+);/.exec(ui) || [])[1]), ctx.FLOOR_REF
   assert.ok(keys.includes('floor_per_answer') && !keys.includes('floor_per_min'), keys.join(','));
 });
 
+// 長さのたんい＝巻き尺の渦、おもさ＝円弧の曼荼羅。既存の表示設定（まきじゃく・はかり）はそのまま残る
+[['length', 'tape', 'ruler_tape'], ['weight', 'mandala', 'dial_size']].forEach(([u, pat, keep]) => {
+  const c = loadUnit(u);
+  assert.equal(c.UNIT.floorPattern, pat);
+  assert.equal(c.floorColor_(), '#8A6CE5');
+  const keys = (c.UNIT.settings || []).map(s => s.key);
+  assert.ok(keys.includes(keep) && keys.includes('floor_on') && keys.includes('floor_per_answer'), u + ': ' + keys.join(','));
+  assert.ok(!c.validateUnit_().some(x => /floor|settings/.test(x)), u + ': ' + JSON.stringify(c.validateUnit_()));
+});
+// 宣言できる図形の一覧は、画面に写した生成器と一致する（片方だけ増やすと、宣言しても画面でペンローズに落ちる）
+const genIds = [...ui.matchAll(/^    (\w+):\s+\{ name: '/gm)].map(m => m[1]);
+assert.deepEqual([...ctx.FLOOR_PATTERNS_].sort(), [...genIds].sort());
+
 console.log('floor: ok');
