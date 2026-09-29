@@ -601,7 +601,7 @@ function startSession(mode, practice) {
     limitSec: cfg.limit_sec, missLimit: cfg.miss_limit,
     qs: packQueue_(genQueue_(seed, mode, QN)),
     // 協力モード中なら自分の色を教える（なければ active:false）
-    coop: coopForChild_(c)
+    coop: coopForChild_(c, Number(cfg.limit_sec) || 60)
   };
 }
 
@@ -1214,8 +1214,13 @@ function listClassesCore_(over) {
  *
  *  数えるもの：提出が確定した本番（practice ではない）の正答だけ。
  *  集計はその単元サイト上の、クラスが一致する提出だけ。
- *  終了時刻を超えて届いた提出は切り捨てる。
+ *  締め切りは「遊び終えた時刻」。協力の終わり（＋10秒）までに遊び終えた回だけ数え、送り直しは終わりから10分まで待つ。
+ *  次の協力を始めても、直前の協力の送り直しはその10分の間は直前の方に数える（coop_prev）。
  *  同時に動くセッションは1つ（coopStart が進行中を拒む）。
+ *
+ *  「エラーに見える」ところは画面に理由を出す（数え方の規則は変えない）：
+ *    教師画面 … 最初の1回が終わるまで何も増えない／残り1分から始めた回は数えない／締め切り後の送り直しを待っている／参加人数
+ *    児童画面 … 残り1分を切ってから始めた本番は、印を「この回は数えません」にする（counts=false）
  *
  *  シート:
  *    coop       … セッションの履歴（1開始＝1行）。live の行は status='run'
@@ -1226,6 +1231,7 @@ var COOP_DEF_MIN = 10;
 var COOP_GN_MAX = 10;
 var COOP_SLACK_MS = 10000;    // 遊び終えた時刻の余裕（開始前のカウントダウン3秒と通信の遅れ）
 var COOP_LATE_MS = 600000;    // 送り直しを数える上限：協力の終了から10分（混雑で弾かれた回は次の起動で送り直される）
+var COOP_FLUSH_AT = 40;       // シートへ書いていない分がこの件数を超えたら、提出の側でもまとめ書きする（教師画面が閉じている間の備え）
 
 /**
  * 進行中（または最後に開いていた）セッション。終了しても coopStop されるまで残す。
@@ -1255,7 +1261,8 @@ function coopFromSheet_() {
             mode: String(r[4]) === 'group' ? 'group' : 'child', gn: Number(r[5]) || 6,
             minutes: Math.max(1, Math.round((end - start) / 60000)),
             start: start, end: end, status: String(r[11] || 'done') === 'run' ? 'run' : 'done', total: 0,
-            kids: map, order: order, names: arr(r[7]), nos: arr(r[8]), gi: arr(r[6]) };
+            kids: map, order: order, names: arr(r[7]), nos: arr(r[8]), gi: arr(r[6]),
+            skip: coopSkip_(cls) };
   s.total = coopEvents_(s).reduce(function (a, e) { return a + (Number(e[2]) || 0); }, 0);
   return s;
 }
@@ -1285,6 +1292,12 @@ function coopKids_(ck) {
   });
   kids.sort(function (a, b) { return a.no - b.no || (a.mail < b.mail ? -1 : 1); });
   return kids;
+}
+/** 名簿にそのクラスの行はあるが氏名が空の児童の数（協力には数えない。教師画面に人数だけ出す） */
+function coopSkip_(ck) {
+  var n = 0;
+  rosterRows_().forEach(function (r) { if (!r.name && r.grade + '-' + r.cls === ck) n++; });
+  return n;
 }
 
 /** セッションのイベント列 [[t_ms, 児童index, 正答数], …]。キャッシュを欠いたら coop_log から組み直す */
@@ -1318,7 +1331,29 @@ function coopPub_(s, since) {
   return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn,
            start: s.start, end: s.end, status: s.status, total: s.total,
            names: s.names, nos: s.nos, gi: s.gi,
+           // 画面の案内に使う：1回の制限秒（残りがこれを切ると、これから始める回は数えない）・送り直しの締め切り・氏名のない児童の数
+           lim: Number(config_().limit_sec) || 60, slack: COOP_SLACK_MS, lateUntil: s.end + COOP_LATE_MS, skip: s.skip || 0,
            evN: n, ev: ev.slice(Math.max(0, Number(since) || 0)) };
+}
+
+/**
+ * 「次の開始」で live から外れた直前のセッション。終了から COOP_LATE_MS の間だけ置き、
+ * その間に届いた直前の回の送り直しをこちらに数える（開始を押した瞬間に前の回の取りこぼしが出ないように）
+ */
+function coopPrev_() {
+  var h = cache_().get('coop_prev');
+  if (!h) return null;
+  var p = JSON.parse(h);
+  return Date.now() > p.end + COOP_LATE_MS ? null : p;
+}
+
+/** coop の行の合計を、キャッシュの合計に追いつかせる（締め切り後の送り直しで合計が増えるため） */
+function coopSyncTotal_(s) {
+  if (!s || s.status === 'run') return;
+  var key = 'coop_rt_' + s.id;
+  if (cache_().get(key) === String(s.total)) return;
+  coopRowWrite_(s.id, { total: s.total });
+  cache_().put(key, String(s.total), TTL.session);
 }
 
 /**
@@ -1334,24 +1369,28 @@ function coopPub_(s, since) {
  * シートへの1行の書き込みが、混む瞬間の提出1件ごとのロックの時間を延ばしていたため。
  */
 function coopNote_(c, mode, correct, game) {
-  var s = coopLive_();
-  if (!s || !c) return;
+  if (!c) return;
   var now = Date.now();
   // 回の記録が無い呼び出し（古い経路）は届いた時刻で見る。余裕（カウントダウン分）は回の記録があるときだけ
   var known = !!(game && game.t);
   var played = known ? Number(game.t) + (Number(game.lim) || 60) * 1000 : now;
-  if (played < s.start || played > s.end + (known ? COOP_SLACK_MS : 0)) return;   // 協力の時間の外で遊び終えた回は数えない
-  if (now > s.end + COOP_LATE_MS) return;                            // 送り直しが遅すぎる
-  if (classKey_(c) !== s.cls) return;
+  function fits(x) {
+    return !!x && played >= x.start && played <= x.end + (known ? COOP_SLACK_MS : 0) &&   // 協力の時間の外で遊び終えた回は数えない
+      now <= x.end + COOP_LATE_MS &&                                                      // 送り直しが遅すぎる
+      classKey_(c) === x.cls && x.kids[c.email] !== undefined;
+  }
+  var s = coopLive_(), live = true;
+  if (!fits(s)) { s = coopPrev_(); live = false; if (!fits(s)) return; }   // 直前のセッションの送り直し
   var i = s.kids[c.email];
-  if (i === undefined) return;
   // 画面の時間軸は届いた時刻（終了後に届いた回は終了の時点に置く。再生の順が崩れないように）
   var t = Math.min(now, s.end) - s.start;
   var ev = coopEvents_(s);
   ev.push([t, i, correct, mode]);
   cache_().put('coop_ev_' + s.id, JSON.stringify(ev), TTL.session);
   s.total = (s.total || 0) + correct;
-  coopPutLive_(s);
+  if (live) coopPutLive_(s); else cache_().put('coop_prev', JSON.stringify(s), TTL.session);
+  // 教師画面が閉じていると、まとめ書きが起きずキャッシュにだけ溜まる。溜まりすぎたらここで書く（ロックは持っている）
+  if (ev.length - Number(cache_().get('coop_fl_' + s.id) || 0) >= COOP_FLUSH_AT) coopFlush_(s, true);
 }
 
 /**
@@ -1391,6 +1430,7 @@ function coopRowWrite_(id, patch) {
   for (var i = v.length - 1; i >= 1; i--) {
     if (String(v[i][0]) !== id) continue;
     if (patch.gi !== undefined) sh.getRange(i + 1, 7).setValue(JSON.stringify(patch.gi));
+    if (patch.end !== undefined) sh.getRange(i + 1, 11).setValue(new Date(patch.end));
     if (patch.status !== undefined) sh.getRange(i + 1, 12).setValue(patch.status);
     if (patch.total !== undefined) sh.getRange(i + 1, 13).setValue(patch.total);
     return;
@@ -1434,12 +1474,19 @@ function coopStart_(o) {
             kids: kidsMap, order: order,
             names: kids.map(function (k) { return k.name; }),
             nos: kids.map(function (k) { return k.no; }),
-            gi: gi };
+            gi: gi, skip: coopSkip_(cls) };
   sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
     JSON.stringify(s.names), JSON.stringify(s.nos), new Date(now), new Date(s.end), 'run', 0]);
   cache_().put('coop_ev_' + id, '[]', TTL.session);
   cache_().put('coop_fl_' + id, '0', TTL.session);
-  if (prev) { coopFlush_(prev, true); coopRowWrite_(prev.id, { status: 'done', total: prev.total }); }
+  if (prev) {
+    // リセットで途中から切り直したときは、前のセッションの終わりをいまにする（これから遊び終える回は新しい方へ）
+    prev.status = 'done'; prev.end = Math.min(prev.end, now);
+    coopFlush_(prev, true);
+    coopRowWrite_(prev.id, { status: 'done', total: prev.total, end: prev.end });
+    cache_().put('coop_rt_' + prev.id, String(prev.total), TTL.session);
+    cache_().put('coop_prev', JSON.stringify(prev), TTL.session);
+  }
   coopPutLive_(s);
   return { ok: true, session: coopPub_(s, 0) };
 }
@@ -1459,12 +1506,16 @@ function coopState(since) {
         if (cur && cur.id === s.id && cur.status === 'run') {
           cur.status = 'done'; coopPutLive_(cur);
           coopRowWrite_(cur.id, { status: 'done', total: cur.total });
+          cache_().put('coop_rt_' + cur.id, String(cur.total), TTL.session);
         }
         s = cur || s;
       } finally { try { lock.releaseLock(); } catch (e) {} }
     }
   }
   coopFlush_(s, false);
+  coopSyncTotal_(s);
+  var p = coopPrev_();               // 直前のセッションに届いた送り直しも書いておく
+  if (p) { coopFlush_(p, false); coopSyncTotal_(p); }
   var r = coopPub_(s, since);
   r.ok = true; r.now = now; r.ended = now > s.end;
   return r;
@@ -1479,7 +1530,8 @@ function coopStop() {
     s.status = 'done'; s.end = Math.min(s.end, Date.now());
     coopPutLive_(s);
     coopFlush_(s, true);
-    coopRowWrite_(s.id, { status: 'done', total: s.total });
+    coopRowWrite_(s.id, { status: 'done', total: s.total, end: s.end });
+    cache_().put('coop_rt_' + s.id, String(s.total), TTL.session);
     return { ok: true, session: coopPub_(s, 0) };
   });
 }
@@ -1551,13 +1603,18 @@ function coopLoad(id) {
   return { ok: false, msg: '保存データが見つかりません。' };
 }
 
-/** 児童画面用：協力モード中なら自分の色に必要な分だけ（他の児童の情報は出さない） */
-function coopForChild_(c) {
+/**
+ * 児童画面用：協力モード中なら自分の色に必要な分だけ（他の児童の情報は出さない）。
+ * lim（制限秒）を渡すと、いま始める回が協力の終わりまでに遊び終わるか（counts）も返す。
+ * 残り1分を切ってから始めた回は数えないので、印を「数えません」に切り替えるため
+ */
+function coopForChild_(c, lim) {
   var s = coopLive_();
   if (!s || s.status !== 'run' || Date.now() > s.end || !c || classKey_(c) !== s.cls) return { active: false };
   var i = s.kids[c.email];
   if (i === undefined) return { active: false };
   var r = { active: true, i: i, n: s.order.length, seed: s.seed, pat: s.pat, mode: s.mode };
+  if (lim) r.counts = Date.now() + Number(lim) * 1000 <= s.end + COOP_SLACK_MS;
   if (s.mode === 'group') { r.g = s.gi[i]; r.gn = s.gn; }
   return r;
 }
