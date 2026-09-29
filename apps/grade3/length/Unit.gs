@@ -15,7 +15,10 @@ var UNIT = {
     ruler_width:  100,   // 画面幅に対する横幅(%)
     ruler_tape:   128,   // テープの太さ(px)
     ruler_font:    44,   // 目盛りの数字の大きさ(px)
-    ruler_offset:   0    // 上下位置の調整(px)。+で下がる
+    ruler_offset:   0,   // 上下位置の調整(px)。+で下がる
+    // 最初のメニューの背景に敷く「成長する図形」（九九と同じ仕組み。docs/ARCHITECTURE.md「背景の床」）
+    floor_on: 1,
+    floor_per_answer: 0.75
   },
 
   /**
@@ -32,8 +35,20 @@ var UNIT = {
     { key: 'ruler_font',   label: '目盛りの数字の大きさ',
       note: 'px。24〜72', min: 24, max: 72, step: 2 },
     { key: 'ruler_offset', label: '上下の位置',
-      note: 'px。+で下、−で上に動く。−60〜120', min: -60, max: 120, step: 4 }
+      note: 'px。+で下、−で上に動く。−60〜120', min: -60, max: 120, step: 4 },
+    { key: 'floor_on', label: 'メニューの背景の図形', type: 'onoff',
+      note: '正答を重ねるほど育つ模様。表示しないと無地になる' },
+    { key: 'floor_per_answer', label: '1正答あたりの図形の育ち',
+      note: '1分に20問解ける速さの問題を1問正解したときに増えるタイルの枚数。解きにくい問題（1分で解ける数が少ない）ほど1問で多く育つ（速さはこのサイトの記録から自動で出す）。0.75 なら、1分20問の速さでおよそ3,200問で全部そろう',
+      min: 0.05, max: 10, step: 0.05 }
   ],
+
+  /**
+   * 床の図形と第二の色。このサイトは巻き尺の渦（一定幅の帯が渦を巻き、1目盛りずつ区切る。10目盛りごとに色が替わる）。
+   * 台帳は design リポジトリの growing-figures/COLORS.md
+   */
+  floorPattern: 'tape',
+  floorColor: 'amethyst',
 
   /** 出題に出る単位と、その表示色（空文字は既定のグレー） */
   units: { km: '#F1B1E4', m: '', cm: '#8A6CE5' },
