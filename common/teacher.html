@@ -1064,7 +1064,8 @@ var CP = { sess: null, loaded: false, ev: [], cursor: 0, total: 0,
   MODE: 'child', GN: 6, gi: [], names: [], nos: [],
   COLORS: [], FAMS: [], GCOLORS: [], GFAMS: [],
   RATE: 3.5, off: 0, simT: 0, evI: 0, playing: false, raf: 0, SPEED: 5,
-  polling: false, zooming: false, pendingS: 1 };
+  polling: false, zooming: false, pendingS: 1,
+  giPend: 0, giVer: 0 };   // 組の編集：送信中の数と、編集ごとに増える番号（古い応答で編集を戻さないため）
 var CVW = 3.6, CSMIN = 0.32, CZOOM_STEP = 0.72, CCOVER = 0.9, CGHOST = '16,23,40';
 
 /* 色の割り当て：児童画面（index.html）と同じ手順。同じシードなら同じ色になる */
@@ -1282,14 +1283,19 @@ function coopUseSession(s, evAll){
   var running = s.status === 'run';
   document.getElementById('coopStop').disabled = !running;
   document.getElementById('coopReset').disabled = !CP.sess;
+  document.getElementById('coopSave').disabled = false;
   document.getElementById('coopGedit').style.display = CP.MODE === 'group' && s.id !== 'save' ? '' : 'none';
   ['coopCls', 'coopPat', 'coopMin', 'coopMode', 'coopGn'].forEach(function(id){
     document.getElementById(id).disabled = running;
   });
 }
-function coopMerge(r){                 // 進行中セッションの差分を受け取る
+function coopMerge(r, giVer){          // 進行中セッションの差分を受け取る
   CP.sess.end = r.end; CP.sess.status = r.status; CP.sess.total = r.total;
-  if(r.gi){ CP.sess.gi = r.gi; CP.gi = r.gi; coopRoster(); coopRepaint(); }
+  // 組はサーバーの値が変わったときだけ描き直す（毎回だと3秒ごとに全体を塗り直し、名札も作り直してタップを取りこぼす）。
+  // 教師が組を編集している間（送信中、または問い合わせを出した後に編集した）は、古い組で上書きしない
+  if(r.gi && !CP.giPend && giVer === CP.giVer && JSON.stringify(r.gi) !== JSON.stringify(CP.gi)){
+    CP.sess.gi = r.gi; CP.gi = r.gi.slice(); coopRoster(); coopRepaint();
+  }
   (r.ev || []).forEach(function(e){
     CP.ev.push(e);
     var c0 = coopApply(e); CP.evI++;
@@ -1297,6 +1303,7 @@ function coopMerge(r){                 // 進行中セッションの差分を�
   });
   CP.off = (r.now || Date.now()) - Date.now();
   if(r.status !== 'run' || r.ended){
+    CP.simT = coopDur();                 // 終わった：時計は 0:00、再生の位置は終わり（最後の形）
     document.getElementById('coopReplay').classList.add('on');
     document.getElementById('coopStop').disabled = true;
     if(r.ended && r.status === 'run') document.getElementById('coopClock').classList.add('end');
@@ -1313,15 +1320,17 @@ function coopPoll(){
   var pg = document.getElementById('pageCoop');
   if(pg && pg.style.display === 'none') return;  // 見ていないタブの分は取らない
   CP.polling = true;
+  var giVer = CP.giVer;
   google.script.run.withSuccessHandler(function(r){
     CP.polling = false;
-    if(!r || !r.ok) return;
+    if(!r || !r.ok || CP.loaded) return;   // 応答を待つ間に保存データの再生へ切り替えたら捨てる
     if(r.status === 'none'){ CP.sess = null; return; }
     if(!CP.sess || CP.sess.id !== r.id){
       // 別のセッション（または最初の読み込み）。since=0 で全件取り直す
       CP.polling = true;
       google.script.run.withSuccessHandler(function(r2){
         CP.polling = false;
+        if(CP.loaded) return;
         if(r2 && r2.ok && r2.status !== 'none'){
           coopUseSession(r2, r2.ev || []);
           CP.off = (r2.now || Date.now()) - Date.now();
@@ -1331,7 +1340,7 @@ function coopPoll(){
       }).withFailureHandler(function(){ CP.polling = false; }).coopState(0);
       return;
     }
-    coopMerge(r);
+    coopMerge(r, giVer);
   }).withFailureHandler(function(){ CP.polling = false; }).coopState(CP.sess ? CP.ev.length : 0);
 }
 
@@ -1394,7 +1403,12 @@ document.getElementById('coopStart').onclick = function(){
   }
   google.script.run.withSuccessHandler(function(r){
     btn.disabled = false;
-    if(!r || !r.ok){ setStat('coopStat', (r && r.msg) || '開始できませんでした', true); return; }
+    if(!r || !r.ok){
+      setStat('coopStat', (r && r.msg) || '開始できませんでした', true);
+      // 保存データの再生中に押した：進行中のセッションがあれば、ライブの表示に戻す（「おわる」を押せるように）
+      if(CP.loaded){ CP.loaded = false; CP.sess = null; coopPoll(); }
+      return;
+    }
     setStat('coopStat', ''); coopUseSession(r.session, []);
   }).withFailureHandler(function(e){
     btn.disabled = false; setStat('coopStat', '開始できませんでした: ' + e.message, true);
@@ -1447,7 +1461,13 @@ document.getElementById('coopRoster').onclick = function(e){
   var i = Number(b.dataset.i);
   if(CP.EDIT){
     CP.gi[i] = (grpOf(i) + 1) % CP.GN;
-    google.script.run.coopSetGroups(CP.gi);    // 直ぐに効く。失敗は次のポーリングで戻る
+    CP.giPend++; CP.giVer++;
+    var done = function(ok, msg){           // 失敗したら知らせる。組は次のポーリングでサーバーの値に戻る
+      CP.giPend--;
+      if(!ok) setStat('coopStat', msg || '組の変更を保存できませんでした。もう一度押してください。', true);
+    };
+    google.script.run.withSuccessHandler(function(r){ done(r && r.ok, r && r.msg); })
+      .withFailureHandler(function(){ done(false); }).coopSetGroups(CP.gi.slice());
     coopRoster(); coopRepaint(); return;
   }
   var k = keyOf(i); CP.sel = (CP.sel === k ? -1 : k);
@@ -1489,6 +1509,9 @@ document.getElementById('coopLoad').onclick = function(){
       names: p.names, nos: p.nos, gi: p.gi }, p.ev || []);
     CP.loaded = true;
     CP.simT = coopDur(); coopShowT();            // 最終形を出したまま、シークで巻き戻せる
+    // リセット・保存は進行中のセッションに効く操作なので、保存データを見ている間は押せなくする
+    document.getElementById('coopReset').disabled = true;
+    document.getElementById('coopSave').disabled = true;
   }).withFailureHandler(function(e){ setStat('coopStat', '読み込めませんでした: ' + e.message, true); })
   .coopLoad(id);
 };
