@@ -1075,8 +1075,23 @@ function getConfigForUI() {
            unit: { id: UNIT.id, title: UNIT.title,
            modes: UNIT.modes, types: UNIT.types,
            settings: UNIT.settings || [],
-           tips: UNIT.tips || '' } };
+           tips: UNIT.tips || '',
+           // 床のプレビュー（教師画面）に使う。児童の画面と同じ図形・同じ2色
+           floor: { pattern: UNIT.floorPattern || 'penrose', c1: gradeAccent_(), c2: floorColor_(), ref: FLOOR_REF_PER_MIN_ } } };
 }
+
+/**
+ * 教師画面の床のプレビューに、児童の画面（index.html）と同じ生成器を渡す。
+ * 生成器の写しは index.html の FLOOR_GEN_BEGIN〜FLOOR_GEN_END の間の1か所だけに置き、ここで切り出して埋め込む
+ * （teacher.html に2つ目の写しを置くと、片方だけ直して図形が食い違う。貼るファイルも増やさない）。
+ * 印が見つからなければ空を返し、教師画面はプレビューの欄に「読み込めません」と出す。
+ */
+function floorGenSource_(html) {
+  var a = html.indexOf('/* FLOOR_GEN_BEGIN */'), b = html.indexOf('/* FLOOR_GEN_END */');
+  if (a < 0 || b < a) return '';
+  return html.slice(a, b).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
+}
+function floorGenForTeacher_() { return floorGenSource_(include('index')); }
 
 function saveConfig(obj) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
