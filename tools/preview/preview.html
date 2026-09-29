@@ -186,6 +186,8 @@ async function main() {
   var accMatch = coreText.match(/var GRADE_ACCENT_ = \{[^}]*\};/), alertMatch = coreText.match(/var ALERT_COLOR_ = '[^']*';/);
   // 床の第二の色の一覧（正本は Core.gs の FLOOR_GEMS_）。単元の floorColor をここから引く
   var gemsMatch = coreText.match(/var FLOOR_GEMS_ = \{[^}]*\};/);
+  // 「？」の印の色（Core.gs の questionColor_ と、その元の GRADE_EXTRA_）。単元の gen が呼ぶ（円と球の図の「？」）
+  var extraMatch = coreText.match(/var GRADE_EXTRA_ = \{[^}]*\};/), qcMatch = coreText.match(/function questionColor_\(\) \{[\s\S]*?\n\}/);
   if (!riMatch || !pickMatch) { fail('common/Core.gs から ri_ / pick_ を抽出できませんでした（実装が変わった可能性があります）。'); return; }
 
   var previewItemRe = /function\s+previewItem\s*\(\)\s*\{[\s\S]*?\n\}/;
@@ -248,6 +250,8 @@ async function main() {
     (accMatch ? accMatch[0] : 'var GRADE_ACCENT_ = {};') + '\n' +
     (alertMatch ? alertMatch[0] : "var ALERT_COLOR_ = '';") + '\n' +
     (gemsMatch ? gemsMatch[0] : 'var FLOOR_GEMS_ = {};') + '\n' +
+    (extraMatch ? extraMatch[0] : 'var GRADE_EXTRA_ = {};') + '\n' +
+    (qcMatch ? qcMatch[0] : "function questionColor_(){ return '#FFFFFF'; }") + '\n' +
     pickMatch[0] + '\n' +
     unitText + '\n' +
     '<' + '/script>\n';

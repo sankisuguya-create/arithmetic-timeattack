@@ -42,6 +42,29 @@ var UNIT = {
   title: '円と球 タイムアタック！',
   teacherTitle: '円と球 設定・分析',
 
+  defaults: {
+    // 最初のメニューの背景に敷く「成長する図形」（docs/ARCHITECTURE.md「背景の床」）
+    floor_on: 1,
+    floor_per_answer: 0.75
+  },
+
+  /** 教師画面に出す単元固有の設定欄（Core も teacher.html もキーの意味を知らず、ここの宣言だけを見て欄を描く） */
+  settings: [
+    { key: 'floor_on', label: 'メニューの背景の図形', type: 'onoff',
+      note: '正答を重ねるほど育つ模様。表示しないと無地になる' },
+    { key: 'floor_per_answer', label: '1正答あたりの図形の育ち',
+      note: '1分に20問解ける速さの問題を1問正解したときに増えるタイルの枚数。解きにくい問題（1分で解ける数が少ない）ほど1問で多く育つ（速さはこのサイトの記録から自動で出す）。0.75 なら、1分20問の速さでおよそ3,700問で全部そろう',
+      min: 0.05, max: 10, step: 0.05 }
+  ],
+
+  /**
+   * 床の図形と第二の色。このサイトは「円と球」：起点が2つで、左下（縦長の画面では上）から円の模様（鱗のピルの渦）、
+   * 反対側の隅寄りから球の模様（フィボナッチ球）が、どのモードの正答でも同じ割合ずつ交互に育つ。
+   * 球は床の上に乗っている見え方。台帳は design リポジトリの growing-figures/COLORS.md
+   */
+  floorPattern: 'circlesphere',
+  floorColor: 'amethyst',
+
   units: { cm: '' },
 
   modes: [

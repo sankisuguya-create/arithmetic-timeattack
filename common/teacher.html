@@ -269,9 +269,11 @@ function floorPreviewInit(f){
     p.forEach(function(q){ cx += q[0]; cy += q[1]; x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); });
     if(x1 <= 0 || x0 >= W || y1 <= 0 || y0 >= H) return;
     cx /= p.length; cy /= p.length;
-    tiles.push({ p: p, h: t.h, thick: t.cls === 1, rgb: (t.cls === 1 ? f1 : f2)[t.dir], d: Math.hypot(cx - ox, cy - oy) });
+    tiles.push({ p: p, h: t.h, thick: t.cls === 1, rgb: (t.cls === 1 ? f1 : f2)[t.dir], d: Math.hypot(cx - ox, cy - oy), o: t.o });
   });
-  tiles.sort(function(a, b){ return a.d - b.d; });
+  // 児童の画面と同じ育つ順（o があればその順。起点が複数の図形）
+  var byO = tiles.length > 0 && tiles[0].o != null;
+  tiles.sort(byO ? function(a, b){ return a.o - b.o; } : function(a, b){ return a.d - b.d; });
   FP.tiles = tiles; FP.thick = tiles.filter(function(t){ return t.thick; }); FP.thin = tiles.filter(function(t){ return !t.thick; });
   FP.ref = Number(f.ref) || 20; FP.on = true;
   var inp = document.getElementById('floor_per_answer');
