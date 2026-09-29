@@ -643,24 +643,37 @@ function coopMyColor_(){
     : coopPalette_(COOP.n || 1, COOP.seed)[COOP.i || 0];
 }
 /* 協力モードの見張り：開いたままの画面にも、教師が始めたらすぐ印を出す。
-   coopPeek は軽い問い合わせ（自分の色に必要な分だけ）なので、見えている間は
-   この間隔で聞き続けてよい。ふたを閉じた端末は聞かず、時刻は端末ごとに散らす */
-var COOP_WATCH_EVERY = 10000;
-var coopWatchTimer = 0;
+   ただし恒常的な重さにしない：児童が画面を触っている間だけこの間隔で聞き、
+   無操作が続く端末・閉じた端末は聞かない。触れた瞬間に1回聞いて見張りを再開する。
+   coopPeek は軽い問い合わせ（自分の色に必要な分だけ。キャッシュ読み2つ程度） */
+var COOP_WATCH_EVERY = 10000;      // 触っている間の間隔(ms)。ばらつきを足して散らす
+var COOP_WATCH_IDLE_MS = 300000;   // この時間操作がなければ見張りを止める（5分）
+var COOP_WATCH_PING_MS = 9000;     // 操作ごとの即時確認はこの間隔以内に絞る（連打で重ねない）
+var coopWatchTimer = 0, coopIdleUntil = 0, coopLastPeek = -99999;
 function coopWatchNext(ms){
   if(coopWatchTimer) clearTimeout(coopWatchTimer);
   coopWatchTimer = setTimeout(coopWatchRun, ms + Math.floor(Math.random() * 5000));
 }
+/* 児童の操作・画面への復帰を合図にする。止まっていれば今すぐ見に行き、触っている間だけ続く */
+function coopPing(){
+  var now = Date.now();
+  coopIdleUntil = now + COOP_WATCH_IDLE_MS;
+  if(now - coopLastPeek < COOP_WATCH_PING_MS || coopWatchTimer) return;
+  coopWatchRun();
+}
 function coopWatchRun(){
   coopWatchTimer = 0;
-  if(!SRV) return;
-  if(document.hidden){ coopWatchNext(COOP_WATCH_EVERY); return; }
+  // 置いてあるだけ・閉じた端末は聞かない（次の操作や画面への復帰で再開する）
+  if(!SRV || document.hidden || Date.now() > coopIdleUntil) return;
+  coopLastPeek = Date.now();
   google.script.run.withSuccessHandler(function(r){
     if(r) coopPeekApply_(r);
     coopWatchNext(COOP_WATCH_EVERY);
   }).withFailureHandler(function(){ coopWatchNext(COOP_WATCH_EVERY); })
     .coopPeek(CFG.limitSec || 60);
 }
+document.addEventListener('pointerdown', coopPing, true);
+document.addEventListener('keydown', coopPing, true);
 /* 印に関係する分が変わった時だけ描き直す（変わらない再描画でチラつかない） */
 function coopPeekApply_(r){
   var c = r || {};
@@ -3219,7 +3232,7 @@ function watchRun(){
    打ち切っていても、戻ってきた操作を「まだ待つ」の合図として数え直す */
 document.addEventListener('visibilitychange', function(){
   if(document.hidden || !SRV) return;
-  coopWatchNext(600);                // 戻ってきたら協力の状態もすぐ見直す
+  coopPing();                        // 戻ってきたら協力の状態もすぐ見直す
   if(!BOOTED){                       // 起動そのものが通っていない。数え直して取り直す
     if(bootTry > 0){ bootTry = 0; bootFetch(); }
     return;
@@ -3292,7 +3305,9 @@ if(SRV){
   }
 
   bootFetch();
-  coopWatchNext(4000);               // 協力の見張り（boot を待たず始める。失敗は静かに次へ）
+  // 協力の見張り。開いた直後は触っているとして生きさせ、あとは操作がある間だけ続く
+  coopIdleUntil = Date.now() + COOP_WATCH_IDLE_MS;
+  coopWatchNext(8000);               // boot の集中を避けて遅らせる（boot 自体が coop を運ぶ）
 }else{
   BEST={1:18,2:12,3:9,4:0}; MEDAL={1:'🥈',2:'',3:'',4:''};
   STARS={1:7,2:3,3:1,4:0}; PBEST={1:15,2:0,3:0,4:0};
