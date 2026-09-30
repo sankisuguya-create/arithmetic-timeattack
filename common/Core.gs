@@ -1080,6 +1080,7 @@ function where_() {
 
 function getConfigForUI() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
+  writeMeta_();   // ハブの横断分析が読む。中身が同じなら書かない
   return { config: config_(), where: where_(), ver: ENGINE_VER,
            warnings: unitCheck_(),
            unit: { id: UNIT.id, title: UNIT.title,
@@ -2805,11 +2806,47 @@ function ensureTriggers_() {
   }
 }
 
+/**
+ * 単元の自己紹介を meta シートに書く。ハブの横断分析（apps/hub/Analysis.gs）がこれを読む。
+ * ハブは別プロジェクトなので UNIT.types を直接は読めない。型の定義の正本は Unit.gs のままにし、
+ * ハブへはデータとして渡す（依存の向きを保つ。docs/ANALYSIS_REQUIREMENTS.md「データの取り方」）。
+ *
+ * 書くのは setup と教師画面を開いたときだけ。児童の起動では書かない（「開いただけの実行で書き込まない」）。
+ * 中身が同じなら書かない。
+ */
+var META_SHEET = 'meta';
+function writeMeta_() {
+  var rows = [
+    ['unit_id', String(UNIT.id)],
+    ['grade', Number(UNIT.grade) || 0],
+    ['title', String(UNIT.teacherTitle || UNIT.title || UNIT.id)],
+    ['engine_ver', ENGINE_VER],
+    ['types', JSON.stringify(UNIT.types || {})],
+    ['modes', JSON.stringify((UNIT.modes || []).map(function (m) { return { id: m.id, name: m.name }; }))]
+  ];
+  try {
+    var ss = ss_(), sh = ss.getSheetByName(META_SHEET);
+    if (sh && sh.getLastRow() === rows.length) {
+      var cur = sh.getRange(1, 1, rows.length, 2).getValues();
+      var same = cur.every(function (r, i) { return String(r[0]) === String(rows[i][0]) && String(r[1]) === String(rows[i][1]); });
+      if (same) return false;
+    }
+    if (!sh) sh = ss.insertSheet(META_SHEET);
+    sh.clear();
+    sh.getRange(1, 1, rows.length, 2).setValues(rows);
+    return true;
+  } catch (e) {
+    console.error('writeMeta_ 失敗: ' + e.message);
+    return false;
+  }
+}
+
 /** 承認のために最初に1度だけ実行する */
 function setup() {
   PropertiesService.getScriptProperties().deleteProperty(READY_KEY);
   cache_().remove('ready');
   cache_().remove('unitcheck');
   ensureReady_();
+  writeMeta_();
   return 'セットアップ完了（シート・トリガーを確認しました）\n' + checkUnit();
 }

@@ -31,7 +31,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 
 | アプリ | 内容 | 対象 |
 |---|---|---|
-| `apps/hub` | 各アプリへの入口。学年で出し分ける | 全学年 |
+| `apps/hub` | 各アプリへの入口。学年で出し分ける。教師の一部だけが使う単元横断のぶんせき（`?page=analysis`） | 全学年 |
 | `apps/grade3/kuku` | 九九・わり算（9×9 / 9×16） | 3年 |
 | `apps/grade3/length` | km と m の換算・加減計算、まきじゃくの読み取り | 3年 |
 | `apps/grade3/weight` | g と kg の換算・加減計算、はかりの読み取り | 3年 |
@@ -61,11 +61,12 @@ apps/
     bai/Unit.gs      何倍でしょうの出題定義（詳細: apps/grade3/bai/README.md）
   grade5/
     volume/Unit.gs   体積の出題定義（詳細: apps/grade5/volume/README.md）
-  hub/           ハブ（Code.gs / links.html / teacher.html）
+  hub/           ハブ（Code.gs / links.html / teacher.html / Analysis.gs / analysis.html）
 docs/
   ARCHITECTURE.md  設計の考え方
   SETUP.md         設置手順
   ADD_UNIT.md      新しい単元の作り方
+  ANALYSIS_REQUIREMENTS.md  横断分析の要件定義（未実装）
 tools/
   preview/       スプレッドシート無しで Unit.gs をブラウザ確認する開発ツール（tools/preview/README.md）
 ```

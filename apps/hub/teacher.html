@@ -285,6 +285,8 @@ function render(){
           '<input type="text" data-f="subtitle" data-i="'+i+'" value="'+esc(l.subtitle)+'"></div>'+
         '<div class="full"><label>URL（末尾が /exec）</label>'+
           '<input type="text" data-f="url" data-i="'+i+'" value="'+esc(l.url)+'"></div>'+
+        '<div class="full"><label>記録シート（その単元のスプレッドシートのURL。単元横断のぶんせきが読む。空でもよい）</label>'+
+          '<input type="text" data-f="sheet" data-i="'+i+'" value="'+esc(l.sheet)+'"></div>'+
       '</div>'+
       '<div class="mini">'+
         '<label style="margin-right:.2rem">出る学年タブ</label>'+
@@ -429,7 +431,7 @@ document.addEventListener('click', function(e){
 });
 
 $('add').onclick = function(){
-  LINKS.push({ id:'', title:'', subtitle:'', url:'', grades:'', color:'mint', visible:true });
+  LINKS.push({ id:'', title:'', subtitle:'', url:'', grades:'', color:'mint', visible:true, sheet:'' });
   render();
   window.scrollTo(0, document.body.scrollHeight);
 };
@@ -456,11 +458,12 @@ $('saveCfg').onclick = function(){
 
 /* いま設定している写しと、そこからの行き先。
    写しが2つあると画面が同じで見分けられないので、名前とIDも出す */
-function showWhere(w){
+function showWhere(w, analysisUrl){
   w = w || {};
   $('golinks').innerHTML =
     (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシートを開く</a>' : '') +
-    (w.url      ? '<a href="' + esc(w.url) + '">児童の画面を見る</a>' : '');
+    (w.url      ? '<a href="' + esc(w.url) + '">児童の画面を見る</a>' : '') +
+    (analysisUrl ? '<a href="' + esc(analysisUrl) + '">ぶんせき（単元横断）</a>' : '');
   if(!w.file) return;
   $('sub').innerHTML = 'このページが設定しているのは <b>' + esc(w.file) + '</b>' +
     (w.id ? '<br>スプレッドシート ID: <code>' + esc(w.id) + '</code>' : '') +
@@ -471,7 +474,7 @@ google.script.run.withSuccessHandler(function(r){
   COLORS = r.colors; LINKS = r.links; CFG = r.config || {};
   $('title').value = r.config.title || '';
   $('teachers').value = r.config.teachers || '';
-  showWhere(r.where);
+  showWhere(r.where, r.analysisUrl);
   render();
   renderTabs();
 }).withFailureHandler(function(e){
