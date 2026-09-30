@@ -353,12 +353,19 @@ function fpFam(hex){
     return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
   });
 }
+/* 図形の読み込み失敗。埋め込み側の catch が拾った本当のエラー（window.FLOOR_GEN_ERR）があればそれを出す */
+function floorGenErr_(){
+  var e = window.FLOOR_GEN_ERR;
+  if(e) return '図形を読み込めません（' + (e.message || e) + '）';
+  return '図形を読み込めません（index.html と Core.gs を同じ版に貼り直してください）';
+}
+
 function floorPreviewInit(f){
   var box = document.getElementById('floorBox');
   if(!f || !document.getElementById('floor_per_answer')) return;      // 床を宣言していない単元には出さない
   box.style.display = '';
   var GF = window.GrowingFigures;
-  if(!GF || !GF.GENERATORS){ setStat('fpStat', '図形を読み込めません（index.html と Core.gs を同じ版に貼り直してください）', true); return; }
+  if(!GF || !GF.GENERATORS){ setStat('fpStat', floorGenErr_(), true); return; }
   var gen = GF.GENERATORS[f.pattern] || GF.GENERATORS.penrose, W = FP.W, H = FP.H;
   var edge = Math.max(15, Math.min(28, Math.sqrt(W * H) / 40)), ox = W * 0.14, oy = H * 0.78;
   var raw = gen.make({ W: W, H: H, ox: ox, oy: oy, edge: edge, margin: edge * 2 });
@@ -1428,7 +1435,7 @@ setInterval(function(){ if(!document.getElementById('pageCoop') ||
 /* ---- 単元・クラスが読めた時点の初期化（getConfigForUI / listClasses の成功後に呼ばれる） ---- */
 function coopInitUnit(u){
   var GF = window.GrowingFigures, sel = document.getElementById('coopPat');
-  if(!GF || !GF.GENERATORS){ setStat('coopStat', '図形を読み込めません（index.html と Core.gs を同じ版に貼り直してください）', true); return; }
+  if(!GF || !GF.GENERATORS){ setStat('coopStat', floorGenErr_(), true); return; }
   var pats = (u && u.coopPatterns) || Object.keys(GF.GENERATORS);
   sel.innerHTML = pats.map(function(k){
     var g = GF.GENERATORS[k]; if(!g) return '';

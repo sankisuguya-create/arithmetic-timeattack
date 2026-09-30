@@ -1103,7 +1103,17 @@ function floorGenSource_(html) {
   if (a < 0 || b < a) return '';
   return html.slice(a, b).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
 }
-function floorGenForTeacher_() { return floorGenSource_(include('index')); }
+function floorGenForTeacher_() {
+  // 失敗しても evaluate() ごと倒さず、埋め込み側の try/catch（teacher.html）が拾える断片を返す。
+  // ここで握りつぶすと原因が分からず「読み込めません」だけが残る。
+  try {
+    var src = floorGenSource_(include('index'));
+    if (!src) return "throw new Error('index.html 内に /* FLOOR_GEN_BEGIN */ ～ /* FLOOR_GEN_END */ の印が見つかりません（index ファイルの中身を確認）')";
+    return src;
+  } catch (e) {
+    return "throw new Error('index ファイルを読めません（" + String(e.message || e).replace(/'/g, '') + "）')";
+  }
+}
 
 function saveConfig(obj) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
