@@ -306,10 +306,30 @@ assert.equal(rowsD(), 0);
 ctx.coopNote_(c1, 1, 1);
 assert.equal(rowsD(), 40);
 
+/* ---- 開始のカウントダウン：始まりをサーバーが5秒後に置く（教師画面はこの start に合わせて 5→1→スタート を出す） ---- */
+const t0 = Date.now();
+const stE = ctx.coopReset({ countdown: true });
+assert.ok(stE.ok && typeof stE.now === 'number', JSON.stringify(stE));    // 画面が時計のずれを差し引けるように now を返す
+const sE = stE.session;
+assert.ok(sE.start - t0 >= 5000 && sE.start - t0 < 6000, String(sE.start - t0));
+assert.equal(sE.end - sE.start, 600000);                               // 制限時間はスタートから数える
+assert.ok(sheets.coop.values.find(r => r[0] === sE.id)[9].getTime() === sE.start);
+assert.ok(JSON.parse(store.coop_prev).end < sE.start);                  // 前の協力はリセットを押した時点で終わる
+ctx.coopNote_(c1, 1, 7, { t: Date.now() - 58000, lim: 60 });            // カウントダウン中に遊び終えた回：新しい方には数えない
+assert.equal(ctx.coopState(0).total, 0);
+assert.equal(ctx.coopForChild_(c1, 60).counts, true);                   // カウントダウン中に始めた本番は数える
+const t1 = Date.now(), stF = ctx.coopReset();                           // countdown なし（古い画面から）は今すぐ始まる
+assert.ok(stF.session.start - t1 < 1000);
+
 /* ---- 画面側：数えない回・締め切り後・列の縮みを、エラーに見せない ---- */
 assert.ok(/var off = COOP\.counts === false;/.test(ui));                 // 児童：残り1分からの本番は「数えません」
 const tui = read('common/teacher.html');
 assert.ok(/function coopGuideText\(\)/.test(tui));                    // 教師：理由の案内
+// 開始ボタンは図形の画面（ステージ）の中の1つだけ。開始・リセットはどちらも数えてから始める。全画面はブラウザごと
+assert.equal(tui.split('id="coopStart"').length - 1, 1);
+assert.ok(tui.indexOf('id="coopStart"') > tui.indexOf('<div id="coopStage"'));
+assert.ok(tui.includes('run.coopReset({ countdown: true })') && tui.includes("var opts = { countdown: true };"));
+assert.ok(/requestFullscreen/.test(tui) && /fullscreenchange/.test(tui));
 assert.ok(/&& !CP\.endSeen\)\{/.test(tui));                           // 終わりの位置送りは最初の1回だけ（シークが飛ばない）
 assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));   // 列が縮んだら取り直す
 

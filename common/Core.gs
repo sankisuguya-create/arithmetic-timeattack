@@ -1244,6 +1244,7 @@ function listClassesCore_(over) {
 var COOP_DEF_MIN = 10;
 var COOP_GN_MAX = 10;
 var COOP_SLACK_MS = 10000;    // 遊び終えた時刻の余裕（開始前のカウントダウン3秒と通信の遅れ）
+var COOP_COUNTDOWN_MS = 5000;  // 教師画面の「開始」から協力が始まるまで（モニターで 5→1→スタート を数える間）
 var COOP_LATE_MS = 600000;    // 送り直しを数える上限：協力の終了から10分（混雑で弾かれた回は次の起動で送り直される）
 var COOP_FLUSH_AT = 40;       // シートへ書いていない分がこの件数を超えたら、提出の側でもまとめ書きする（教師画面が閉じている間の備え）
 
@@ -1483,14 +1484,17 @@ function coopStart_(o) {
   });
   var id = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
   var now = Date.now();
+  // countdown 付きの開始は、始まりを今から COOP_COUNTDOWN_MS 後に置く。教師画面はこの start に合わせて数える。
+  // 始まりをサーバーが先に決めるので、混雑で開始に失敗しても「スタート」を出す前に分かる
+  var start = now + (o && o.countdown ? COOP_COUNTDOWN_MS : 0);
   var s = { id: id, cls: cls, pat: pat, seed: seed, mode: mode, gn: gn, minutes: minutes,
-            start: now, end: now + minutes * 60000, status: 'run', total: 0,
+            start: start, end: start + minutes * 60000, status: 'run', total: 0,
             kids: kidsMap, order: order,
             names: kids.map(function (k) { return k.name; }),
             nos: kids.map(function (k) { return k.no; }),
             gi: gi, skip: coopSkip_(cls) };
   sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
-    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(now), new Date(s.end), 'run', 0]);
+    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0]);
   cache_().put('coop_ev_' + id, '[]', TTL.session);
   cache_().put('coop_fl_' + id, '0', TTL.session);
   if (prev) {
@@ -1502,7 +1506,7 @@ function coopStart_(o) {
     cache_().put('coop_prev', JSON.stringify(prev), TTL.session);
   }
   coopPutLive_(s);
-  return { ok: true, session: coopPub_(s, 0) };
+  return { ok: true, session: coopPub_(s, 0), now: Date.now() };   // now：教師画面がカウントダウンを時計のずれ込みで数える
 }
 
 /** 進行中のセッションの様子。since 以降のイベントだけ返す（差分ポーリング用） */
@@ -1550,10 +1554,10 @@ function coopStop() {
   });
 }
 
-/** 図形を消して同じ設定で始め直す（新しいセッション。前の分は履歴に残る） */
-function coopReset() {
+/** 図形を消して同じ設定で始め直す（新しいセッション。前の分は履歴に残る）。o.countdown で開始と同じく数えてから始める */
+function coopReset(o) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return coopStart({ reset: true });
+  return coopStart({ reset: true, countdown: !!(o && o.countdown) });
 }
 
 /** 組の編成を一括で書き換える。gi = 児童indexごとの組番号（0〜gn-1） */
