@@ -76,6 +76,11 @@ assert.ok(src.length > 1000, '印（FLOOR_GEN_BEGIN / FLOOR_GEN_END）の間が�
 const win = {}; vm.runInNewContext(src, { window: win });
 assert.deepEqual(Object.keys(win.GrowingFigures.GENERATORS).sort(), [...ctx.FLOOR_PATTERNS_].sort());
 assert.equal(ctx.floorGenSource_('印の無い html'), '');
+// 印の字面は index.html に1回ずつだけ（コメントに同じ字面があると、生のファイルを読んだときにコメントの中から切り出す）
+for (const m of ["'FLOOR_GEN_BEGIN';", "'FLOOR_GEN_END';"]) assert.equal(ui.split(m).length - 1, 1, m + ' が複数ある');
+// コメントが消えない経路（生のファイル）でも同じ生成器を切り出せる
+const winRaw = {}; vm.runInNewContext(ctx.floorGenSource_(ui), { window: winRaw });
+assert.deepEqual(Object.keys(winRaw.GrowingFigures.GENERATORS).sort(), [...ctx.FLOOR_PATTERNS_].sort());
 const th = fs.readFileSync(path.join(__dirname, '..', 'common', 'teacher.html'), 'utf8');
 assert.ok(th.includes('<?!= floorGenForTeacher_() ?>') && th.includes('floorPreviewInit(u.floor)'));
 assert.ok(/floor: \{ pattern: UNIT\.floorPattern/.test(fs.readFileSync(path.join(__dirname, '..', 'common', 'Core.gs'), 'utf8')));
