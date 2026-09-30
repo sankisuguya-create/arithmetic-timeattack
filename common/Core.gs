@@ -1099,16 +1099,32 @@ function getConfigForUI() {
  * 印が見つからなければ空を返し、教師画面はプレビューの欄に「読み込めません」と出す。
  */
 function floorGenSource_(html) {
-  var a = html.indexOf('/* FLOOR_GEN_BEGIN */'), b = html.indexOf('/* FLOOR_GEN_END */');
-  if (a < 0 || b < a) return '';
-  return html.slice(a, b).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
+  // \s は全角・NBSP など見えない空白も含めて許す（貼り付け経路で空白が変わっても切り出せるように）
+  var m = html.match(/\/\*\s*FLOOR_GEN_BEGIN\s*\*\//), e = html.match(/\/\*\s*FLOOR_GEN_END\s*\*\//);
+  if (!m || !e || e.index <= m.index) return '';
+  return html.slice(m.index, e.index).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
 }
 function floorGenForTeacher_() {
   // 失敗しても evaluate() ごと倒さず、埋め込み側の try/catch（teacher.html）が拾える断片を返す。
   // ここで握りつぶすと原因が分からず「読み込めません」だけが残る。
   try {
-    var src = floorGenSource_(include('index'));
-    if (!src) return "throw new Error('index.html 内に /* FLOOR_GEN_BEGIN */ ～ /* FLOOR_GEN_END */ の印が見つかりません（index ファイルの中身を確認）')";
+    var html = include('index');
+    var src = floorGenSource_(html);
+    if (!src) {
+      // 見つからなければ、サーバーが読んだ中身を「不可視文字も見える形」で返す。
+      // エディタでは同じに見える混入文字（NBSP・全角）や順序逆転・別ファイルがここで判別できる
+      var esc = function (s) {
+        return s.replace(/[^\x20-\x7E]/g, function (c) {
+          return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
+        });
+      };
+      var detail = 'len=' + html.length;
+      var i = html.indexOf('FLOOR_GEN_BEGIN'), j = html.indexOf('FLOOR_GEN_END');
+      detail += ' begin=' + i + ' end=' + j;
+      if (i >= 0) detail += ' 前後=' + esc(html.slice(Math.max(0, i - 15), i + 40));
+      if (j >= 0) detail += ' END前後=' + esc(html.slice(Math.max(0, j - 15), j + 40));
+      return "throw new Error(" + JSON.stringify('図形の切り出し失敗 ' + detail) + ")";
+    }
     return src;
   } catch (e) {
     return "throw new Error('index ファイルを読めません（" + String(e.message || e).replace(/'/g, '') + "）')";
