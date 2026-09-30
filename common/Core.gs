@@ -1244,6 +1244,7 @@ function listClassesCore_(over) {
 var COOP_DEF_MIN = 10;
 var COOP_GN_MAX = 10;
 var COOP_SLACK_MS = 10000;    // 遊び終えた時刻の余裕（開始前のカウントダウン3秒と通信の遅れ）
+var COOP_COUNTDOWN_MS = 5000;  // 教師画面の「開始」から協力が始まるまで（モニターで 5→1→スタート を数える間）
 var COOP_LATE_MS = 600000;    // 送り直しを数える上限：協力の終了から10分（混雑で弾かれた回は次の起動で送り直される）
 var COOP_FLUSH_AT = 40;       // シートへ書いていない分がこの件数を超えたら、提出の側でもまとめ書きする（教師画面が閉じている間の備え）
 
@@ -1347,6 +1348,7 @@ function coopPub_(s, since) {
            names: s.names, nos: s.nos, gi: s.gi,
            // 画面の案内に使う：1回の制限秒（残りがこれを切ると、これから始める回は数えない）・送り直しの締め切り・氏名のない児童の数
            lim: Number(config_().limit_sec) || 60, slack: COOP_SLACK_MS, lateUntil: s.end + COOP_LATE_MS, skip: s.skip || 0,
+           pace: s.pace || FLOOR_PRIOR_.perMin, minutes: s.minutes,   // minutes：「おわる」で早く閉じても枚数の計算は予定の時間で
            evN: n, ev: ev.slice(Math.max(0, Number(since) || 0)) };
 }
 
@@ -1457,9 +1459,29 @@ function coopRowWrite_(id, patch) {
  */
 function coopStart(o) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return coopLocked_(function () { return coopStart_(o); });
+  // 解く速さは summary を読むので、ロック（児童の提出と共有）の外で先に出しておく
+  var pace = coopPace_();
+  return coopLocked_(function () { return coopStart_(o, pace); });
 }
-function coopStart_(o) {
+
+/**
+ * 協力の「1正答の枚数」の自動計算に使う、このサイトの本番の1分あたりの平均正答（全モード・全児童をまとめて）。
+ * 協力は生の正答数で育つので、モードごとではなくサイト全体の速さを1つだけ渡す。
+ * 記録の少ない年度初めに暴れないよう、床と同じ下駄（1分20問を10分ぶん。単元の floorPrior があればその平均）をはかせる。
+ * 読めなければ下駄の値を返す（開始は止めない）。
+ */
+function coopPace_() {
+  var pr = UNIT.floorPrior || {}, ms = modeIds_(), priorPerMin = 0;
+  ms.forEach(function (m) { priorPerMin += Number(pr[m]) || FLOOR_PRIOR_.perMin; });
+  priorPerMin = ms.length ? priorPerMin / ms.length : FLOOR_PRIOR_.perMin;
+  var tc = priorPerMin * FLOOR_PRIOR_.min, min = FLOOR_PRIOR_.min;
+  try {
+    var st = summaryIndex_(Number(config_().limit_sec) || 60)['*'];
+    if (st) ms.forEach(function (m) { tc += Number(st.tc[m]) || 0; min += (Number(st.sec[m]) || 0) / 60; });
+  } catch (e) { /* 下駄の値で続ける */ }
+  return Math.max(1, Math.round(tc / min * 10) / 10);
+}
+function coopStart_(o, pace) {
   var prev = coopLive_();
   if (prev && prev.status === 'run' && !(o && o.reset)) {
     return { ok: false, msg: '進行中の協力プレイがあります。「おわる」を押してから始めてください。' };
@@ -1483,14 +1505,18 @@ function coopStart_(o) {
   });
   var id = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
   var now = Date.now();
+  // countdown 付きの開始は、始まりを今から COOP_COUNTDOWN_MS 後に置く。教師画面はこの start に合わせて数える。
+  // 始まりをサーバーが先に決めるので、混雑で開始に失敗しても「スタート」を出す前に分かる
+  var start = now + (o && o.countdown ? COOP_COUNTDOWN_MS : 0);
   var s = { id: id, cls: cls, pat: pat, seed: seed, mode: mode, gn: gn, minutes: minutes,
-            start: now, end: now + minutes * 60000, status: 'run', total: 0,
+            start: start, end: start + minutes * 60000, status: 'run', total: 0,
             kids: kidsMap, order: order,
             names: kids.map(function (k) { return k.name; }),
             nos: kids.map(function (k) { return k.no; }),
-            gi: gi, skip: coopSkip_(cls) };
+            gi: gi, skip: coopSkip_(cls),
+            pace: Number(pace) || old.pace || FLOOR_PRIOR_.perMin };   // 画面が「1正答の枚数」を自動で決めるのに使う
   sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
-    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(now), new Date(s.end), 'run', 0]);
+    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0]);
   cache_().put('coop_ev_' + id, '[]', TTL.session);
   cache_().put('coop_fl_' + id, '0', TTL.session);
   if (prev) {
@@ -1502,7 +1528,7 @@ function coopStart_(o) {
     cache_().put('coop_prev', JSON.stringify(prev), TTL.session);
   }
   coopPutLive_(s);
-  return { ok: true, session: coopPub_(s, 0) };
+  return { ok: true, session: coopPub_(s, 0), now: Date.now() };   // now：教師画面がカウントダウンを時計のずれ込みで数える
 }
 
 /** 進行中のセッションの様子。since 以降のイベントだけ返す（差分ポーリング用） */
@@ -1550,10 +1576,10 @@ function coopStop() {
   });
 }
 
-/** 図形を消して同じ設定で始め直す（新しいセッション。前の分は履歴に残る） */
-function coopReset() {
+/** 図形を消して同じ設定で始め直す（新しいセッション。前の分は履歴に残る）。o.countdown で開始と同じく数えてから始める */
+function coopReset(o) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return coopStart({ reset: true });
+  return coopStart({ reset: true, countdown: !!(o && o.countdown) });
 }
 
 /** 組の編成を一括で書き換える。gi = 児童indexごとの組番号（0〜gn-1） */
@@ -1578,8 +1604,10 @@ function coopSave(name) {
   var s = coopLive_();
   if (!s) return { ok: false, msg: '保存する協力プレイがありません。' };
   coopFlush_(s, false);
+  // pace・lim・skip は再生で「1正答の枚数」を開始時と同じに自動計算するため（無い古い保存は既定値で計算する）
   var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn,
                   start: s.start, end: s.end, total: s.total,
+                  pace: s.pace || FLOOR_PRIOR_.perMin, minutes: s.minutes, lim: Number(config_().limit_sec) || 60, skip: s.skip || 0,
                   names: s.names, nos: s.nos, gi: s.gi, ev: coopEvents_(s) };
   var sid = 's' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
   var nm = String(name || '').trim() ||
