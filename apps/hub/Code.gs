@@ -206,7 +206,7 @@ function doGet(e) {
       return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">この画面を開く権限がありません。</p>');
     }
     return HtmlService.createHtmlOutputFromFile('teacher')
-      .setTitle('リンク集 設定')
+      .setTitle('ハブ設定')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
   if (page === 'analysis') {
@@ -216,7 +216,7 @@ function doGet(e) {
       return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">この画面を開く権限がありません。</p>');
     }
     return HtmlService.createHtmlOutputFromFile('analysis')
-      .setTitle('ぶんせき（単元横断）')
+      .setTitle('単元横断分析')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
   return HtmlService.createHtmlOutputFromFile('links')

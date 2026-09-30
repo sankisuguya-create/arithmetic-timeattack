@@ -4,189 +4,183 @@
 <base target="_top">
 <meta charset="utf-8">
 <style>
-:root{--paper:#F7F7F4;--ink:#101728;--mint:#12C48B;--mute:#9AA0B0;--line:#DFDFD8}
+:root{--paper:#F7F7F4;--ink:#101728;--mint:#12C48B;--mute:#6B7280;--line:#DFDFD8;--sel:#EEF0F3}
 *{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
 body{background:var(--paper);color:var(--ink);
-  font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans",sans-serif;
-  padding:2rem 1.3rem 4rem;line-height:1.6}
-.wrap{max-width:860px;margin:0 auto}
-h1{font-size:1.35rem;font-weight:800;margin-bottom:.2rem}
-.sub{font-size:.82rem;color:var(--mute);margin-bottom:1rem;line-height:1.9;word-break:break-all}
-.sub b{color:var(--ink)}
-/* 行き先。設定を直したあと、シートと児童画面の両方を見に行くことになる */
-.golinks{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0 1rem}
-.golinks a{font-size:.84rem;font-weight:700;text-decoration:none;color:var(--ink);
-  border:1.5px solid var(--line);border-radius:9px;padding:.45rem .9rem;background:#fff}
-.golinks a:hover{border-color:var(--ink)}
+  font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans",sans-serif;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding:1rem 1rem 1.2rem;height:100%;display:flex;flex-direction:column}
 
-/* ページ内タブ。管理項目が増えても見通しが悪くならないように */
-.maintabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1.1rem}
-.maintabs button{font:inherit;font-weight:800;font-size:.95rem;padding:.55rem 1.1rem;
+/* 見出し行：名前・行き先・タブを1段にまとめ、本文に高さを残す */
+.head{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
+h1{font-size:1.15rem;font-weight:800}
+.where{font-size:.76rem;color:var(--mute);word-break:break-all}
+.golinks{display:flex;gap:.45rem;flex-wrap:wrap;margin-left:auto}
+.golinks a{font-size:.8rem;font-weight:700;text-decoration:none;color:var(--ink);
+  border:1.5px solid var(--line);border-radius:8px;padding:.3rem .7rem;background:#fff}
+.golinks a:hover{border-color:var(--ink)}
+.maintabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:.7rem 0 .8rem}
+.maintabs button{font:inherit;font-weight:800;font-size:.9rem;padding:.4rem 1rem;
   border-radius:999px;cursor:pointer;border:2px solid var(--ink);background:transparent;color:var(--ink)}
 .maintabs button.on{background:var(--ink);color:#fff}
-.tabpage{display:none}
-.tabpage.on{display:block}
+.tabpage{display:none;flex:1;min-height:0}
+.tabpage.on{display:flex;flex-direction:column}
 
-.box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.3rem;margin-bottom:1.1rem}
-h2{font-size:.72rem;letter-spacing:.18em;color:var(--mute);font-weight:700;margin-bottom:1rem}
-label{font-size:.82rem;font-weight:700;color:var(--mute);display:block;margin-bottom:.25rem}
-input[type=text]{width:100%;padding:.5rem .7rem;border:1.5px solid var(--line);
-  border-radius:8px;font:inherit;background:var(--paper)}
+/* 2列：左で選び、右で編集する。各列は画面の高さに収め、はみ出す分だけ列の中で送る */
+.split{display:grid;grid-template-columns:minmax(300px,1fr) minmax(340px,1.25fr);gap:.9rem;flex:1;min-height:0}
+.split > .box{min-height:0;display:flex;flex-direction:column}
+.scroll{overflow:auto;min-height:0;flex:1}
+@media (max-width:860px){ .split{grid-template-columns:1fr} .wrap{height:auto} .tabpage.on{display:block} }
+
+.box{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:1rem}
+h2{font-size:.72rem;letter-spacing:.14em;color:var(--mute);font-weight:700;margin-bottom:.6rem}
+label{font-size:.78rem;font-weight:700;color:var(--mute);display:block;margin-bottom:.2rem}
+input[type=text]{width:100%;padding:.45rem .6rem;border:1.5px solid var(--line);border-radius:8px;font:inherit;background:var(--paper)}
 input:focus,select:focus{outline:none;border-color:var(--ink)}
-select{padding:.5rem;border:1.5px solid var(--line);border-radius:8px;font:inherit;background:var(--paper)}
-button{font:inherit;font-weight:700;padding:.6rem 1.2rem;border:none;border-radius:9px;
-  background:var(--ink);color:#fff;cursor:pointer}
+select{padding:.4rem;border:1.5px solid var(--line);border-radius:8px;font:inherit;background:var(--paper)}
+button{font:inherit;font-weight:700;padding:.5rem 1rem;border:none;border-radius:9px;background:var(--ink);color:#fff;cursor:pointer}
 button.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
-button.tiny{padding:.3rem .55rem;font-size:.8rem;border-radius:7px}
+button.tiny{padding:.25rem .55rem;font-size:.8rem;border-radius:7px}
 button:disabled{opacity:.45;cursor:default}
-.bar{display:flex;gap:.7rem;align-items:center;margin-top:1rem;flex-wrap:wrap}
-.stat{font-size:.82rem;color:var(--mute);min-height:1.3rem}
+.bar{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.8rem}
+.stat{font-size:.8rem;color:var(--mute)}
+.dirty{font-size:.8rem;font-weight:700}
+details.help{margin-top:.7rem;font-size:.8rem;color:var(--mute);line-height:1.8}
+details.help summary{cursor:pointer;font-weight:700}
+code{background:#EDEDE8;padding:.05rem .3rem;border-radius:4px;font-size:.86em}
 
-/* 公開切替。押した瞬間に児童側へ効く */
-button.pill{padding:.32rem .8rem;border-radius:999px;font-size:.8rem;
-  background:#fff;color:var(--mute);border:1.5px solid var(--line)}
-button.pill.on{background:var(--mint);border-color:var(--mint);color:#052A1F}
-button.pill.busy{opacity:.5}
-
-/* 各単元の教師ページへの入口。リンクに登録済みの URL から組み立てるので、
-   ここに新しく URL を控える欄は作らない（二重管理を避ける） */
-.units{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.6rem}
-.unit{display:flex;align-items:center;gap:.6rem;padding:.7rem .85rem;background:#fff;
-  border:1.5px solid var(--line);border-radius:11px;text-decoration:none;
-  color:var(--ink);font-size:.9rem;font-weight:700}
-.unit:hover{border-color:var(--ink)}
-.unit .dot{width:.85rem;height:.85rem;border-radius:4px;flex:0 0 auto;border:1px solid rgba(0,0,0,.12)}
-.unit .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.unit .flag{flex:0 0 auto;font-size:.72rem;color:var(--mute)}
-
-.item{border:1.5px solid var(--line);border-radius:12px;padding:.9rem;margin-bottom:.8rem;background:#fff}
-.item.off{opacity:.5}
-.item .row1{display:flex;gap:.6rem;align-items:center;margin-bottom:.7rem}
-.swatch{width:1.6rem;height:1.6rem;border-radius:6px;flex:0 0 auto;border:1px solid rgba(0,0,0,.12)}
-.item .grow{flex:1}
-.fields{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
-.fields .full{grid-column:1/-1}
-.mini{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.7rem}
-.mini label{margin:0;font-size:.78rem}
-.gradechips{display:flex;gap:.35rem;flex-wrap:wrap}
-.chip{padding:.25rem .55rem;border-radius:999px;border:1.5px solid var(--line);
-  font-size:.8rem;font-weight:700;cursor:pointer;background:#fff;color:var(--mute)}
+/* リンク一覧：1行1単元 */
+.tool{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem}
+.chips{display:flex;gap:.3rem;flex-wrap:wrap}
+.chip{padding:.2rem .55rem;border-radius:999px;border:1.5px solid var(--line);font-size:.78rem;font-weight:700;cursor:pointer;background:#fff;color:var(--mute)}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-.hint{font-size:.8rem;color:var(--mute);line-height:1.9}
-code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
+.lrow{display:flex;align-items:center;gap:.55rem;padding:.5rem .55rem;border-radius:9px;cursor:pointer;border:1.5px solid transparent}
+.lrow:hover{background:#FAFAF7}
+.lrow.sel{background:var(--sel);border-color:var(--ink)}
+.lrow.off .nm{color:var(--mute)}
+.swatch{width:1rem;height:1rem;border-radius:4px;flex:0 0 auto;border:1px solid rgba(0,0,0,.12)}
+.lrow .nm{flex:1;min-width:0;font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .gr{font-size:.74rem;color:var(--mute);white-space:nowrap}
+.lrow a{font-size:.74rem;color:var(--ink);white-space:nowrap}
+button.pill{padding:.2rem .6rem;border-radius:999px;font-size:.74rem;background:#fff;color:var(--mute);border:1.5px solid var(--line)}
+button.pill.on{background:var(--mint);border-color:var(--mint);color:#052A1F}
 
-/* 「見せるタブ」の行。左に児童の学年、右に見せるタブのチップ */
-.tabrow{display:flex;align-items:center;gap:.8rem;padding:.55rem 0;
-  border-bottom:1px solid var(--line);flex-wrap:wrap}
+/* 編集欄 */
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+.fields .full{grid-column:1/-1}
+.empty{color:var(--mute);font-size:.88rem;padding:1rem 0}
+
+/* 名簿：氏名を詰めて並べる（1学級が1画面に収まる） */
+.names{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.25rem .8rem;font-size:.88rem}
+.names .no{display:inline-block;width:1.8rem;color:var(--mute);text-align:right;margin-right:.4rem}
+.names .nn{color:var(--mute)}
+table.rost{width:100%;border-collapse:collapse;font-size:.85rem}
+table.rost th{font-size:.72rem;color:var(--mute);text-align:left;padding:.25rem .4rem;border-bottom:1.5px solid var(--line)}
+table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
+
+.tabrow{display:flex;align-items:center;gap:.7rem;padding:.45rem 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .tabrow:last-child{border-bottom:none}
-.tabrow .g{width:4.5rem;font-weight:800;flex:0 0 auto}
-
-/* 名簿ビュー */
-.rosttabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.8rem}
-.rosttabs button{font:inherit;font-weight:700;font-size:.85rem;padding:.4rem .9rem;
-  border-radius:999px;cursor:pointer;border:1.5px solid var(--line);background:#fff;color:var(--mute)}
-.rosttabs button.on{background:var(--ink);border-color:var(--ink);color:#fff}
-table.rost{width:100%;border-collapse:collapse;font-size:.9rem}
-table.rost th{font-size:.72rem;letter-spacing:.12em;color:var(--mute);text-align:left;
-  padding:.3rem .5rem;border-bottom:1.5px solid var(--line)}
-table.rost td{padding:.38rem .5rem;border-bottom:1px solid var(--line)}
+.tabrow .g{width:4rem;font-weight:800;flex:0 0 auto}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>リンク集 設定</h1>
-  <div class="golinks" id="golinks"></div>
-  <div class="sub" id="sub">児童のホーム画面に出す単元サイトを管理します</div>
+  <div class="head">
+    <h1>ハブ設定</h1>
+    <span class="where" id="where"></span>
+    <div class="golinks" id="golinks"></div>
+  </div>
 
   <div class="maintabs" id="maintabs">
-    <button data-p="links" class="on">リンク</button>
-    <button data-p="tabs">見せるタブ</button>
+    <button data-p="links" class="on">単元リンク</button>
     <button data-p="roster">名簿</button>
-    <button data-p="misc">ぜんたい</button>
+    <button data-p="cfg">表示と権限</button>
   </div>
 
-  <!-- ============ リンク ============ -->
+  <!-- ============ 単元リンク ============ -->
   <div class="tabpage on" data-pg="links">
-    <div class="box">
-      <h2>各単元の教師ページ</h2>
-      <div class="units" id="units"></div>
-      <div class="hint" style="margin-top:.9rem">
-        下の「リンク」に登録した URL に <code>?page=teacher</code> を付けた先を開きます。
-        非公開の単元も並びます（設定は公開前から触れます）。
+    <div class="split">
+      <div class="box">
+        <div class="tool">
+          <span class="chips" id="filt"></span>
+          <span style="flex:1"></span>
+          <button id="add" class="ghost tiny">＋ 追加</button>
+        </div>
+        <div class="scroll" id="list"></div>
+        <div class="bar" style="margin-top:.6rem">
+          <button id="save">保存して反映</button>
+          <span class="dirty" id="dirty"></span>
+          <span class="stat" id="stat"></span>
+        </div>
       </div>
-    </div>
-
-    <div class="box">
-      <h2>リンク</h2>
-      <div class="mini" style="margin:0 0 .9rem">
-        <label style="margin-right:.2rem">絞り込み</label>
-        <span class="gradechips" id="filt"></span>
-      </div>
-      <div id="list"></div>
-      <div class="bar">
-        <button id="add" class="ghost">＋ リンクを追加</button>
-        <button id="save">保存して児童に反映</button>
-        <span class="stat" id="stat"></span>
-      </div>
-      <div class="hint" style="margin-top:1rem">
-        「公開中／非公開」は押した時点で切り替わります。保存ボタンは要りません。<br>
-        URL は各単元サイトのデプロイ URL（末尾が <code>/exec</code>）を貼ります。<br>
-        「学年」は<b>どの学年タブに出るか</b>です。1つも選ばないと全学年タブに出ます。<br>
-        児童にそのタブが見えるかどうかは「見せるタブ」で学年ごとに決めます。<br>
-        並び順は「↑↓」で変えられます。児童にはこの順で並びます。
-      </div>
-    </div>
-  </div>
-
-  <!-- ============ 見せるタブ ============ -->
-  <div class="tabpage" data-pg="tabs">
-    <div class="box">
-      <h2>学年ごとに見せるタブ</h2>
-      <div class="hint" style="margin-bottom:.9rem">
-        名簿に登録がある児童は、自分の学年のタブに加えて、ここで選んだ学年のタブも見られます。<br>
-        例：3年生の行で「4年」を選ぶと、3年生は「3ねん」「4ねん」のタブを切り替えられます。<br>
-        <b>自分の学年は常に見えます</b>（外せません）。名簿にない児童（おためし）は全タブを見られます。
-      </div>
-      <div id="tabset"></div>
-      <div class="bar">
-        <button id="saveTabs">保存</button>
-        <span class="stat" id="tabStat"></span>
+      <div class="box">
+        <h2>選んだ単元の設定</h2>
+        <div class="scroll" id="editor"></div>
+        <details class="help">
+          <summary>使い方</summary>
+          「公開中／非公開」は押した時点で児童の画面に反映されます（保存は不要）。それ以外の変更は「保存して反映」で確定します。<br>
+          URL は各単元のデプロイ URL（末尾が <code>/exec</code>）。「教師ページ」はその URL に <code>?page=teacher</code> を付けた先です。<br>
+          「表示する学年タブ」を1つも選ばないと、全学年のタブに表示されます。児童がそのタブを見られるかは「表示と権限」で学年ごとに決めます。<br>
+          「記録シート」はその単元のスプレッドシートの URL で、単元横断分析が読みます。空欄でも単元は使えます。<br>
+          一覧の並び順が、児童の画面の並び順です。
+        </details>
       </div>
     </div>
   </div>
 
   <!-- ============ 名簿 ============ -->
   <div class="tabpage" data-pg="roster">
-    <div class="box">
-      <h2>名簿（学年別）</h2>
-      <div class="rosttabs" id="rosttabs"></div>
-      <div id="rost"></div>
-      <div class="hint" style="margin-top:1rem">
-        このハブの <code>roster</code> シートが<b>名簿の正本</b>です。編集はシート側で行います。<br>
-        各単元サイトの <code>roster</code> には、次の式を A1 に入れて参照させます。<br><br>
-        <code>=IMPORTRANGE("ハブのスプレッドシートURL","roster!A:E")</code><br><br>
-        こうすると学年やクラスの変更が1か所で済みます。
-        初回だけ各単元側で「アクセスを許可」を押す必要があります。<br><br>
-        記録・分析の対象になるのは、<b>email と氏名の両方が入っている児童だけ</b>です。<br>
-        名簿にない児童や氏名が空の行の児童も、各単元を「おためし」として
-        全モード使えますが、記録は一切されません。
+    <div class="box" style="flex:1;min-height:0;display:flex;flex-direction:column">
+      <div class="tool">
+        <span class="chips" id="rgrade"></span>
+        <span class="chips" id="rcls"></span>
+        <span style="flex:1"></span>
+        <span class="chip" id="rmail">メールアドレスも表示</span>
       </div>
+      <div class="stat" id="rsum" style="margin-bottom:.5rem"></div>
+      <div class="scroll" id="rost"></div>
+      <details class="help">
+        <summary>名簿の扱い</summary>
+        このハブの <code>roster</code> シートが名簿の正本です。編集はシートで行います。
+        各単元の <code>roster</code> シートの A1 に <code>=IMPORTRANGE("ハブのスプレッドシートURL","roster!A:E")</code> を入れて参照させます（初回のみ単元側で「アクセスを許可」）。<br>
+        記録・分析の対象は、メールアドレスと氏名の両方がある児童だけです。名簿にない児童や氏名が空の児童も「おためし」として全モードを使えますが、記録はされません。
+      </details>
     </div>
   </div>
 
-  <!-- ============ ぜんたい ============ -->
-  <div class="tabpage" data-pg="misc">
-    <div class="box">
-      <h2>ぜんたい</h2>
-      <label>ホーム画面のタイトル</label>
-      <input id="title" type="text" placeholder="算数タイムアタック">
-      <div style="margin-top:.9rem">
-        <label>この画面を開ける教師（@edu.nishi.or.jp と所有者は書かなくても開けます。別ドメインの人だけカンマ区切りで）</label>
-        <input id="teachers" type="text">
+  <!-- ============ 表示と権限 ============ -->
+  <div class="tabpage" data-pg="cfg">
+    <div class="split">
+      <div class="box">
+        <h2>学年ごとに表示するタブ</h2>
+        <div class="scroll" id="tabset"></div>
+        <div class="bar">
+          <button id="saveTabs">保存</button>
+          <span class="stat" id="tabStat"></span>
+        </div>
+        <details class="help">
+          <summary>この設定について</summary>
+          名簿にある児童は、自分の学年のタブに加えて、ここで選んだ学年のタブを見られます（例：3年の行で「4年」を選ぶと、3年生が4年のタブも切り替えられる）。
+          自分の学年は外せません。名簿にない児童は全タブを見られます。
+        </details>
       </div>
-      <div class="bar">
-        <button id="saveCfg">保存</button>
-        <span class="stat" id="cfgStat"></span>
+      <div class="box">
+        <h2>全体</h2>
+        <label>児童のホーム画面のタイトル</label>
+        <input id="title" type="text" placeholder="算数タイムアタック">
+        <div style="margin-top:.8rem">
+          <label>この設定画面を開ける人（教師ドメインと所有者は不要。別ドメインの人だけカンマ区切り）</label>
+          <input id="teachers" type="text">
+        </div>
+        <div class="bar">
+          <button id="saveCfg">保存</button>
+          <span class="stat" id="cfgStat"></span>
+        </div>
+        <details class="help">
+          <summary>単元横断分析を開ける人</summary>
+          単元横断分析は、この設定画面とは別に権限を持ちます。開けるのはスプレッドシートの所有者と、
+          <code>config</code> シートの <code>an_analysts</code> に書いた人だけです（例 <code>a@edu.nishi.or.jp:3-1|3-2</code>）。
+        </details>
       </div>
     </div>
   </div>
@@ -194,26 +188,24 @@ table.rost td{padding:.38rem .5rem;border-bottom:1px solid var(--line)}
 
 <script>
 var COLORS = {}, LINKS = [], GRADES = [], CFG = {}, ROSTER = [];
-var FILT = 0;   // リンク一覧の学年絞り込み（0=全部）
+var FILT = 0;      // 一覧の学年絞り込み（0=すべて）
+var SEL = -1;      // 編集中のリンク（LINKS の添字）
+var DIRTY = false; // 保存していない変更があるか
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function $(id){ return document.getElementById(id); }
+function setDirty(v){ DIRTY = v; $('dirty').textContent = v ? '保存していない変更があります' : ''; }
 
 /* ---------- ページ内タブ ---------- */
 $('maintabs').addEventListener('click', function(e){
   var p = e.target && e.target.dataset ? e.target.dataset.p : undefined;
   if(!p) return;
-  document.querySelectorAll('#maintabs button').forEach(function(b){
-    b.classList.toggle('on', b.dataset.p === p);
-  });
-  document.querySelectorAll('.tabpage').forEach(function(d){
-    d.classList.toggle('on', d.dataset.pg === p);
-  });
+  document.querySelectorAll('#maintabs button').forEach(function(b){ b.classList.toggle('on', b.dataset.p === p); });
+  document.querySelectorAll('.tabpage').forEach(function(d){ d.classList.toggle('on', d.dataset.pg === p); });
 });
 
-/* 単元サイトの教師ページ URL。児童用 URL に page=teacher を足すだけ。
-   各単元の doGet が同じ約束で分岐しているので、ハブが URL を別に持つ必要はない */
+/* 単元の教師ページ URL。児童用 URL に page=teacher を足すだけ（各単元の doGet が同じ約束で分岐する） */
 function unitTeacherUrl(u){
   u = String(u==null?'':u).trim();
   if(!u) return '';
@@ -223,114 +215,166 @@ function unitTeacherUrl(u){
   return u + (u.indexOf('?')>=0 ? '&' : '?') + 'page=teacher' + hash;
 }
 
-/* 別タブで開く。設定の途中でも、このページを閉じずに単元側を見に行ける */
-function renderUnits(){
-  $('units').innerHTML = LINKS.map(function(l){
-    var url = unitTeacherUrl(l.url);
-    if(!url) return '';
-    var c = COLORS[l.color] || {bg:'#ccc'};
-    return '<a class="unit" href="'+esc(url)+'" target="_blank" rel="noopener">'+
-      '<span class="dot" style="background:'+c.bg+'"></span>'+
-      '<span class="nm">'+(esc(l.title)||'（名前なし）')+'</span>'+
-      (l.visible?'':'<span class="flag">非公開</span>')+
-    '</a>';
-  }).join('') ||
-  '<div class="hint">URL を登録したリンクがまだありません。'+
-  '下の「リンク」で URL を入れると、ここに入口が出ます。</div>';
-}
-
 /* リンクが学年タブ g に出るか（児童側の inTab と同じ判定） */
 function inTab(l, g){
   var gr = String(l.grades || '').trim().toLowerCase();
   if(!gr || gr === 'all') return true;
   return gr.split(',').map(function(s){ return Number(s.trim()); }).indexOf(g) >= 0;
 }
-
-function renderFilt(){
-  $('filt').innerHTML =
-    '<span class="chip'+(FILT===0?' on':'')+'" data-fg="0">全部</span>' +
-    GRADES.map(function(g){
-      return '<span class="chip'+(FILT===g?' on':'')+'" data-fg="'+g+'">'+g+'年</span>';
-    }).join('');
+function gradeLabel(l){
+  var gr = String(l.grades || '').trim();
+  return (!gr || gr.toLowerCase()==='all') ? '全学年' : gr.split(',').map(function(s){ return s.trim()+'年'; }).join('・');
 }
 
-function render(){
-  renderUnits();
+/* ---------- 単元リンク：一覧 ---------- */
+function renderFilt(){
+  $('filt').innerHTML =
+    '<span class="chip'+(FILT===0?' on':'')+'" data-fg="0">すべて</span>' +
+    GRADES.map(function(g){ return '<span class="chip'+(FILT===g?' on':'')+'" data-fg="'+g+'">'+g+'年</span>'; }).join('');
+}
+function renderList(){
   renderFilt();
   $('list').innerHTML = LINKS.map(function(l, i){
     if(FILT && !inTab(l, FILT)) return '';
-    var sel = String(l.grades||'').split(',').map(function(s){return s.trim();});
-    var chips = GRADES.map(function(g){
-      return '<span class="chip'+(sel.indexOf(String(g))>=0?' on':'')+'" '+
-             'data-i="'+i+'" data-g="'+g+'">'+g+'年</span>';
-    }).join('');
-    var colorOpts = Object.keys(COLORS).map(function(k){
-      return '<option value="'+k+'"'+(l.color===k?' selected':'')+'>'+k+'</option>';
-    }).join('');
     var c = COLORS[l.color] || {bg:'#ccc'};
-    return '<div class="item'+(l.visible?'':' off')+'">'+
-      '<div class="row1">'+
-        '<span class="swatch" style="background:'+c.bg+'"></span>'+
-        '<span class="grow" style="font-weight:800">'+(esc(l.title)||'（名前なし）')+'</span>'+
-        '<button class="pill'+(l.visible?' on':'')+'" data-vis="'+i+'">'+
-          (l.visible?'公開中':'非公開')+'</button>'+
-        '<button class="tiny ghost" data-mv="up" data-i="'+i+'">↑</button>'+
-        '<button class="tiny ghost" data-mv="down" data-i="'+i+'">↓</button>'+
-        '<button class="tiny ghost" data-del="'+i+'">削除</button>'+
-      '</div>'+
-      '<div class="fields">'+
-        '<div class="full"><label>タイトル（児童に見える名前）</label>'+
-          '<input type="text" data-f="title" data-i="'+i+'" value="'+esc(l.title)+'"></div>'+
-        '<div class="full"><label>説明（1行。空でもよい）</label>'+
-          '<input type="text" data-f="subtitle" data-i="'+i+'" value="'+esc(l.subtitle)+'"></div>'+
-        '<div class="full"><label>URL（末尾が /exec）</label>'+
-          '<input type="text" data-f="url" data-i="'+i+'" value="'+esc(l.url)+'"></div>'+
-        '<div class="full"><label>記録シート（その単元のスプレッドシートのURL。単元横断のぶんせきが読む。空でもよい）</label>'+
-          '<input type="text" data-f="sheet" data-i="'+i+'" value="'+esc(l.sheet)+'"></div>'+
-      '</div>'+
-      '<div class="mini">'+
-        '<label style="margin-right:.2rem">出る学年タブ</label>'+
-        '<span class="gradechips">'+chips+'</span>'+
-        '<span style="flex:1"></span>'+
-        '<label style="margin:0 .2rem 0 0">色</label>'+
-        '<select data-f="color" data-i="'+i+'">'+colorOpts+'</select>'+
-      '</div>'+
+    var tu = unitTeacherUrl(l.url);
+    return '<div class="lrow'+(i===SEL?' sel':'')+(l.visible?'':' off')+'" data-row="'+i+'">'+
+      '<span class="swatch" style="background:'+c.bg+'"></span>'+
+      '<span class="nm">'+(esc(l.title)||'（名前なし）')+'</span>'+
+      '<span class="gr">'+esc(gradeLabel(l))+'</span>'+
+      (tu ? '<a href="'+esc(tu)+'" target="_blank" rel="noopener">教師ページ↗</a>' : '')+
+      '<button class="pill'+(l.visible?' on':'')+'" data-vis="'+i+'">'+(l.visible?'公開中':'非公開')+'</button>'+
     '</div>';
-  }).join('') || '<div class="hint">まだリンクがありません。「＋ リンクを追加」から作成してください。</div>';
+  }).join('') || '<div class="empty">リンクがありません。「＋ 追加」で作成します。</div>';
 }
 
-/* ---------- 見せるタブ ---------- */
+/* ---------- 単元リンク：編集欄 ---------- */
+function renderEditor(){
+  var l = LINKS[SEL];
+  if(!l){ $('editor').innerHTML = '<div class="empty">左の一覧から単元を選んでください。</div>'; return; }
+  var sel = String(l.grades||'').split(',').map(function(s){return s.trim();});
+  var chips = GRADES.map(function(g){
+    return '<span class="chip'+(sel.indexOf(String(g))>=0?' on':'')+'" data-g="'+g+'">'+g+'年</span>';
+  }).join('');
+  var colorOpts = Object.keys(COLORS).map(function(k){
+    return '<option value="'+k+'"'+(l.color===k?' selected':'')+'>'+k+'</option>';
+  }).join('');
+  $('editor').innerHTML =
+    '<div class="fields">'+
+      '<div class="full"><label>表示名（児童に見える名前）</label><input type="text" data-f="title" value="'+esc(l.title)+'"></div>'+
+      '<div class="full"><label>説明（1行・任意）</label><input type="text" data-f="subtitle" value="'+esc(l.subtitle)+'"></div>'+
+      '<div class="full"><label>URL（末尾が /exec）</label><input type="text" data-f="url" value="'+esc(l.url)+'"></div>'+
+      '<div class="full"><label>記録シート（単元のスプレッドシートの URL・任意）</label><input type="text" data-f="sheet" value="'+esc(l.sheet)+'"></div>'+
+      '<div class="full"><label>表示する学年タブ（未選択＝全学年）</label><span class="chips">'+chips+'</span></div>'+
+      '<div><label>色</label><select data-f="color">'+colorOpts+'</select></div>'+
+      '<div><label>並び順</label><button class="tiny ghost" data-mv="up">↑ 上へ</button> <button class="tiny ghost" data-mv="down">↓ 下へ</button></div>'+
+    '</div>'+
+    '<div class="bar"><button class="tiny ghost" data-del="1">この単元を削除</button></div>';
+}
+
+/* 入力はその場で LINKS に反映。編集欄は描き直さない（入力中にカーソルが飛ばない） */
+document.addEventListener('input', function(e){
+  var f = e.target.dataset.f;
+  if(f===undefined || !LINKS[SEL]) return;
+  LINKS[SEL][f] = e.target.value;
+  setDirty(true);
+  if(f==='title' || f==='url') renderList();
+});
+document.addEventListener('change', function(e){
+  if(e.target.dataset.f==='color'){ renderList(); }
+});
+
+/* 公開切替。1クリックでシートの当該行だけ書き換える（他の未保存の入力を巻き込まない） */
+function toggleVisible(i){
+  var l = LINKS[i], next = !l.visible;
+  l.visible = next; renderList();
+  if(!l.id){ $('stat').textContent = '未保存の単元です。「保存して反映」を押してください。'; setDirty(true); return; }
+  $('stat').textContent = '切り替え中…';
+  google.script.run.withSuccessHandler(function(m){
+    $('stat').textContent = m + '（次に開いた児童から反映）';
+  }).withFailureHandler(function(e){
+    l.visible = !next; renderList();
+    $('stat').textContent = 'エラー: ' + e.message;
+  }).setVisible(l.id, next);
+}
+
+document.addEventListener('click', function(e){
+  var t = e.target, d = t.dataset || {};
+  if(d.fg !== undefined){ FILT = +d.fg; renderList(); return; }
+  if(d.vis !== undefined){ toggleVisible(+d.vis); return; }
+  if(t.tagName === 'A') return;
+  if(d.tg !== undefined){                       // 表示するタブの設定
+    var g = +d.tg, tab = +d.t;
+    if(tab === g) return;
+    var set = tabsOf(g);
+    if(set[tab]) delete set[tab]; else set[tab] = true;
+    set[g] = true;
+    CFG['tabs_'+g] = Object.keys(set).map(Number).sort(function(a,b){return a-b;}).join(',');
+    renderTabs(); return;
+  }
+  if(d.g !== undefined && LINKS[SEL]){          // 単元の学年タブ
+    var cur = String(LINKS[SEL].grades||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+    var at = cur.indexOf(d.g);
+    if(at>=0) cur.splice(at,1); else cur.push(d.g);
+    cur.sort(function(a,b){return a-b;});
+    LINKS[SEL].grades = cur.join(',');
+    setDirty(true); renderEditor(); renderList(); return;
+  }
+  if(d.mv && LINKS[SEL]){
+    var j = d.mv==='up' ? SEL-1 : SEL+1;
+    if(j>=0 && j<LINKS.length){ var tmp=LINKS[SEL]; LINKS[SEL]=LINKS[j]; LINKS[j]=tmp; SEL=j; setDirty(true); renderList(); }
+    return;
+  }
+  if(d.del !== undefined && LINKS[SEL]){
+    if(confirm('「'+(LINKS[SEL].title||'名前なし')+'」を削除しますか？（保存するまで確定しません）')){
+      LINKS.splice(SEL,1); SEL = Math.min(SEL, LINKS.length-1); setDirty(true); renderList(); renderEditor();
+    }
+    return;
+  }
+  var row = t.closest && t.closest('.lrow');
+  if(row){ SEL = +row.dataset.row; renderList(); renderEditor(); }
+});
+
+$('add').onclick = function(){
+  LINKS.push({ id:'', title:'', subtitle:'', url:'', grades: FILT ? String(FILT) : '', color:'mint', visible:true, sheet:'' });
+  SEL = LINKS.length-1; setDirty(true); renderList(); renderEditor();
+  var f = document.querySelector('#editor input[data-f="title"]'); if(f) f.focus();
+};
+
+$('save').onclick = function(){
+  var btn = this; btn.disabled = true;
+  $('stat').textContent = '保存中…';
+  google.script.run.withSuccessHandler(function(m){
+    btn.disabled = false; setDirty(false); $('stat').textContent = m + '（次に開いた児童から反映）';
+  }).withFailureHandler(function(e){
+    btn.disabled = false; $('stat').textContent = 'エラー: ' + e.message;
+  }).saveLinks(LINKS);
+};
+window.addEventListener('beforeunload', function(e){ if(DIRTY){ e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- 表示するタブ ---------- */
 /* CFG['tabs_'+g] = "3,4" など。自分の学年は常に含める */
 function tabsOf(g){
   var set = {};
-  String(CFG['tabs_'+g] || '').split(',').forEach(function(s){
-    var n = Number(s.trim()); if(n) set[n] = true;
-  });
+  String(CFG['tabs_'+g] || '').split(',').forEach(function(s){ var n = Number(s.trim()); if(n) set[n] = true; });
   set[g] = true;
   return set;
 }
-
 function renderTabs(){
   $('tabset').innerHTML = GRADES.map(function(g){
     var set = tabsOf(g);
     var chips = GRADES.map(function(t){
-      var locked = (t === g);
-      return '<span class="chip'+(set[t]?' on':'')+'" data-tg="'+g+'" data-t="'+t+'"'+
-        (locked ? ' title="自分の学年は常に見えます"' : '')+'>'+t+'年'+(locked?'（自分）':'')+'</span>';
+      var own = (t === g);
+      return '<span class="chip'+(set[t]?' on':'')+'" data-tg="'+g+'" data-t="'+t+'">'+t+'年'+(own?'（本人）':'')+'</span>';
     }).join('');
-    return '<div class="tabrow"><span class="g">'+g+'年生</span>'+
-      '<span class="gradechips">'+chips+'</span></div>';
+    return '<div class="tabrow"><span class="g">'+g+'年生</span><span class="chips">'+chips+'</span></div>';
   }).join('');
 }
-
 $('saveTabs').onclick = function(){
   var btn = this; btn.disabled = true;
   $('tabStat').textContent = '保存中…';
   var out = {};
-  GRADES.forEach(function(g){
-    var set = tabsOf(g);
-    out['tabs_'+g] = Object.keys(set).map(Number).sort(function(a,b){return a-b;}).join(',');
-  });
+  GRADES.forEach(function(g){ out['tabs_'+g] = Object.keys(tabsOf(g)).map(Number).sort(function(a,b){return a-b;}).join(','); });
   google.script.run.withSuccessHandler(function(r){
     btn.disabled = false; CFG = r; $('tabStat').textContent = '保存しました';
   }).withFailureHandler(function(e){
@@ -338,114 +382,7 @@ $('saveTabs').onclick = function(){
   }).saveHubConfig(out);
 };
 
-/* ---------- 名簿ビュー ---------- */
-var RG = 0;   // 名簿の表示学年（0=先頭の学年）
-function renderRoster(){
-  var gs = [];
-  ROSTER.forEach(function(k){ if(k.grade && gs.indexOf(k.grade)<0) gs.push(k.grade); });
-  gs.sort(function(a,b){return a-b;});
-  if(!gs.length){ $('rosttabs').innerHTML=''; $('rost').innerHTML='<div class="hint">名簿がまだありません。</div>'; return; }
-  if(!RG || gs.indexOf(RG)<0) RG = gs[0];
-  $('rosttabs').innerHTML = gs.map(function(g){
-    var n = ROSTER.filter(function(k){return k.grade===g;}).length;
-    return '<button data-rg="'+g+'"'+(g===RG?' class="on"':'')+'>'+g+'年（'+n+'）</button>';
-  }).join('');
-  var rows = ROSTER.filter(function(k){return k.grade===RG;});
-  $('rost').innerHTML = '<table class="rost"><tr><th>組</th><th>番号</th><th>氏名</th><th>email</th></tr>'+
-    rows.map(function(k){
-      return '<tr><td>'+esc(k.cls)+'</td><td>'+(k.no||'')+'</td><td>'+esc(k.name||'（氏名なし）')+'</td>'+
-        '<td>'+esc(k.mail)+'</td></tr>';
-    }).join('')+'</table>';
-}
-$('rosttabs').addEventListener('click', function(e){
-  var g = e.target && e.target.dataset ? e.target.dataset.rg : undefined;
-  if(g===undefined) return;
-  RG = +g; renderRoster();
-});
-
-/* ---------- 入力・クリック ---------- */
-
-/* 入力はその場で LINKS に反映（再描画しない＝入力中にカーソルが飛ばない） */
-document.addEventListener('input', function(e){
-  var t = e.target, f = t.dataset.f, i = t.dataset.i;
-  if(f===undefined || i===undefined) return;
-  LINKS[+i][f] = t.value;
-  if(f==='url') renderUnits();   // 打ちながら入口も更新される。再描画は上の一覧に及ばない
-});
-document.addEventListener('change', function(e){
-  if(e.target.dataset.f==='color') render();
-});
-
-/* 公開切替。1クリックでシートの当該行だけ書き換え、キャッシュを捨てる */
-function toggleVisible(i){
-  var l = LINKS[i];
-  var next = !l.visible;
-  l.visible = next;
-  render();
-
-  if(!l.id){
-    $('stat').textContent = 'まだ保存されていないリンクです。「保存して児童に反映」を押してください。';
-    return;
-  }
-  $('stat').textContent = '切り替え中…';
-  google.script.run.withSuccessHandler(function(m){
-    $('stat').textContent = m + '（次に開いた児童から反映）';
-  }).withFailureHandler(function(e){
-    l.visible = !next;            // 失敗したら元に戻す
-    render();
-    $('stat').textContent = 'エラー: ' + e.message;
-  }).setVisible(l.id, next);
-}
-
-document.addEventListener('click', function(e){
-  var t = e.target;
-  if(t.dataset.fg !== undefined){ FILT = +t.dataset.fg; render(); return; }
-  if(t.dataset.tg !== undefined){          // 見せるタブのチップ
-    var g = +t.dataset.tg, tab = +t.dataset.t;
-    if(tab === g) return;                  // 自分の学年は外せない
-    var set = tabsOf(g);
-    if(set[tab]) delete set[tab]; else set[tab] = true;
-    set[g] = true;
-    CFG['tabs_'+g] = Object.keys(set).map(Number).sort(function(a,b){return a-b;}).join(',');
-    renderTabs(); return;
-  }
-  if(t.dataset.vis !== undefined){ toggleVisible(+t.dataset.vis); return; }
-  if(t.dataset.g !== undefined){          // リンクの学年チップ
-    var i = +t.dataset.i, g2 = t.dataset.g;
-    var cur = String(LINKS[i].grades||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
-    var at = cur.indexOf(g2);
-    if(at>=0) cur.splice(at,1); else cur.push(g2);
-    cur.sort(function(a,b){return a-b;});
-    LINKS[i].grades = cur.join(',');
-    render(); return;
-  }
-  if(t.dataset.del !== undefined){
-    if(confirm('このリンクを削除しますか？')){ LINKS.splice(+t.dataset.del,1); render(); }
-    return;
-  }
-  if(t.dataset.mv){
-    var i2 = +t.dataset.i, j = t.dataset.mv==='up' ? i2-1 : i2+1;
-    if(j>=0 && j<LINKS.length){ var tmp=LINKS[i2]; LINKS[i2]=LINKS[j]; LINKS[j]=tmp; render(); }
-    return;
-  }
-});
-
-$('add').onclick = function(){
-  LINKS.push({ id:'', title:'', subtitle:'', url:'', grades:'', color:'mint', visible:true, sheet:'' });
-  render();
-  window.scrollTo(0, document.body.scrollHeight);
-};
-
-$('save').onclick = function(){
-  var btn = this; btn.disabled = true;
-  $('stat').textContent = '保存中…';
-  google.script.run.withSuccessHandler(function(m){
-    btn.disabled = false; $('stat').textContent = m + '（次に開いた児童から反映）';
-  }).withFailureHandler(function(e){
-    btn.disabled = false; $('stat').textContent = 'エラー: ' + e.message;
-  }).saveLinks(LINKS);
-};
-
+/* ---------- 全体 ---------- */
 $('saveCfg').onclick = function(){
   var btn = this; btn.disabled = true;
   $('cfgStat').textContent = '保存中…';
@@ -456,43 +393,81 @@ $('saveCfg').onclick = function(){
   }).saveHubConfig({ title: $('title').value, teachers: $('teachers').value });
 };
 
-/* いま設定している写しと、そこからの行き先。
-   写しが2つあると画面が同じで見分けられないので、名前とIDも出す */
+/* ---------- 名簿：学年 → 組で絞り、氏名を詰めて並べる ---------- */
+var RG = 0, RC = '', RMAIL = false;
+function renderRoster(){
+  var gs = [];
+  ROSTER.forEach(function(k){ if(k.grade && gs.indexOf(k.grade)<0) gs.push(k.grade); });
+  gs.sort(function(a,b){return a-b;});
+  if(!gs.length){ $('rgrade').innerHTML=''; $('rcls').innerHTML=''; $('rost').innerHTML='<div class="empty">名簿がまだありません。</div>'; return; }
+  if(!RG || gs.indexOf(RG)<0) RG = gs[0];
+  $('rgrade').innerHTML = gs.map(function(g){
+    return '<span class="chip'+(g===RG?' on':'')+'" data-rg="'+g+'">'+g+'年</span>';
+  }).join('');
+  var inG = ROSTER.filter(function(k){ return k.grade===RG; });
+  var cs = [];
+  inG.forEach(function(k){ if(cs.indexOf(k.cls)<0) cs.push(k.cls); });
+  cs.sort();
+  if(cs.indexOf(RC)<0) RC = cs[0];
+  $('rcls').innerHTML = cs.map(function(c){
+    var n = inG.filter(function(k){ return k.cls===c; }).length;
+    return '<span class="chip'+(c===RC?' on':'')+'" data-rc="'+esc(c)+'">'+esc(c)+'組（'+n+'）</span>';
+  }).join('');
+  var rows = inG.filter(function(k){ return k.cls===RC; });
+  var noName = rows.filter(function(k){ return !k.name; }).length;
+  $('rsum').textContent = RG+'年'+RC+'組 '+rows.length+'人' + (noName ? ('（うち氏名なし '+noName+'人：記録の対象外）') : '');
+  $('rmail').classList.toggle('on', RMAIL);
+  $('rost').innerHTML = RMAIL
+    ? '<table class="rost"><tr><th>番号</th><th>氏名</th><th>メールアドレス</th></tr>' +
+        rows.map(function(k){ return '<tr><td>'+(k.no||'')+'</td><td>'+esc(k.name||'（氏名なし）')+'</td><td>'+esc(k.mail)+'</td></tr>'; }).join('') + '</table>'
+    : '<div class="names">' + rows.map(function(k){
+        return '<div><span class="no">'+(k.no||'')+'</span>'+(k.name ? esc(k.name) : '<span class="nn">（氏名なし）</span>')+'</div>';
+      }).join('') + '</div>';
+}
+$('rgrade').addEventListener('click', function(e){ var g = e.target.dataset.rg; if(g===undefined) return; RG = +g; RC = ''; renderRoster(); });
+$('rcls').addEventListener('click', function(e){ var c = e.target.dataset.rc; if(c===undefined) return; RC = c; renderRoster(); });
+$('rmail').onclick = function(){ RMAIL = !RMAIL; renderRoster(); };
+
+/* ---------- いま設定している写しと、そこからの行き先 ---------- */
 function showWhere(w, analysisUrl){
   w = w || {};
   $('golinks').innerHTML =
-    (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシートを開く</a>' : '') +
-    (w.url      ? '<a href="' + esc(w.url) + '">児童の画面を見る</a>' : '') +
-    (analysisUrl ? '<a href="' + esc(analysisUrl) + '">ぶんせき（単元横断）</a>' : '');
-  if(!w.file) return;
-  $('sub').innerHTML = 'このページが設定しているのは <b>' + esc(w.file) + '</b>' +
-    (w.id ? '<br>スプレッドシート ID: <code>' + esc(w.id) + '</code>' : '') +
-    (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '');
+    (analysisUrl ? '<a href="' + esc(analysisUrl) + '">単元横断分析</a>' : '') +
+    (w.url      ? '<a href="' + esc(w.url) + '">児童の画面</a>' : '') +
+    (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシート</a>' : '');
+  // 写しが2つあると画面が同じで見分けられないので、名前を出す（ID と配布 URL は title に）
+  if(w.file){
+    $('where').textContent = w.file;
+    $('where').title = (w.id ? 'スプレッドシート ID: ' + w.id + '\n' : '') + (w.url ? '児童に配る URL: ' + w.url : '');
+  }
 }
+
+/* ---------- 読み込み ---------- */
+function renderAll(){ renderList(); renderEditor(); renderTabs(); }
 
 google.script.run.withSuccessHandler(function(r){
   COLORS = r.colors; LINKS = r.links; CFG = r.config || {};
-  $('title').value = r.config.title || '';
-  $('teachers').value = r.config.teachers || '';
+  (LINKS||[]).forEach(function(l){ if(l.sheet==null) l.sheet = ''; });
+  $('title').value = CFG.title || '';
+  $('teachers').value = CFG.teachers || '';
+  if(LINKS.length) SEL = 0;
   showWhere(r.where, r.analysisUrl);
-  render();
-  renderTabs();
+  renderAll();
 }).withFailureHandler(function(e){
   $('stat').textContent = '読み込めません: ' + e.message;
 }).getAllLinks();
 
 google.script.run.withSuccessHandler(function(g){
   GRADES = (g && g.length) ? g : [1,2,3,4,5,6];
-  render();
-  renderTabs();
+  renderAll();
 }).withFailureHandler(function(){
-  GRADES = [1,2,3,4,5,6]; render(); renderTabs();
+  GRADES = [1,2,3,4,5,6]; renderAll();
 }).listGrades();
 
 google.script.run.withSuccessHandler(function(r){
   ROSTER = r || []; renderRoster();
 }).withFailureHandler(function(){
-  $('rost').innerHTML = '<div class="hint">名簿を読み込めませんでした。</div>';
+  $('rost').innerHTML = '<div class="empty">名簿を読み込めませんでした。</div>';
 }).listRoster();
 </script>
 </body>
