@@ -8,23 +8,31 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--paper);color:var(--ink);
   font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans",sans-serif;
-  font-variant-numeric:tabular-nums;padding:2.2rem 1.5rem;line-height:1.6}
-.wrap{max-width:640px;margin:0 auto}
+  font-variant-numeric:tabular-nums;padding:1rem 1.2rem;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto}
+/* 見出し行：名前と行き先を1段に。本文に高さを残す */
+.head{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;margin-bottom:.2rem}
+.head .golinks{margin:0 0 0 auto}
+/* 2列：画面の横幅を使い、縦に積まない */
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1.1rem;align-items:start}
+.cols > .box{margin-bottom:0}
+details.help{font-size:.84rem;margin-top:1rem}
+details.help summary{cursor:pointer;font-weight:700;color:var(--mute)}
 h1{font-size:1.35rem;font-weight:800;margin-bottom:.3rem}
-.sub{font-size:.82rem;color:var(--mute);margin-bottom:2rem;line-height:1.9;word-break:break-all}
+.sub{font-size:.78rem;color:var(--mute);margin-bottom:.9rem;word-break:break-all}
 /* 行き先。設定を直したあと、シートと児童画面の両方を見に行くことになる */
 .golinks{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0 .9rem}
 .golinks a{font-size:.84rem;font-weight:700;text-decoration:none;color:var(--ink);
   border:1.5px solid var(--line);border-radius:9px;padding:.45rem .9rem;background:#fff}
 .golinks a:hover{border-color:var(--ink)}
 .sub b{color:var(--ink)}
-.box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.4rem;margin-bottom:1.1rem}
+.box{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:1rem 1.1rem;margin-bottom:1rem}
 /* チェックを触ってから保存するまでの間。押し忘れると児童の画面が変わらないので、
    「まだ効いていない」ことを箱ごと見せる */
 .box.dirty{border-color:#E8A33D;box-shadow:0 0 0 3px rgba(232,163,61,.16)}
 .box.dirty #clsSave{background:#E8A33D}
-h2{font-size:.72rem;letter-spacing:.18em;color:var(--mute);font-weight:700;margin-bottom:1.1rem}
-.row{display:flex;align-items:center;gap:1rem;margin-bottom:.9rem}
+h2{font-size:.72rem;letter-spacing:.14em;color:var(--mute);font-weight:700;margin-bottom:.7rem}
+.row{display:flex;align-items:center;gap:1rem;margin-bottom:.55rem}
 .row label{flex:1;font-size:.94rem;font-weight:600}
 .row .note{display:block;font-size:.74rem;color:var(--mute);font-weight:400}
 input[type=number],input[type=text]{width:7rem;padding:.5rem .7rem;border:1.5px solid var(--line);
@@ -46,7 +54,7 @@ button:disabled{opacity:.45;cursor:default}
 .fpInfo b{font-size:1rem}
 .fpInfo .stage{color:var(--mute);font-weight:700}
 #floorBox .bar button{padding:.5rem .9rem}
-.bar{display:flex;gap:.7rem;align-items:center;margin-top:1.2rem;flex-wrap:wrap}
+.bar{display:flex;gap:.7rem;align-items:center;margin-top:.8rem;flex-wrap:wrap}
 .stat{font-size:.82rem;color:var(--mute);min-height:1.3rem}
 /* 失敗は目立たせる。灰色の小さい字で出していると、保存できていないことに気づかず
    「児童側の不具合」を探しに行くことになる */
@@ -65,9 +73,9 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
  * 色は色覚特性を越えて見分けられる既定トークンだけを使い、
  * 「色を外しても意味が残る」形（閾値線・記号・数値の併記）にする。 */
 :root{--cat1:#0F5EA8;--cat2:#C86A00;--alert:#C0330A;--fillA:#D7E8F8}
-.wrap.wide{max-width:900px}
-.tabs{display:flex;gap:.15rem;border-bottom:2px solid var(--line);margin-bottom:1.3rem}
-.tab{font:inherit;font-weight:700;font-size:1rem;padding:.55rem 1.5rem;background:none;
+
+.tabs{display:flex;gap:.15rem;border-bottom:2px solid var(--line);margin-bottom:.9rem}
+.tab{font:inherit;font-weight:700;font-size:1rem;padding:.45rem 1.3rem;background:none;
   border:none;border-bottom:4px solid transparent;margin-bottom:-2px;color:var(--mute);cursor:pointer}
 .tab.on{color:var(--ink);border-bottom-color:var(--cat1);background:var(--fillA)}
 .chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.2rem 0 .9rem}
@@ -120,9 +128,9 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 /* ===== きょうりょくタブ =====
  * ステージは箱の中では16:9の枠、「全画面でうつす」で fixed に変わる（モニターうつし）。
  * 時計・正答数・名札は白い下地付きの札にして、図形が一面に育っても埋もれない。 */
-#coopStage{position:relative;width:100%;aspect-ratio:16/9;border:1.5px solid var(--line);
+#coopStage{position:relative;width:var(--stageW,100%);margin-left:auto;margin-right:auto;aspect-ratio:16/9;border:1.5px solid var(--line);
   border-radius:10px;overflow:hidden;background:#F2F1EC;margin-top:.8rem}
-#coopStage.full{position:fixed;inset:0;z-index:40;aspect-ratio:auto;border-radius:0;border:none;margin:0}
+#coopStage.full{position:fixed;inset:0;z-index:40;aspect-ratio:auto;width:auto;border-radius:0;border:none;margin:0}
 #coopStage canvas{position:absolute;inset:0;width:100%;height:100%}
 #coopHud{position:absolute;top:2.4vmin;right:2.4vmin;display:flex;gap:1.2vmin;align-items:flex-start;z-index:2}
 #coopHud .tag{background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:14px;
@@ -184,20 +192,51 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 </head>
 <body>
 <div class="wrap">
-  <h1 id="h1">設定・分析</h1>
-  <div class="golinks" id="golinks"></div>
-  <div class="sub" id="sub">設定と分析</div>
+  <div class="head">
+    <h1 id="h1">設定・分析</h1>
+    <div class="golinks" id="golinks"></div>
+  </div>
+  <div class="sub" id="sub"></div>
   <div id="verWarn" class="note" style="display:none;color:#C0392B;font-weight:700"></div>
 
   <nav class="tabs" role="tablist">
-    <button class="tab on" id="tabSet" role="tab" aria-current="page">せってい</button>
-    <button class="tab" id="tabAna" role="tab">ぶんせき</button>
-    <button class="tab" id="tabCoop" role="tab">きょうりょく</button>
+    <button class="tab on" id="tabMode" role="tab" aria-current="page">公開モード</button>
+    <button class="tab" id="tabSet" role="tab">設定</button>
+    <button class="tab" id="tabAna" role="tab">分析</button>
+    <button class="tab" id="tabCoop" role="tab">協力モード</button>
   </nav>
 
-  <div id="pageSet">
+  <div id="pageMode">
+  <div class="box" id="clsBox">
+    <h2>クラスごとに公開するモード</h2>
+    <p style="font-size:.88rem;margin-bottom:.4rem">
+      <b>チェックを入れたモードだけが、そのクラスの児童に表示されます。</b>
+      初期状態はすべてオフです。学年による自動の解禁はありません。
+    </p>
+    <div style="margin:1rem 0;overflow-x:auto">
+      <div class="stat" id="clsLoading">読み込み中…</div>
+      <table id="clsTable" style="display:none">
+        <thead><tr id="clsHead"><th>クラス</th><th>人数</th></tr></thead>
+        <tbody id="clsBody"></tbody>
+      </table>
+    </div>
+    <div class="stat bad" id="clsOrphan" style="display:none;line-height:1.8;margin-bottom:.8rem"></div>
+    <div class="legend" id="clsLegend"></div>
+    <div class="bar">
+      <button id="clsSave">クラス設定を保存</button>
+      <button id="clsAll" class="ghost">すべてオン</button>
+      <button id="clsNone" class="ghost">すべてオフ</button>
+      <button id="clsReload" class="ghost">最新の状態を読み込む</button>
+      <span class="stat" id="clsStat"></span>
+    </div>
+  </div>
+
+  </div><!-- /pageMode -->
+
+  <div id="pageSet" style="display:none">
+  <div class="cols">
   <div class="box">
-    <h2>せってい</h2>
+    <h2>設定</h2>
     <div class="row">
       <label>制限時間<span class="note">秒。15〜300 の範囲で</span></label>
       <input id="limit_sec" type="number" min="15" max="300">
@@ -225,7 +264,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 
   <div class="box" id="floorBox" style="display:none">
     <h2>背景（成長する図形）のプレビュー</h2>
-    <p style="font-size:.88rem;margin-bottom:.7rem">
+    <p style="font-size:.82rem;margin-bottom:.5rem;color:var(--mute)">
       児童のメニュー画面の背景です。本番の正答で <b>輪郭 → 学年の色 → 第二の色</b> の順に、画面全体を覆うたびに次の段へ育ちます。
       上の「1正答あたりの育ち」を書きかえると、保存する前にここへ反映されます。
     </p>
@@ -244,68 +283,37 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     </div>
   </div>
 
-  <div class="box" id="clsBox">
-    <h2>クラスごとの もーど</h2>
-    <p style="font-size:.88rem;margin-bottom:.4rem">
-      <b>チェックを入れたモードだけが、そのクラスの児童に表示されます。</b>
-      初期状態はすべてオフです。学年による自動の解禁はありません。
-    </p>
-    <div style="margin:1rem 0;overflow-x:auto">
-      <div class="stat" id="clsLoading">読み込み中…</div>
-      <table id="clsTable" style="display:none">
-        <thead><tr id="clsHead"><th>クラス</th><th>人数</th></tr></thead>
-        <tbody id="clsBody"></tbody>
-      </table>
-    </div>
-    <div class="stat bad" id="clsOrphan" style="display:none;line-height:1.8;margin-bottom:.8rem"></div>
-    <div class="legend" id="clsLegend"></div>
-    <div class="bar">
-      <button id="clsSave">クラス設定を保存</button>
-      <button id="clsAll" class="ghost">ぜんぶオン</button>
-      <button id="clsNone" class="ghost">ぜんぶオフ</button>
-      <button id="clsReload" class="ghost">いまの状態を読み直す</button>
-      <span class="stat" id="clsStat"></span>
-    </div>
-  </div>
-
-  <div class="box">
-    <h2>ぶんせき</h2>
-    <p style="font-size:.88rem;margin-bottom:1rem">
-      <b>毎晩23時台に自動で集計されます。</b>授業直後にすぐ見たいときだけ押してください。
-    </p>
-    <div class="bar">
-      <button id="agg" class="ghost">いま集計する</button>
-      <span class="stat" id="aggStat"></span>
-    </div>
-  </div>
-
-  <div class="box">
-    <h2>シートの読み方</h2>
-    <div class="tips" id="tips"></div>
   </div>
   </div><!-- /pageSet -->
 
   <div id="pageAna" style="display:none">
   <div class="box">
-    <h2>ぶんせき</h2>
+    <h2>分析</h2>
     <div class="chips" id="anaChips"></div>
     <div class="stat" id="anaStat">読み込み中…</div>
     <div id="anaBody"></div>
     <div class="bar">
       <select id="anaYear" style="display:none" aria-label="年度"></select>
-      <button class="ghost" id="anaReload">いまの記録で読み直す</button>
+      <button class="ghost" id="anaReload">最新の記録で再表示</button>
+      <button id="agg" class="ghost">シートを今すぐ集計</button>
+      <span class="stat" id="aggStat"></span>
     </div>
+    <details class="help">
+      <summary>集計の時刻とシートの読み方</summary>
+      <p style="margin:.6rem 0">シート（weak_child など）は毎晩23時台に自動で集計されます。授業直後に見たいときだけ「シートを今すぐ集計」を押してください。</p>
+      <div class="tips" id="tips"></div>
+    </details>
   </div>
   </div><!-- /pageAna -->
 
   <div id="pageCoop" style="display:none">
   <div class="box">
-    <h2>きょうりょくモード</h2>
-    <p style="font-size:.88rem;margin-bottom:.7rem">
+    <details class="help" style="margin:0 0 .5rem"><summary>協力モードとは</summary>
+    <p style="font-size:.88rem;margin:.4rem 0 .2rem">
       クラス全員の<b>本番の正答</b>で図形がいっしょに育ちます（れんしゅうは数えません）。
       「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと 5 から数えてスタートします。
       時間が来たら自動で打ち切りです。
-    </p>
+    </p></details>
     <div class="bar" style="margin-top:0">
       <span class="lab">クラス <select id="coopCls"></select></span>
       <span class="lab">図形 <select id="coopPat"></select></span>
@@ -318,7 +326,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
       <span class="lab">1正答 <input id="coopRate" type="number" min="0.5" step="0.5" placeholder="自動" style="width:4.5rem"> 枚
         <span id="coopRateTag" class="note" style="margin:0">自動</span>
         <button id="coopRateAuto" class="ghost" type="button" style="display:none;padding:.3rem .7rem">自動にもどす</button></span>
-      <button id="coopStop" class="ghost" disabled>おわる</button>
+      <button id="coopStop" class="ghost" disabled>終了</button>
       <button id="coopReset" class="ghost" disabled>リセット</button>
     </div>
     <div class="bar">
@@ -448,7 +456,7 @@ function fpInfo(){
   var g = fpProg(FP.tc), N = FP.tiles.length, all = Math.ceil(2 * N / fpPer());
   document.getElementById('fpTc').textContent = Math.round(FP.tc).toLocaleString();
   document.getElementById('fpStage').textContent =
-    g.thin >= FP.thin.length ? 'ぜんぶ そろった' : g.thick >= FP.thick.length ? '③ 第二の色' :
+    g.thin >= FP.thin.length ? '完成' : g.thick >= FP.thick.length ? '③ 第二の色' :
     g.line >= N ? '② 学年の色' : g.line ? '① 輪郭' : '無地';
   document.getElementById('fpAll').textContent = '全部そろうまで 約' + all.toLocaleString() + '問（' + N.toLocaleString() + '枚）';
   var sw = document.getElementById('floor_on');
@@ -480,12 +488,14 @@ function showWhere(w){
   w = w || {};
   if(!w.file) return;
   document.getElementById('golinks').innerHTML =
-    (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシートを開く</a>' : '') +
-    (w.url      ? '<a href="' + esc(w.url) + '">児童の画面を見る</a>' : '');
+    (w.url      ? '<a href="' + esc(w.url) + '">児童の画面</a>' : '') +
+    (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシート</a>' : '');
+  // 1行に収める。ID と配布 URL は折りたたみに（写しの取り違えを確かめる時だけ開く）
   document.getElementById('sub').innerHTML =
-    'このページが設定しているのは <b>' + esc(w.file) + '</b>' +
-    (w.id  ? '<br>スプレッドシート ID: <code>' + esc(w.id) + '</code>' : '') +
-    (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '');
+    '設定している写し：<b>' + esc(w.file) + '</b>' +
+    ((w.id || w.url) ? ' <details style="display:inline"><summary style="display:inline;cursor:pointer">ID と URL</summary>' +
+      (w.id  ? '<br>スプレッドシート ID: <code>' + esc(w.id) + '</code>' : '') +
+      (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '') + '</details>' : '');
 }
 
 function setStat(id, text, bad){
@@ -733,7 +743,7 @@ function setAll(v){
   });
   renderClasses();
   setDirty(true);
-  setStat('clsStat', (v ? 'ぜんぶオンにしました' : 'ぜんぶオフにしました') +
+  setStat('clsStat', (v ? 'すべてオンにしました' : 'すべてオフにしました') +
                      '（保存を押すと確定）', false);
 }
 document.getElementById('clsAll').onclick  = function(){ setAll(true); };
@@ -747,17 +757,33 @@ var ANA = null, anaScope = null, anaAsked = false;
 var anaFy = 0;   // 0 = 今年度。過去の年度を選ぶとその年の4月〜3月を集計する
 
 function showPage(p){
-  ['set','ana','coop'].forEach(function(k){
+  ['mode','set','ana','coop'].forEach(function(k){
     var on = (p === k), tab = document.getElementById('tab' + k[0].toUpperCase() + k.slice(1));
     tab.classList.toggle('on', on);
     if(on) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
   });
+  document.getElementById('pageMode').style.display = p === 'mode' ? '' : 'none';
   document.getElementById('pageSet').style.display = p === 'set' ? '' : 'none';
   document.getElementById('pageAna').style.display = p === 'ana' ? '' : 'none';
   document.getElementById('pageCoop').style.display = p === 'coop' ? '' : 'none';
-  document.querySelector('.wrap').classList.toggle('wide', p === 'ana');
   if(p === 'ana' && !anaAsked){ anaAsked = true; loadAnalysis(false); }
+  // 床のプレビューは設定タブの中にある。隠れている間は枠の大きさが0なので、開いた時に描き直す
+  if(p === 'set' && FP.on) fpDraw(FP.shown);
+  if(p === 'coop') coopFit_();
 }
+/* 協力モードのステージを、操作欄の下に残った高さへ収める（16:9 を保つ）。
+   操作欄は画面幅で折り返して高さが変わるので、CSS の固定の式ではなく実際の位置から求める。全画面のときは効かない */
+function coopFit_(){
+  var st = document.getElementById('coopStage');
+  if(!st || st.style.display === 'none' || document.getElementById('pageCoop').style.display === 'none') return;
+  st.style.removeProperty('--stageW');
+  var top = st.getBoundingClientRect().top + (window.scrollY || 0);
+  var room = innerHeight - top - 16;
+  var full = st.parentElement.clientWidth;
+  st.style.setProperty('--stageW', Math.max(320, Math.min(full, room * 16 / 9)) + 'px');
+}
+addEventListener('resize', coopFit_);
+document.getElementById('tabMode').onclick = function(){ showPage('mode'); };
 document.getElementById('tabSet').onclick = function(){ showPage('set'); };
 document.getElementById('tabAna').onclick = function(){ showPage('ana'); };
 document.getElementById('tabCoop').onclick = function(){ showPage('coop'); coopTabShow_(); };
@@ -1352,6 +1378,7 @@ function coopUseSession(s, evAll){
   CP.GCOLORS = coopPalette(CP.GN, (s.seed || 1) * 31 + 11); CP.GFAMS = CP.GCOLORS.map(coopFam);
   CP.sel = -1; CP.EDIT = false; CP.off = 0;
   document.getElementById('coopStage').style.display = '';   // 先に出さないと幅が取れずタイルが作れない
+  coopFit_();
   coopGen(); coopRoster(); coopRecompute(CP.ev.length);
   document.getElementById('coopClock').classList.remove('end');
   document.getElementById('coopReplay').classList.toggle('on', s.status !== 'run');
@@ -1519,6 +1546,7 @@ function coopInitUnit(u){
 function coopPreview(){
   if(CP.sess) return;
   document.getElementById('coopStage').style.display = '';   // 先に出さないと幅が取れずタイルが作れない
+  coopFit_();
   CP.names = []; CP.nos = []; CP.gi = []; CP.ev = []; CP.evI = 0;
   coopRoster(); coopRelayout(); coopGoShow();
   document.getElementById('coopScore').textContent = 0;
@@ -1552,7 +1580,7 @@ function coopBegin(reset){
   var fail = function(msg){
     CP.begin = false; CP.beginErr = msg; CP.beginErrUntil = Date.now() + 5000;
     setStat('coopStat', msg, true); coopCountShow(); coopGoShow();
-    // 保存データの再生中に押した：進行中のセッションがあれば、ライブの表示に戻す（「おわる」を押せるように）
+    // 保存データの再生中に押した：進行中のセッションがあれば、ライブの表示に戻す（「終了」を押せるように）
     if(CP.loaded){ CP.loaded = false; CP.sess = null; coopPoll(); }
   };
   var ok = function(r){
@@ -1632,7 +1660,7 @@ document.getElementById('coopRplay').onclick = function(){ CP.playing ? coopStop
 document.getElementById('coopSpeed').onchange = function(){ CP.SPEED = Number(this.value); };
 document.getElementById('coopSeek').oninput = function(){
   coopStopPlay(); CP.simT = Number(this.value);
-  // つまみは0.5秒刻みなので、「おわる」で半端な時刻に終えた回は右端でも終わりに届かない。
+  // つまみは0.5秒刻みなので、「終了」で半端な時刻に終えた回は右端でも終わりに届かない。
   // 締め切り後の送り直しは終わりの時刻に置くので、右端では終わりそのものにする（最後の形が欠けないように）
   if(CP.simT > Number(this.max) - Number(this.step)) CP.simT = coopDur();
   coopRecompute(coopEvUpper(CP.simT)); coopShowT();
