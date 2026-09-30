@@ -16,6 +16,18 @@ body{background:var(--paper);color:var(--ink);
 /* 2列：画面の横幅を使い、縦に積まない */
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1.1rem;align-items:start}
 .cols > .box{margin-bottom:0}
+/* 公開モードの表は横に引き伸ばさない。クラス名とチェックが離れると行を目で追えない。凡例は表の右に並べる */
+.clsWrap{display:flex;gap:1.6rem;align-items:flex-start;flex-wrap:wrap;margin:.8rem 0}
+#clsTable{width:auto}
+#clsTable th,#clsTable td{padding-left:.8rem;padding-right:.8rem}
+#clsTable td input[type=checkbox]{width:1.15rem;height:1.15rem}
+.clsWrap .legend{flex:1;min-width:260px;margin:0}
+/* Unit.gs の検査結果のうち「注意：」は設計上許容されるもの（docs/ARCHITECTURE.md「Unit.gs の契約検査」）。赤で出さない */
+.cautions{font-size:.76rem;color:var(--mute);margin:.2rem 0 .6rem}
+.cautions summary{cursor:pointer}
+/* 設定タブ：項目の数は単元ごとに違う（長さは8項目）。ページは送らず、箱の中だけを送る。保存ボタンは箱の下端に残す */
+#pageSet .cols > .box{max-height:calc(100vh - 13rem);overflow:auto}
+#pageSet .cols > .box > .bar:last-child{position:sticky;bottom:-1rem;background:#fff;margin:0 -1.1rem -1rem;padding:.7rem 1.1rem;border-top:1px solid var(--line)}
 details.help{font-size:.84rem;margin-top:1rem}
 details.help summary{cursor:pointer;font-weight:700;color:var(--mute)}
 h1{font-size:1.35rem;font-weight:800;margin-bottom:.3rem}
@@ -198,6 +210,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   </div>
   <div class="sub" id="sub"></div>
   <div id="verWarn" class="note" style="display:none;color:#C0392B;font-weight:700"></div>
+  <details id="cautions" class="cautions" style="display:none"><summary></summary><div id="cautionList"></div></details>
 
   <nav class="tabs" role="tablist">
     <button class="tab on" id="tabMode" role="tab" aria-current="page">公開モード</button>
@@ -213,15 +226,17 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
       <b>チェックを入れたモードだけが、そのクラスの児童に表示されます。</b>
       初期状態はすべてオフです。学年による自動の解禁はありません。
     </p>
-    <div style="margin:1rem 0;overflow-x:auto">
-      <div class="stat" id="clsLoading">読み込み中…</div>
-      <table id="clsTable" style="display:none">
-        <thead><tr id="clsHead"><th>クラス</th><th>人数</th></tr></thead>
-        <tbody id="clsBody"></tbody>
-      </table>
+    <div class="clsWrap">
+      <div style="overflow-x:auto">
+        <div class="stat" id="clsLoading">読み込み中…</div>
+        <table id="clsTable" style="display:none">
+          <thead><tr id="clsHead"><th>クラス</th><th>人数</th></tr></thead>
+          <tbody id="clsBody"></tbody>
+        </table>
+      </div>
+      <div class="legend" id="clsLegend"></div>
     </div>
     <div class="stat bad" id="clsOrphan" style="display:none;line-height:1.8;margin-bottom:.8rem"></div>
-    <div class="legend" id="clsLegend"></div>
     <div class="bar">
       <button id="clsSave">クラス設定を保存</button>
       <button id="clsAll" class="ghost">すべてオン</button>
@@ -517,10 +532,18 @@ var SETTINGS = [];
 /* この画面が前提にする Core.gs の版。貼り替えを片方だけ忘れたときに検知する */
 var WANT_VER = 4;
 
+/* 直すべきもの（版ずれ・Unit.gs の不具合）は赤で出す。「注意：」で始まる行は設計上許容されるものなので、
+   件数だけの折りたたみにする（毎回赤で出すと、本当の警告が目に入らなくなる） */
 function showWarn(msgs){
+  var bad = [], ok = [];
+  msgs.forEach(function(m){ (/^Unit\.gs: 注意：/.test(m) ? ok : bad).push(m); });
   var el = document.getElementById('verWarn');
-  el.innerHTML = msgs.map(esc).join('<br>');
-  el.style.display = msgs.length ? '' : 'none';
+  el.innerHTML = bad.map(esc).join('<br>');
+  el.style.display = bad.length ? '' : 'none';
+  var ce = document.getElementById('cautions');
+  ce.style.display = ok.length ? '' : 'none';
+  ce.querySelector('summary').textContent = 'Unit.gs の注意 ' + ok.length + '件（動作に支障はありません）';
+  document.getElementById('cautionList').innerHTML = ok.map(function(m){ return esc(m.replace(/^Unit\.gs: 注意：/, '')); }).join('<br>');
 }
 
 google.script.run.withSuccessHandler(function(r){
@@ -617,7 +640,7 @@ function renderClasses(){
     CLS.modes.map(function(m, i){
       return '<th style="text-align:center">'+(i+1)+'</th>';
     }).join('') +
-    (CLS.hasNeeds ? '<th style="text-align:center">じゅん<br>ばん解除</th>' : '');
+    (CLS.hasNeeds ? '<th style="text-align:center">順序の<br>解除</th>' : '');
 
   document.getElementById('clsBody').innerHTML = CLS.classes.map(function(c){
     var cells = CLS.modes.map(function(m){
@@ -638,7 +661,7 @@ function renderClasses(){
              (m.desc ? '　'+m.desc : '')+'</div>';
     }).join('') +
     (CLS.hasNeeds
-      ? '<div style="margin-top:.4rem">「じゅんばん解除」を入れると、前のモードの回数に関係なく'+
+      ? '<div style="margin-top:.4rem">「順序の解除」を入れると、前のモードの回数に関係なく'+
         'すべて使えるようになります。</div>'
       : '');
 }
