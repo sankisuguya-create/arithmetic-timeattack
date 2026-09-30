@@ -118,7 +118,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .wrong td.n{font-weight:800}
 
 /* ===== きょうりょくタブ =====
- * ステージは箱の中では16:9の枠、「全画面でうつす」で fixed に変わる（モニターうつし）。
+ * ステージは箱の中では16:9の枠、「全画面表示」で fixed に変わる（モニターうつし）。
  * 時計・正答数・名札は白い下地付きの札にして、図形が一面に育っても埋もれない。 */
 #coopStage{position:relative;width:100%;aspect-ratio:16/9;border:1.5px solid var(--line);
   border-radius:10px;overflow:hidden;background:#F2F1EC;margin-top:.8rem}
@@ -135,7 +135,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;
   color:var(--ink);padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
 #coopStage.full #coopClose{display:block}
-/* 左上の並び：（全画面なら × もどる）→ 名前の表示切り替え → 再生の操作。横に詰めて並べ、文字の大きさが変わっても重ならない */
+/* 左上の並び：（全画面なら × 閉じる）→ 名前の表示切り替え → 再生の操作。横に詰めて並べ、文字の大きさが変わっても重ならない */
 #coopTL{position:absolute;top:1.4vmin;left:1.4vmin;right:30%;z-index:3;display:flex;flex-wrap:wrap;gap:1vmin;align-items:center}
 #coopNames{
   background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;
@@ -190,20 +190,20 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   <div id="verWarn" class="note" style="display:none;color:#C0392B;font-weight:700"></div>
 
   <nav class="tabs" role="tablist">
-    <button class="tab on" id="tabSet" role="tab" aria-current="page">せってい</button>
-    <button class="tab" id="tabAna" role="tab">ぶんせき</button>
-    <button class="tab" id="tabCoop" role="tab">きょうりょく</button>
+    <button class="tab on" id="tabSet" role="tab" aria-current="page">設定</button>
+    <button class="tab" id="tabAna" role="tab">分析</button>
+    <button class="tab" id="tabCoop" role="tab">協力プレイ</button>
   </nav>
 
   <div id="pageSet">
   <div class="box">
-    <h2>せってい</h2>
+    <h2>設定</h2>
     <div class="row">
       <label>制限時間<span class="note">秒。15〜300 の範囲で</span></label>
       <input id="limit_sec" type="number" min="15" max="300">
     </div>
     <div class="row">
-      <label>正答提示までの誤答回数<span class="note">この回数まちがえたら答えを見せて次へ</span></label>
+      <label>正答提示までの誤答回数<span class="note">この回数誤答すると正答を表示して次の問題へ</span></label>
       <input id="miss_limit" type="number" min="1" max="9">
     </div>
     <div class="row">
@@ -239,13 +239,13 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
       <button id="fp1" class="ghost" type="button">＋20問</button>
       <button id="fp10" class="ghost" type="button">＋200問</button>
       <button id="fp50" class="ghost" type="button">＋1000問</button>
-      <button id="fp0" class="ghost" type="button">0にもどす</button>
+      <button id="fp0" class="ghost" type="button">0に戻す</button>
       <span class="stat" id="fpStat"></span>
     </div>
   </div>
 
   <div class="box" id="clsBox">
-    <h2>クラスごとの もーど</h2>
+    <h2>クラスごとの公開モード</h2>
     <p style="font-size:.88rem;margin-bottom:.4rem">
       <b>チェックを入れたモードだけが、そのクラスの児童に表示されます。</b>
       初期状態はすべてオフです。学年による自動の解禁はありません。
@@ -261,20 +261,20 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     <div class="legend" id="clsLegend"></div>
     <div class="bar">
       <button id="clsSave">クラス設定を保存</button>
-      <button id="clsAll" class="ghost">ぜんぶオン</button>
-      <button id="clsNone" class="ghost">ぜんぶオフ</button>
-      <button id="clsReload" class="ghost">いまの状態を読み直す</button>
+      <button id="clsAll" class="ghost">すべてオン</button>
+      <button id="clsNone" class="ghost">すべてオフ</button>
+      <button id="clsReload" class="ghost">最新の状態を読み込む</button>
       <span class="stat" id="clsStat"></span>
     </div>
   </div>
 
   <div class="box">
-    <h2>ぶんせき</h2>
+    <h2>分析</h2>
     <p style="font-size:.88rem;margin-bottom:1rem">
       <b>毎晩23時台に自動で集計されます。</b>授業直後にすぐ見たいときだけ押してください。
     </p>
     <div class="bar">
-      <button id="agg" class="ghost">いま集計する</button>
+      <button id="agg" class="ghost">今すぐ集計する</button>
       <span class="stat" id="aggStat"></span>
     </div>
   </div>
@@ -287,23 +287,23 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 
   <div id="pageAna" style="display:none">
   <div class="box">
-    <h2>ぶんせき</h2>
+    <h2>分析</h2>
     <div class="chips" id="anaChips"></div>
     <div class="stat" id="anaStat">読み込み中…</div>
     <div id="anaBody"></div>
     <div class="bar">
       <select id="anaYear" style="display:none" aria-label="年度"></select>
-      <button class="ghost" id="anaReload">いまの記録で読み直す</button>
+      <button class="ghost" id="anaReload">最新の記録で再読み込み</button>
     </div>
   </div>
   </div><!-- /pageAna -->
 
   <div id="pageCoop" style="display:none">
   <div class="box">
-    <h2>きょうりょくモード</h2>
+    <h2>協力プレイ</h2>
     <p style="font-size:.88rem;margin-bottom:.7rem">
-      クラス全員の<b>本番の正答</b>で図形がいっしょに育ちます（れんしゅうは数えません）。
-      「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと 5 から数えてスタートします。
+      クラス全員の<b>本番の正答</b>で1つの図形が育ちます（練習は数えません）。
+      「全画面表示」でモニターに図形だけを映し、画面中央の「開始」を押すと5秒のカウントダウン後に始まります。
       時間が来たら自動で打ち切りです。
     </p>
     <div class="bar" style="margin-top:0">
@@ -317,12 +317,12 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
       <span class="lab" id="coopGnRow" style="display:none">組数 <select id="coopGn"></select></span>
       <span class="lab">1正答 <input id="coopRate" type="number" min="0.5" step="0.5" placeholder="自動" style="width:4.5rem"> 枚
         <span id="coopRateTag" class="note" style="margin:0">自動</span>
-        <button id="coopRateAuto" class="ghost" type="button" style="display:none;padding:.3rem .7rem">自動にもどす</button></span>
+        <button id="coopRateAuto" class="ghost" type="button" style="display:none;padding:.3rem .7rem">自動に戻す</button></span>
       <button id="coopStop" class="ghost" disabled>おわる</button>
       <button id="coopReset" class="ghost" disabled>リセット</button>
     </div>
     <div class="bar">
-      <button id="coopFull">全画面でうつす</button>
+      <button id="coopFull">全画面表示</button>
       <button id="coopGedit" class="ghost" style="display:none">グループ編集</button>
       <span style="flex:1"></span>
       <input id="coopName" class="wide" type="text" style="width:10rem" placeholder="セーブ名">
@@ -337,8 +337,8 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     <canvas id="coopFloor"></canvas>
     <canvas id="coopGrow"></canvas>
     <div id="coopTL">
-    <button id="coopClose" class="ghost" type="button">× もどる</button>
-    <button id="coopNames" type="button">名前をかくす</button>
+    <button id="coopClose" class="ghost" type="button">× 閉じる</button>
+    <button id="coopNames" type="button">名前を隠す</button>
     <div id="coopReplay">
       <button id="coopRplay" type="button">▶</button>
       <input id="coopSeek" type="range" min="0" max="600000" step="500" value="0">
@@ -448,11 +448,11 @@ function fpInfo(){
   var g = fpProg(FP.tc), N = FP.tiles.length, all = Math.ceil(2 * N / fpPer());
   document.getElementById('fpTc').textContent = Math.round(FP.tc).toLocaleString();
   document.getElementById('fpStage').textContent =
-    g.thin >= FP.thin.length ? 'ぜんぶ そろった' : g.thick >= FP.thick.length ? '③ 第二の色' :
+    g.thin >= FP.thin.length ? 'すべて完成' : g.thick >= FP.thick.length ? '③ 第二の色' :
     g.line >= N ? '② 学年の色' : g.line ? '① 輪郭' : '無地';
   document.getElementById('fpAll').textContent = '全部そろうまで 約' + all.toLocaleString() + '問（' + N.toLocaleString() + '枚）';
   var sw = document.getElementById('floor_on');
-  setStat('fpStat', sw && sw.value === '0' ? 'いまは「表示しない」なので、児童の画面には出ません' : '', false);
+  setStat('fpStat', sw && sw.value === '0' ? '現在「表示しない」の設定のため、児童の画面には出ません' : '', false);
 }
 /* ＋ボタン：増えた分を短く育てて見せる（児童の画面では本番のあとメニューに戻った時の演出にあたる） */
 function fpAdd(n){
@@ -733,7 +733,7 @@ function setAll(v){
   });
   renderClasses();
   setDirty(true);
-  setStat('clsStat', (v ? 'ぜんぶオンにしました' : 'ぜんぶオフにしました') +
+  setStat('clsStat', (v ? 'すべてオンにしました' : 'すべてオフにしました') +
                      '（保存を押すと確定）', false);
 }
 document.getElementById('clsAll').onclick  = function(){ setAll(true); };
@@ -1673,7 +1673,7 @@ document.getElementById('coopRateAuto').onclick = function(){
 /* 下の名前（名札）の表示切り替え。モニターに名前を出したくない時に。見る人の端末ごとに覚える */
 function coopNamesSet(on){
   document.getElementById('coopStage').classList.toggle('nonames', !on);
-  document.getElementById('coopNames').textContent = on ? '名前をかくす' : '名前を出す';
+  document.getElementById('coopNames').textContent = on ? '名前を隠す' : '名前を表示';
   try { localStorage.setItem('coopNames', on ? '1' : '0'); } catch(e){}
 }
 document.getElementById('coopNames').onclick = function(){
