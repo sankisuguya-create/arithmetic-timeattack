@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+:root{--paper:#F7F7F4;--ink:#101728;--mint:#12C48B;--mute:#6B7280;--line:#DFDFD8}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);
+  font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans",sans-serif;
+  padding:1.6rem 1rem 4rem;line-height:1.6}
+.wrap{max-width:980px;margin:0 auto}
+h1{font-size:1.3rem;font-weight:800}
+.top{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin:.4rem 0 1rem}
+.sub{font-size:.8rem;color:var(--mute)}
+select,input[type=text],input[type=date],textarea{font:inherit;padding:.45rem .6rem;border:1.5px solid var(--line);
+  border-radius:8px;background:#fff;color:var(--ink)}
+textarea{width:100%}
+button{font:inherit;font-weight:700;padding:.5rem 1rem;border:none;border-radius:9px;background:var(--ink);color:#fff;cursor:pointer}
+button.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
+button.tiny{padding:.25rem .6rem;font-size:.8rem}
+button:disabled{opacity:.45;cursor:default}
+.tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+.tabs button{border-radius:999px;background:transparent;color:var(--ink);border:2px solid var(--ink)}
+.tabs button.on{background:var(--ink);color:#fff}
+.pg{display:none}.pg.on{display:block}
+.box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.1rem;margin-bottom:1rem;overflow-x:auto}
+h2{font-size:.75rem;letter-spacing:.16em;color:var(--mute);font-weight:700;margin-bottom:.7rem}
+h3{font-size:1rem;font-weight:800;margin:.2rem 0 .5rem}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{font-size:.72rem;color:var(--mute);text-align:left;padding:.35rem .45rem;border-bottom:1.5px solid var(--line);white-space:nowrap}
+td{padding:.4rem .45rem;border-bottom:1px solid var(--line);vertical-align:top}
+tr.kid{cursor:pointer}
+tr.kid:hover td{background:#FAFAF7}
+tr.open td{background:#F2F2EE}
+.mk{font-weight:800;white-space:nowrap}
+.dim{color:var(--mute)}
+.legend{font-size:.8rem;color:var(--mute);line-height:1.9;margin-bottom:.6rem}
+.warn{font-size:.82rem;border-left:4px solid var(--ink);padding:.3rem .6rem;margin:.4rem 0;background:#F2F2EE}
+.detail{padding:.6rem .2rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.7rem}
+.card{border:1.5px solid var(--line);border-radius:10px;padding:.7rem}
+.row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.45rem 0}
+.row label{font-size:.8rem;font-weight:700;color:var(--mute);min-width:4.5rem}
+.chips{display:flex;gap:.35rem;flex-wrap:wrap}
+.chip{padding:.25rem .6rem;border-radius:999px;border:1.5px solid var(--line);font-size:.8rem;font-weight:700;cursor:pointer;background:#fff;color:var(--mute)}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.stat{font-size:.82rem;color:var(--mute);min-height:1.2rem}
+.sup{border-bottom:1px solid var(--line);padding:.6rem 0}
+.sup:last-child{border-bottom:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ぶんせき（単元横断）</h1>
+  <div class="top">
+    <select id="cls"></select>
+    <button class="ghost tiny" id="ingest">いま集計する</button>
+    <span class="sub" id="srcs"></span>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button data-p="kids" class="on">児童</button>
+    <button data-p="class">学級</button>
+    <button data-p="sup">手立て</button>
+    <button data-p="out">書き出し・記録</button>
+  </div>
+
+  <div class="pg on" data-pg="kids">
+    <div class="box">
+      <div class="legend" id="legend"></div>
+      <div id="kids">読み込み中…</div>
+    </div>
+  </div>
+
+  <div class="pg" data-pg="class">
+    <div id="classv"></div>
+  </div>
+
+  <div class="pg" data-pg="sup">
+    <div class="box">
+      <h2>手立てを記録する</h2>
+      <div class="row"><label>対象</label><select id="sTarget"></select></div>
+      <div class="row"><label>単元</label><select id="sUnit"></select></div>
+      <div class="row"><label>型</label><span class="chips" id="sTypes"></span><span class="dim" style="font-size:.78rem">選ばなければ単元全体</span></div>
+      <div class="row"><label>内容</label><input type="text" id="sContent" style="flex:1;min-width:14rem" placeholder="例：7の段を唱えてからカード10枚"></div>
+      <div class="row"><label>頻度</label>
+        <select id="sFreq"><option>毎日</option><option>週2〜3回</option><option>週1回</option><option>その他</option></select>
+        <label style="min-width:auto">開始</label><input type="date" id="sStart">
+      </div>
+      <div class="row"><button id="sSave">記録する</button><span class="stat" id="sStat"></span></div>
+    </div>
+    <div class="box">
+      <h2>記録した手立てと前後の変化</h2>
+      <div class="legend">前後それぞれ <span id="effW"></span> 週を比べます。<b>比較群を引いた値</b>で見てください（下位の児童は偶然でも上がりやすいため）。
+        時間の比は 1 未満で速くなった、誤答率の差は負で減った、を表します。</div>
+      <div id="sups"></div>
+    </div>
+  </div>
+
+  <div class="pg" data-pg="out">
+    <div class="box">
+      <h2>集計テキスト（名前・番号を含まない）</h2>
+      <textarea id="outText" rows="14" readonly></textarea>
+      <div class="row"><button id="copy" class="ghost">コピー</button><span class="stat" id="copyStat"></span></div>
+    </div>
+    <div class="box">
+      <h2>この画面を見て判断が変わった</h2>
+      <div class="legend">この仕組みが役に立っているかの物差しです。判断が変わった時だけ1件押してください（年度で <b id="decN">0</b> 件）。</div>
+      <textarea id="decMemo" rows="2" placeholder="何を見て、何を変えたか（任意・名前は書かない）"></textarea>
+      <div class="row"><button id="decSave" class="ghost">記録する</button><span class="stat" id="decStat"></span></div>
+    </div>
+  </div>
+
+  <div class="sub" id="cfgline"></div>
+</div>
+
+<script>
+var BOOT = null, DATA = null, KEY = '', OPEN = '', SEL_TYPES = {};
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function pctTxt(x){ return x==null ? '—' : Math.round(x); }
+function errTxt(x){ return x==null ? '—' : Math.round(x*100)+'%'; }
+function secTxt(x){ return x==null ? '—' : x.toFixed(1)+'秒'; }
+function unitTitle(u){ return (BOOT.units[u] && BOOT.units[u].title) || u; }
+function today(){ var d=new Date(); function z(n){return (n<10?'0':'')+n;} return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); }
+function fail(el){ return function(e){ $(el).textContent = 'エラー: ' + (e && e.message || e); }; }
+
+/* ---------- タブ ---------- */
+$('tabs').addEventListener('click', function(e){
+  var p = e.target.dataset.p; if(!p) return;
+  [].forEach.call(document.querySelectorAll('#tabs button'), function(b){ b.classList.toggle('on', b.dataset.p===p); });
+  [].forEach.call(document.querySelectorAll('.pg'), function(g){ g.classList.toggle('on', g.dataset.pg===p); });
+  if(p==='out' && DATA) loadExport();
+});
+
+/* ---------- 児童 ---------- */
+// 印は色でなく形と文字で伝える（◆◇↓と月数）
+function mark(x){
+  if(!x) return '<span class="dim">記録なし</span>';
+  if(!x.months.length) return '<span class="dim">データ不足</span>';
+  var out = [];
+  function one(label, p){
+    if(!p.on) return;
+    var strong = p.strong >= DATA.cfg.an_persist_months;
+    out.push(label + (strong ? '◆' : '◇') + p.months + 'か月');
+  }
+  one('速さ', x.speedPersist); one('正確さ', x.accPersist);
+  if(x.dual) out.push('伸び↓');
+  return out.length ? '<span class="mk">' + out.join(' ') + '</span>' : '<span class="dim">・</span>';
+}
+
+function renderKids(){
+  var c = DATA.cfg;
+  $('legend').innerHTML =
+    '比較は同じ学年の全児童。<b>◆</b>＝' + c.an_band_strong + 'パーセンタイル以下が ' + c.an_persist_months + 'か月以上、' +
+    '<b>◇</b>＝' + c.an_band_low + 'パーセンタイル以下が ' + c.an_persist_months + 'か月以上、' +
+    '<b>伸び↓</b>＝水準も伸びも ' + c.an_band_low + 'パーセンタイル以下。<b>・</b>＝続いていない。行を押すと月ごとの値。' +
+    '<br>これは判定ではありません。担任の見取りと合わない時は、見取りの側も数字の側も疑ってください。';
+  var units = DATA.units;
+  if(!units.length){ $('kids').innerHTML = '<div class="dim">まだ集計がありません。リンク集の各単元に「記録シート」を入れ、「いま集計する」を押してください。</div>'; return; }
+  var h = '<table><tr><th>番</th><th>名前</th>' + units.map(function(u){ return '<th>'+esc(unitTitle(u))+'</th>'; }).join('') + '</tr>';
+  DATA.children.forEach(function(k){
+    h += '<tr class="kid'+(OPEN===k.email?' open':'')+'" data-k="'+esc(k.email)+'"><td>'+k.no+'</td><td>'+esc(k.name)+'</td>' +
+      units.map(function(u){ return '<td>'+mark(k.units[u])+'</td>'; }).join('') + '</tr>';
+    if(OPEN===k.email) h += '<tr><td colspan="'+(units.length+2)+'">'+detail(k)+'</td></tr>';
+  });
+  $('kids').innerHTML = h + '</table>';
+}
+
+function detail(k){
+  var cards = DATA.units.map(function(u){
+    var x = k.units[u]; if(!x) return '';
+    var g = x.growth;
+    var gt = !g ? '—' : (g.short ? DATA.cfg.an_growth_weeks+'週に満たない' : ('学年内 ' + pctTxt(g.pct)));
+    var rows = x.months.map(function(m){
+      return '<tr><td>'+m.m+'</td><td>'+pctTxt(m.sp)+(m.bsp===2?' ◆':m.bsp===1?' ◇':'')+'</td><td>'+pctTxt(m.ac)+(m.bac===2?' ◆':m.bac===1?' ◇':'')+'</td></tr>';
+    }).join('');
+    return '<div class="card"><h3>'+esc(unitTitle(u))+'</h3>' +
+      '<div class="sub">本番 '+x.sessions+'回 ・ 伸び '+gt+'</div>' +
+      (rows ? '<table><tr><th>月</th><th>速さ</th><th>正確さ</th></tr>'+rows+'</table>' : '<div class="dim">型×月で '+DATA.cfg.an_min_trials+'試行に届いていません</div>') +
+      '</div>';
+  }).join('');
+  var sups = (DATA.supports||[]).filter(function(s){ return s.target==='child:'+k.email; });
+  return '<div class="detail"><div class="sub" style="margin-bottom:.5rem">数字は学年内のパーセンタイル（小さいほど低い。50が真ん中）</div>' +
+    '<div class="grid">'+cards+'</div>' +
+    '<div class="row"><button class="ghost tiny" data-sup="'+esc(k.email)+'">この児童の手立てを記録</button>' +
+    (sups.length ? '<span class="sub">記録済みの手立て '+sups.length+'件（「手立て」タブ）</span>' : '') + '</div></div>';
+}
+
+$('kids').addEventListener('click', function(e){
+  var s = e.target.dataset.sup;
+  if(s){ gotoSupport('child:'+s); return; }
+  var tr = e.target.closest('tr.kid'); if(!tr) return;
+  OPEN = OPEN===tr.dataset.k ? '' : tr.dataset.k;
+  renderKids();
+});
+
+/* ---------- 学級 ---------- */
+function renderClass(){
+  var h = '';
+  DATA.classView.forEach(function(u){
+    h += '<div class="box"><h3>'+esc(u.title)+'</h3>';
+    if(u.normWarn) h += '<div class="warn">学年の比較人数が最大 '+u.normN+' 人で、基準（'+DATA.cfg.an_norm_min+'人）に届きません。帯は参考にとどめてください。</div>';
+    h += '<div class="sub">学級の児童の学年内パーセンタイルの平均：速さ '+pctTxt(u.classSpeedPct)+' ／ 正確さ '+pctTxt(u.classAccPct)+'（50前後なら学年並み。学年が1学級だけなら常に50前後）</div>';
+    h += '<table><tr><th>型</th><th>誤答率 学級</th><th>学年</th><th>想起 学級</th><th>学年</th><th>学級の人数</th></tr>' +
+      u.types.map(function(t){
+        return '<tr><td>'+esc(t.name)+'</td><td>'+errTxt(t.cls.err)+'</td><td class="dim">'+errTxt(t.grd.err)+'</td>' +
+          '<td>'+secTxt(t.cls.sec)+'</td><td class="dim">'+secTxt(t.grd.sec)+'</td><td>'+t.cls.kids+'</td></tr>';
+      }).join('') + '</table></div>';
+  });
+  if(DATA.overlaps.length){
+    h += '<div class="box"><h2>下位が続く児童の重なり</h2><div class="legend">偶然でも期待人数くらいは重なります。大きく超える時だけ、単元をまたぐ共通の原因を疑います。</div>' +
+      '<table><tr><th>単元の組</th><th>重なり</th><th>偶然の期待</th><th>両方に記録のある人数</th></tr>' +
+      DATA.overlaps.map(function(o){
+        return '<tr><td>'+esc(o.t1)+' × '+esc(o.t2)+'</td><td>'+o.k+'人</td><td>'+o.expected.toFixed(1)+'人</td><td>'+o.n+'人</td></tr>';
+      }).join('') + '</table></div>';
+  }
+  $('classv').innerHTML = h || '<div class="box dim">まだ集計がありません。</div>';
+}
+
+/* ---------- 手立て ---------- */
+function renderSupportForm(){
+  var cur = $('sTarget').value;
+  var p = KEY.split('-');
+  $('sTarget').innerHTML = '<option value="class:'+esc(KEY)+'">学級全体（'+esc(p[0])+'年'+esc(p.slice(1).join('-'))+'組）</option>' +
+    DATA.children.map(function(k){ return '<option value="child:'+esc(k.email)+'">'+k.no+' '+esc(k.name)+'</option>'; }).join('');
+  if(cur) $('sTarget').value = cur;
+  var ucur = $('sUnit').value;
+  var us = Object.keys(BOOT.units).filter(function(u){ return !DATA.grade || !BOOT.units[u].grade || BOOT.units[u].grade===DATA.grade; });
+  $('sUnit').innerHTML = us.map(function(u){ return '<option value="'+esc(u)+'">'+esc(unitTitle(u))+'</option>'; }).join('');
+  if(ucur && us.indexOf(ucur)>=0) $('sUnit').value = ucur;
+  renderTypeChips();
+  if(!$('sStart').value) $('sStart').value = today();
+  $('effW').textContent = DATA.cfg.an_effect_weeks;
+}
+function renderTypeChips(){
+  var u = BOOT.units[$('sUnit').value]; var types = u ? u.types : {};
+  $('sTypes').innerHTML = Object.keys(types).map(function(t){
+    return '<span class="chip'+(SEL_TYPES[t]?' on':'')+'" data-t="'+esc(t)+'">'+esc(types[t])+'</span>';
+  }).join('');
+}
+$('sUnit').onchange = function(){ SEL_TYPES = {}; renderTypeChips(); };
+$('sTypes').addEventListener('click', function(e){
+  var t = e.target.dataset.t; if(!t) return;
+  if(SEL_TYPES[t]) delete SEL_TYPES[t]; else SEL_TYPES[t] = true;
+  renderTypeChips();
+});
+function gotoSupport(target){
+  document.querySelector('#tabs button[data-p="sup"]').click();
+  $('sTarget').value = target;
+  $('sContent').focus();
+}
+$('sSave').onclick = function(){
+  var btn = this; btn.disabled = true; $('sStat').textContent = '記録中…';
+  google.script.run.withSuccessHandler(function(){
+    btn.disabled = false; $('sStat').textContent = '記録しました';
+    $('sContent').value = ''; SEL_TYPES = {}; loadClass(true);
+  }).withFailureHandler(function(e){ btn.disabled = false; fail('sStat')(e); })
+    .anSaveSupport(KEY, { target: $('sTarget').value, unit: $('sUnit').value, types: Object.keys(SEL_TYPES),
+                          content: $('sContent').value, freq: $('sFreq').value, start: $('sStart').value });
+};
+
+function effTxt(e){
+  if(!e) return '';
+  var T = e.target, C = e.compare;
+  function side(x){
+    if(!x) return '比較できる群がありません';
+    return '時間 ' + (x.rtRatio==null ? '試行不足' : '×'+x.rtRatio.toFixed(2)) +
+      ' ／ 誤答率 ' + (x.errDiff==null ? '試行不足' : (x.errDiff>=0?'+':'') + (x.errDiff*100).toFixed(1)+'pt');
+  }
+  var rel = (e.rtRel==null && e.errRel==null) ? '—' :
+    ('時間 ' + (e.rtRel==null ? '—' : '×'+e.rtRel.toFixed(2)) + ' ／ 誤答率 ' + (e.errRel==null ? '—' : (e.errRel>=0?'+':'')+(e.errRel*100).toFixed(1)+'pt'));
+  return '<div class="sub">対象：' + side(T) + '<br>比較群：' + side(C) + '</div>' +
+    '<div><b>比較群を引いた変化：' + rel + '</b>' + (e.ongoing ? ' <span class="dim">（まだ途中）</span>' : '') + '</div>';
+}
+function renderSupports(){
+  var list = DATA.supports || [];
+  $('sups').innerHTML = list.length ? list.map(function(s){
+    return '<div class="sup"><div><b>'+esc(s.who)+'</b> ・ '+esc(unitTitle(s.unit)) +
+      (s.types.length ? '（'+s.types.map(function(t){ var u=BOOT.units[s.unit]; return esc(u&&u.types[t]||t); }).join('・')+'）' : '') +
+      ' ・ '+esc(s.content)+' ・ '+esc(s.freq)+'</div>' +
+      '<div class="sub">'+esc(s.start)+' 〜 '+(s.end ? esc(s.end) : '続けている')+'</div>' +
+      effTxt(s.effect) +
+      (s.end ? '' : '<div class="row"><button class="ghost tiny" data-end="'+esc(s.id)+'">今日で終える</button></div>') +
+      '</div>';
+  }).join('') : '<div class="dim">まだ記録がありません。</div>';
+}
+$('sups').addEventListener('click', function(e){
+  var id = e.target.dataset.end; if(!id) return;
+  e.target.disabled = true;
+  google.script.run.withSuccessHandler(function(){ loadClass(true); })
+    .withFailureHandler(fail('sStat')).anEndSupport(KEY, id, today());
+});
+
+/* ---------- 書き出し・記録 ---------- */
+function loadExport(){
+  $('outText').value = '作成中…';
+  google.script.run.withSuccessHandler(function(t){ $('outText').value = t; })
+    .withFailureHandler(function(e){ $('outText').value = 'エラー: ' + e.message; }).anExport(KEY);
+}
+$('copy').onclick = function(){
+  var t = $('outText'); t.select();
+  try { document.execCommand('copy'); $('copyStat').textContent = 'コピーしました'; } catch(e){ $('copyStat').textContent = '選択して手動でコピーしてください'; }
+};
+$('decSave').onclick = function(){
+  var btn = this; btn.disabled = true;
+  google.script.run.withSuccessHandler(function(n){
+    btn.disabled = false; $('decN').textContent = n; $('decMemo').value = ''; $('decStat').textContent = '記録しました';
+  }).withFailureHandler(function(e){ btn.disabled = false; fail('decStat')(e); }).anLogDecision(KEY, $('decMemo').value);
+};
+
+/* ---------- 読み込み ---------- */
+function loadClass(keepOpen){
+  if(!keepOpen) OPEN = '';
+  $('kids').innerHTML = '読み込み中…';
+  google.script.run.withSuccessHandler(function(d){
+    DATA = d;
+    $('decN').textContent = d.decisions || 0;
+    renderKids(); renderClass(); renderSupportForm(); renderSupports();
+    if(document.querySelector('#tabs button.on').dataset.p==='out') loadExport();
+  }).withFailureHandler(function(e){ $('kids').innerHTML = 'エラー: ' + esc(e.message); }).anClassData(KEY);
+}
+function renderSources(){
+  var s = BOOT.sources || [];
+  var bad = s.filter(function(x){ return x.status && x.status !== 'OK'; });
+  var last = s.map(function(x){ return x.updated; }).sort().pop();
+  $('srcs').textContent = s.length ? ('単元 ' + s.length + '件 ・ 最終集計 ' + (last||'—') + (bad.length ? ' ・ 要確認: ' + bad.map(function(x){ return (x.title||'?') + '（' + x.status + '）'; }).join('、') : ''))
+                                   : '読み元の単元がありません（リンク集の「記録シート」欄）';
+  var c = BOOT.cfg;
+  $('cfgline').textContent = '基準（config の an_*。データを見る前に決める）：最低 ' + c.an_min_trials + '試行 ・ 帯 ' + c.an_band_strong + '／' + c.an_band_low +
+    ' ・ 持続 ' + c.an_persist_months + 'か月 ・ 伸び ' + c.an_growth_weeks + '週以上 ・ 手立て前後 ' + c.an_effect_weeks + '週 ・ 比較集団の目安 ' + c.an_norm_min + '人';
+}
+$('cls').onchange = function(){ KEY = this.value; lsSet('an_cls', KEY); loadClass(); };
+$('ingest').onclick = function(){
+  var btn = this; btn.disabled = true; $('srcs').textContent = '集計中…（数分かかることがあります）';
+  google.script.run.withSuccessHandler(function(m){
+    btn.disabled = false;
+    google.script.run.withSuccessHandler(function(b){ BOOT = b; renderSources(); $('srcs').textContent = m + ' ・ ' + $('srcs').textContent; loadClass(); }).anBoot();
+  }).withFailureHandler(function(e){ btn.disabled = false; $('srcs').textContent = 'エラー: ' + e.message; }).anRunIngest();
+};
+
+google.script.run.withSuccessHandler(function(b){
+  BOOT = b;
+  renderSources();
+  if(!b.classes.length){ $('kids').innerHTML = '<div class="dim">見られる学級がありません（名簿と config の an_analysts を確認）。</div>'; return; }
+  $('cls').innerHTML = b.classes.map(function(c){ return '<option value="'+esc(c.key)+'">'+c.grade+'年'+esc(c.cls)+'組</option>'; }).join('');
+  var saved = lsGet('an_cls');
+  KEY = (saved && b.classes.some(function(c){ return c.key===saved; })) ? saved : b.classes[0].key;
+  $('cls').value = KEY;
+  loadClass();
+}).withFailureHandler(function(e){ $('kids').innerHTML = 'エラー: ' + esc(e.message); }).anBoot();
+</script>
+</body>
+</html>

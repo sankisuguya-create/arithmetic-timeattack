@@ -122,8 +122,10 @@ function child_(mail) {
 }
 
 /**
- * links シート: id / title / subtitle / url / grades / color / visible / order
+ * links シート: id / title / subtitle / url / grades / color / visible / order / sheet
  * grades は "3,4" のようなカンマ区切り。空か "all" なら全学年。
+ * sheet はその単元の記録スプレッドシート（URL か ID）。横断分析（Analysis.gs）の読み元。空でもよい。
+ * sheet は児童の画面には渡さない（boot は使う欄だけを写す）。
  */
 function links_() {
   var hit = cache_().get('links');
@@ -141,7 +143,8 @@ function links_() {
       grades: String(v[i][4] || '').trim(),
       color: String(v[i][5] || 'mint').trim(),
       visible: toBool_(v[i][6]),
-      order: Number(v[i][7]) || 0
+      order: Number(v[i][7]) || 0,
+      sheet: String(v[i][8] || '').trim()
     });
   }
   out.sort(function (a, b) { return a.order - b.order; });
@@ -206,6 +209,16 @@ function doGet(e) {
       .setTitle('リンク集 設定')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
+  if (page === 'analysis') {
+    // 横断分析は教師ドメインの一致では開かない。所有者と config.analysts だけ（Analysis.gs の canAnalyze_）
+    // Analysis.gs を貼っていない写しでも、ほかの画面が壊れないようにする
+    if (typeof canAnalyze_ !== 'function' || !canAnalyze_(email_())) {
+      return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">この画面を開く権限がありません。</p>');
+    }
+    return HtmlService.createHtmlOutputFromFile('analysis')
+      .setTitle('ぶんせき（単元横断）')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   return HtmlService.createHtmlOutputFromFile('links')
     .setTitle(config_().title)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
@@ -264,7 +277,10 @@ function boot() {
 
 function getAllLinks() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
-  return { links: links_(), colors: COLORS, config: config_(), where: where_() };
+  var mail = email_();
+  return { links: links_(), colors: COLORS, config: config_(), where: where_(),
+           // 横断分析の入口は、開ける人にだけ渡す
+           analysisUrl: (typeof canAnalyze_ === 'function' && canAnalyze_(mail)) ? analysisUrl_() : '' };
 }
 
 /** 画面の一覧をそのまま保存する（並び順は配列の順） */
@@ -272,14 +288,15 @@ function saveLinks(rows) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var sh = sh_(SHEETS.LINKS);
   sh.clear();
-  var head = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order'];
+  var head = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order', 'sheet'];
   var out = [head];
   (rows || []).forEach(function (r, i) {
     out.push([
       String(r.id || Utilities.getUuid().slice(0, 8)),
       String(r.title || ''), String(r.subtitle || ''), String(r.url || ''),
       String(r.grades || ''), String(r.color || 'mint'),
-      r.visible ? true : false, i + 1
+      r.visible ? true : false, i + 1,
+      String(r.sheet || '').trim()
     ]);
   });
   sh.getRange(1, 1, out.length, head.length).setValues(out);
@@ -374,7 +391,7 @@ function ensureReady_() {
     var ss = ss_(), defs = {};
     defs[SHEETS.CONFIG] = ['key', 'value'];
     defs[SHEETS.ROSTER] = ['email', '学年', '組', '番号', '氏名'];
-    defs[SHEETS.LINKS] = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order'];
+    defs[SHEETS.LINKS] = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order', 'sheet'];
 
     for (var name in defs) {
       var sh = ss.getSheetByName(name) || ss.insertSheet(name);
@@ -398,5 +415,6 @@ function ensureReady_() {
 function setup() {
   cache_().remove('ready');
   ensureReady_();
-  return 'セットアップ完了（links / roster / config を用意しました）';
+  if (typeof anEnsureTrigger_ === 'function') anEnsureTrigger_();   // 横断分析の夜間集計。トリガーは実行した人のものになるので、所有者が setup で作る
+  return 'セットアップ完了（links / roster / config を用意し、夜間集計のトリガーを確認しました）';
 }
