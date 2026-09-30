@@ -69,7 +69,9 @@ assert.deepEqual([...ctx.FLOOR_PATTERNS_].sort(), [...genIds].sort());
 
 // 教師画面の床のプレビュー：児童の画面と同じ生成器を、index.html の印の間から切り出して埋め込む（写しを2つにしない）
 const vm = require('vm');
-const src = ctx.floorGenSource_(ui);
+// GAS の include（HtmlService の getContent）は JS のコメントを消して返す。サーバーが実際に見る形で切り出す
+const stripComments = h => h.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const src = ctx.floorGenSource_(stripComments(ui));
 assert.ok(src.length > 1000, '印（FLOOR_GEN_BEGIN / FLOOR_GEN_END）の間が見つからない');
 const win = {}; vm.runInNewContext(src, { window: win });
 assert.deepEqual(Object.keys(win.GrowingFigures.GENERATORS).sort(), [...ctx.FLOOR_PATTERNS_].sort());
