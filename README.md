@@ -66,6 +66,7 @@ docs/
   ARCHITECTURE.md  設計の考え方
   SETUP.md         設置手順
   ADD_UNIT.md      新しい単元の作り方
+  ANALYSIS_REQUIREMENTS.md  横断分析の要件定義（未実装）
 tools/
   preview/       スプレッドシート無しで Unit.gs をブラウザ確認する開発ツール（tools/preview/README.md）
 ```
