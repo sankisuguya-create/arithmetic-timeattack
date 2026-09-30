@@ -1094,15 +1094,16 @@ function getConfigForUI() {
 
 /**
  * 教師画面の床のプレビューに、児童の画面（index.html）と同じ生成器を渡す。
- * 生成器の写しは index.html の FLOOR_GEN_BEGIN〜FLOOR_GEN_END の間の1か所だけに置き、ここで切り出して埋め込む
+ * 生成器の写しは index.html の 'FLOOR_GEN_BEGIN';〜'FLOOR_GEN_END';（何もしない文）の間の1か所だけに置き、ここで切り出して埋め込む
  * （teacher.html に2つ目の写しを置くと、片方だけ直して図形が食い違う。貼るファイルも増やさない）。
  * 印が見つからなければ空を返し、教師画面はプレビューの欄に「読み込めません」と出す。
  */
 function floorGenSource_(html) {
-  // \s は全角・NBSP など見えない空白も含めて許す（貼り付け経路で空白が変わっても切り出せるように）
-  var m = html.match(/\/\*\s*FLOOR_GEN_BEGIN\s*\*\//), e = html.match(/\/\*\s*FLOOR_GEN_END\s*\*\//);
-  if (!m || !e || e.index <= m.index) return '';
-  return html.slice(m.index, e.index).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
+  // 印はコメントではなく「何もしない文」。HtmlService の getContent() は JS のコメントを消して返すため、
+  // コメントの印（旧 /* FLOOR_GEN_BEGIN */）はサーバーからは見えなかった（len が約2.7万字減り、印が -1 になる）
+  var a = html.indexOf("'FLOOR_GEN_BEGIN';"), b = html.indexOf("'FLOOR_GEN_END';");
+  if (a < 0 || b < a) return '';
+  return html.slice(a, b).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
 }
 function floorGenForTeacher_() {
   // 失敗しても evaluate() ごと倒さず、埋め込み側の try/catch（teacher.html）が拾える断片を返す。
@@ -1110,21 +1111,7 @@ function floorGenForTeacher_() {
   try {
     var html = include('index');
     var src = floorGenSource_(html);
-    if (!src) {
-      // 見つからなければ、サーバーが読んだ中身を「不可視文字も見える形」で返す。
-      // エディタでは同じに見える混入文字（NBSP・全角）や順序逆転・別ファイルがここで判別できる
-      var esc = function (s) {
-        return s.replace(/[^\x20-\x7E]/g, function (c) {
-          return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
-        });
-      };
-      var detail = 'len=' + html.length;
-      var i = html.indexOf('FLOOR_GEN_BEGIN'), j = html.indexOf('FLOOR_GEN_END');
-      detail += ' begin=' + i + ' end=' + j;
-      if (i >= 0) detail += ' 前後=' + esc(html.slice(Math.max(0, i - 15), i + 40));
-      if (j >= 0) detail += ' END前後=' + esc(html.slice(Math.max(0, j - 15), j + 40));
-      return "throw new Error(" + JSON.stringify('図形の切り出し失敗 ' + detail) + ")";
-    }
+    if (!src) return "throw new Error('index.html 内に FLOOR_GEN_BEGIN / FLOOR_GEN_END の印が見つかりません（index を最新の版に貼り直す。読めた長さ " + html.length + "）')";
     return src;
   } catch (e) {
     return "throw new Error('index ファイルを読めません（" + String(e.message || e).replace(/'/g, '') + "）')";

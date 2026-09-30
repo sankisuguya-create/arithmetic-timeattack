@@ -733,9 +733,9 @@ function coopFam_(rgb){
 /* ---- 図形の生成器 ----
    design リポジトリ growing-figures/generators.js の写し（b94681c）。図形を直すときは向こうを正本として直し、
    check.cjs を通してからここへ写す。ここでは window.GrowingFigures に入る。
-   BEGIN と END の印の間は、教師画面の床のプレビューがサーバー側で切り出して使う（Core.gs の floorGenSource_）。
+   'FLOOR_GEN_BEGIN'; と 'FLOOR_GEN_END'; の印（何もしない文）の間は、教師画面の床のプレビューがサーバー側で切り出して使う（Core.gs の floorGenSource_）。
    写し直すときも印は残す。 */
-/* FLOOR_GEN_BEGIN */
+'FLOOR_GEN_BEGIN';   // 印はコメントにしない（GAS の include がコメントを消すため）
 /**
  * 成長する図形 — 生成器
  *
@@ -1647,7 +1647,7 @@ function coopFam_(rgb){
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GrowingFigures = api;
 })(window);   // 写し元は (this)。この画面は strict なので window を渡す
-/* FLOOR_GEN_END */
+'FLOOR_GEN_END';
 
 /* ---- 床を作る：単元が宣言した図形（UNIT.floorPattern。既定はペンローズ）の生成器を呼び、
    育ち始める点からの距離順に並べ、色を割り当てる ---- */
