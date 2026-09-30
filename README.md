@@ -31,7 +31,7 @@ Google Workspace for Education と Chromebook での運用を前提にしてい�
 
 | アプリ | 内容 | 対象 |
 |---|---|---|
-| `apps/hub` | 各アプリへの入口。学年で出し分ける。教師の一部だけが使う単元横断のぶんせき（`?page=analysis`） | 全学年 |
+| `apps/hub` | 各アプリへの入口。学年で出し分ける。教師の一部だけが使う単元横断分析（`?page=analysis`） | 全学年 |
 | `apps/grade3/kuku` | 九九・わり算（9×9 / 9×16） | 3年 |
 | `apps/grade3/length` | km と m の換算・加減計算、まきじゃくの読み取り | 3年 |
 | `apps/grade3/weight` | g と kg の換算・加減計算、はかりの読み取り | 3年 |

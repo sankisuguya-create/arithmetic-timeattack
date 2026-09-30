@@ -4,119 +4,152 @@
 <base target="_top">
 <meta charset="utf-8">
 <style>
-:root{--paper:#F7F7F4;--ink:#101728;--mint:#12C48B;--mute:#6B7280;--line:#DFDFD8}
+:root{--paper:#F7F7F4;--ink:#101728;--mint:#12C48B;--mute:#6B7280;--line:#DFDFD8;--sel:#EEF0F3}
 *{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
 body{background:var(--paper);color:var(--ink);
-  font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans",sans-serif;
-  padding:1.6rem 1rem 4rem;line-height:1.6}
-.wrap{max-width:980px;margin:0 auto}
-h1{font-size:1.3rem;font-weight:800}
-.top{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin:.4rem 0 1rem}
-.sub{font-size:.8rem;color:var(--mute)}
-select,input[type=text],input[type=date],textarea{font:inherit;padding:.45rem .6rem;border:1.5px solid var(--line);
-  border-radius:8px;background:#fff;color:var(--ink)}
-textarea{width:100%}
-button{font:inherit;font-weight:700;padding:.5rem 1rem;border:none;border-radius:9px;background:var(--ink);color:#fff;cursor:pointer}
+  font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans",sans-serif;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding:1rem 1rem 1.2rem;height:100%;display:flex;flex-direction:column}
+.head{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+h1{font-size:1.15rem;font-weight:800}
+.sub{font-size:.78rem;color:var(--mute)}
+select,input[type=text],input[type=date],textarea{font:inherit;padding:.4rem .55rem;border:1.5px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+textarea{width:100%;resize:vertical}
+button{font:inherit;font-weight:700;padding:.45rem .95rem;border:none;border-radius:9px;background:var(--ink);color:#fff;cursor:pointer}
 button.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
-button.tiny{padding:.25rem .6rem;font-size:.8rem}
+button.tiny{padding:.22rem .6rem;font-size:.8rem}
 button:disabled{opacity:.45;cursor:default}
-.tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
-.tabs button{border-radius:999px;background:transparent;color:var(--ink);border:2px solid var(--ink)}
+.tabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:.7rem 0 .8rem;align-items:center}
+.tabs button{border-radius:999px;background:transparent;color:var(--ink);border:2px solid var(--ink);padding:.35rem .95rem}
 .tabs button.on{background:var(--ink);color:#fff}
-.pg{display:none}.pg.on{display:block}
-.box{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:1.1rem;margin-bottom:1rem;overflow-x:auto}
-h2{font-size:.75rem;letter-spacing:.16em;color:var(--mute);font-weight:700;margin-bottom:.7rem}
-h3{font-size:1rem;font-weight:800;margin:.2rem 0 .5rem}
-table{width:100%;border-collapse:collapse;font-size:.88rem}
-th{font-size:.72rem;color:var(--mute);text-align:left;padding:.35rem .45rem;border-bottom:1.5px solid var(--line);white-space:nowrap}
-td{padding:.4rem .45rem;border-bottom:1px solid var(--line);vertical-align:top}
-tr.kid{cursor:pointer}
-tr.kid:hover td{background:#FAFAF7}
-tr.open td{background:#F2F2EE}
-.mk{font-weight:800;white-space:nowrap}
+.tabs .sp{flex:1}
+.pg{display:none;flex:1;min-height:0}
+.pg.on{display:flex;flex-direction:column}
+
+/* 2列：左で選び、右で見る。列は画面の高さに収め、はみ出す分だけ列の中で送る */
+.split{display:grid;grid-template-columns:minmax(280px,.8fr) minmax(360px,1.4fr);gap:.9rem;flex:1;min-height:0}
+.split > .box{min-height:0;display:flex;flex-direction:column}
+.scroll{overflow:auto;min-height:0;flex:1}
+@media (max-width:860px){ .split{grid-template-columns:1fr} .wrap{height:auto} .pg.on{display:block} }
+
+.box{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:1rem}
+h2{font-size:.72rem;letter-spacing:.14em;color:var(--mute);font-weight:700;margin-bottom:.55rem}
+h3{font-size:.98rem;font-weight:800;margin-bottom:.35rem}
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+th{font-size:.72rem;color:var(--mute);text-align:left;padding:.3rem .4rem;border-bottom:1.5px solid var(--line);white-space:nowrap}
+td{padding:.32rem .4rem;border-bottom:1px solid var(--line);vertical-align:top}
 .dim{color:var(--mute)}
-.legend{font-size:.8rem;color:var(--mute);line-height:1.9;margin-bottom:.6rem}
-.warn{font-size:.82rem;border-left:4px solid var(--ink);padding:.3rem .6rem;margin:.4rem 0;background:#F2F2EE}
-.detail{padding:.6rem .2rem}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.7rem}
-.card{border:1.5px solid var(--line);border-radius:10px;padding:.7rem}
-.row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.45rem 0}
-.row label{font-size:.8rem;font-weight:700;color:var(--mute);min-width:4.5rem}
-.chips{display:flex;gap:.35rem;flex-wrap:wrap}
-.chip{padding:.25rem .6rem;border-radius:999px;border:1.5px solid var(--line);font-size:.8rem;font-weight:700;cursor:pointer;background:#fff;color:var(--mute)}
+.mk{font-weight:800}
+.warn{font-size:.8rem;border-left:4px solid var(--ink);padding:.3rem .6rem;margin:.3rem 0 .6rem;background:#F2F2EE}
+.tool{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.55rem}
+.chips{display:flex;gap:.3rem;flex-wrap:wrap}
+.chip{padding:.2rem .6rem;border-radius:999px;border:1.5px solid var(--line);font-size:.78rem;font-weight:700;cursor:pointer;background:#fff;color:var(--mute)}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-.stat{font-size:.82rem;color:var(--mute);min-height:1.2rem}
-.sup{border-bottom:1px solid var(--line);padding:.6rem 0}
+.krow{display:flex;gap:.5rem;align-items:baseline;padding:.42rem .5rem;border-radius:9px;cursor:pointer;border:1.5px solid transparent;font-size:.88rem}
+.krow:hover{background:#FAFAF7}
+.krow.sel{background:var(--sel);border-color:var(--ink)}
+.krow .no{width:1.7rem;text-align:right;color:var(--mute);flex:0 0 auto}
+.krow .nm{flex:1;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.krow .sm{font-size:.76rem;white-space:nowrap}
+.ktab td,.ktab th{white-space:nowrap}
+.ktab .mcell{font-size:.78rem;line-height:1.35}
+.row{display:flex;gap:.55rem;align-items:center;flex-wrap:wrap;margin:.4rem 0}
+.row > label{font-size:.78rem;font-weight:700;color:var(--mute);min-width:3.2rem}
+.stat{font-size:.8rem;color:var(--mute)}
+.sup{border-bottom:1px solid var(--line);padding:.55rem 0}
 .sup:last-child{border-bottom:none}
+.empty{color:var(--mute);font-size:.88rem;padding:.8rem 0}
+details.guide{position:relative}
+details.guide summary{list-style:none;cursor:pointer;font-size:.8rem;font-weight:700;border:1.5px solid var(--line);border-radius:8px;padding:.3rem .7rem;background:#fff}
+details.guide summary::-webkit-details-marker{display:none}
+details.guide .panel{position:absolute;right:0;top:2.2rem;z-index:5;width:min(560px,90vw);background:#fff;border:1.5px solid var(--ink);border-radius:10px;padding:.9rem;font-size:.82rem;line-height:1.8}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>ぶんせき（単元横断）</h1>
-  <div class="top">
+  <div class="head">
+    <h1>単元横断分析</h1>
     <select id="cls"></select>
-    <button class="ghost tiny" id="ingest">いま集計する</button>
+    <button class="ghost tiny" id="ingest">今すぐ集計</button>
     <span class="sub" id="srcs"></span>
   </div>
 
   <div class="tabs" id="tabs">
-    <button data-p="kids" class="on">児童</button>
-    <button data-p="class">学級</button>
+    <button data-p="kids" class="on">児童別</button>
+    <button data-p="class">学級の傾向</button>
     <button data-p="sup">手立て</button>
-    <button data-p="out">書き出し・記録</button>
+    <button data-p="out">出力・記録</button>
+    <span class="sp"></span>
+    <details class="guide"><summary>基準と読み方</summary><div class="panel" id="guide"></div></details>
   </div>
 
+  <!-- ============ 児童別 ============ -->
   <div class="pg on" data-pg="kids">
-    <div class="box">
-      <div class="legend" id="legend"></div>
-      <div id="kids">読み込み中…</div>
-    </div>
-  </div>
-
-  <div class="pg" data-pg="class">
-    <div id="classv"></div>
-  </div>
-
-  <div class="pg" data-pg="sup">
-    <div class="box">
-      <h2>手立てを記録する</h2>
-      <div class="row"><label>対象</label><select id="sTarget"></select></div>
-      <div class="row"><label>単元</label><select id="sUnit"></select></div>
-      <div class="row"><label>型</label><span class="chips" id="sTypes"></span><span class="dim" style="font-size:.78rem">選ばなければ単元全体</span></div>
-      <div class="row"><label>内容</label><input type="text" id="sContent" style="flex:1;min-width:14rem" placeholder="例：7の段を唱えてからカード10枚"></div>
-      <div class="row"><label>頻度</label>
-        <select id="sFreq"><option>毎日</option><option>週2〜3回</option><option>週1回</option><option>その他</option></select>
-        <label style="min-width:auto">開始</label><input type="date" id="sStart">
+    <div class="split">
+      <div class="box">
+        <div class="tool"><span class="chips" id="kfilt"></span></div>
+        <div class="scroll" id="klist">読み込み中…</div>
       </div>
-      <div class="row"><button id="sSave">記録する</button><span class="stat" id="sStat"></span></div>
-    </div>
-    <div class="box">
-      <h2>記録した手立てと前後の変化</h2>
-      <div class="legend">前後それぞれ <span id="effW"></span> 週を比べます。<b>比較群を引いた値</b>で見てください（下位の児童は偶然でも上がりやすいため）。
-        時間の比は 1 未満で速くなった、誤答率の差は負で減った、を表します。</div>
-      <div id="sups"></div>
+      <div class="box">
+        <div class="scroll" id="kdetail"></div>
+      </div>
     </div>
   </div>
 
+  <!-- ============ 学級の傾向 ============ -->
+  <div class="pg" data-pg="class">
+    <div class="box" style="flex:1;min-height:0;display:flex;flex-direction:column">
+      <div class="tool"><span class="chips" id="cunits"></span></div>
+      <div class="scroll" id="cview"></div>
+    </div>
+  </div>
+
+  <!-- ============ 手立て ============ -->
+  <div class="pg" data-pg="sup">
+    <div class="split">
+      <div class="box">
+        <div class="tool"><span class="chips" id="sfilt"></span></div>
+        <div class="scroll" id="sups"></div>
+      </div>
+      <div class="box">
+        <h2>手立てを記録する</h2>
+        <div class="scroll">
+          <div class="row"><label>対象</label><select id="sTarget" style="flex:1"></select></div>
+          <div class="row"><label>単元</label><select id="sUnit" style="flex:1"></select></div>
+          <div class="row"><label>型</label><span class="chips" id="sTypes"></span></div>
+          <div class="row" style="margin-top:-.2rem"><label></label><span class="stat">選ばなければ単元全体</span></div>
+          <div class="row"><label>内容</label><input type="text" id="sContent" style="flex:1;min-width:12rem" placeholder="例：7の段を唱えてからカード10枚"></div>
+          <div class="row"><label>頻度</label>
+            <select id="sFreq"><option>毎日</option><option>週2〜3回</option><option>週1回</option><option>その他</option></select>
+            <label style="min-width:auto">開始日</label><input type="date" id="sStart">
+          </div>
+          <div class="row"><label></label><button id="sSave">記録する</button><span class="stat" id="sStat"></span></div>
+          <div class="stat" style="margin-top:.6rem;line-height:1.8" id="sNote"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 出力・記録 ============ -->
   <div class="pg" data-pg="out">
-    <div class="box">
-      <h2>集計テキスト（名前・番号を含まない）</h2>
-      <textarea id="outText" rows="14" readonly></textarea>
-      <div class="row"><button id="copy" class="ghost">コピー</button><span class="stat" id="copyStat"></span></div>
-    </div>
-    <div class="box">
-      <h2>この画面を見て判断が変わった</h2>
-      <div class="legend">この仕組みが役に立っているかの物差しです。判断が変わった時だけ1件押してください（年度で <b id="decN">0</b> 件）。</div>
-      <textarea id="decMemo" rows="2" placeholder="何を見て、何を変えたか（任意・名前は書かない）"></textarea>
-      <div class="row"><button id="decSave" class="ghost">記録する</button><span class="stat" id="decStat"></span></div>
+    <div class="split">
+      <div class="box">
+        <h2>集計テキスト（氏名・番号を含まない）</h2>
+        <textarea id="outText" readonly style="flex:1;min-height:12rem"></textarea>
+        <div class="row"><button id="copy" class="ghost">コピー</button><span class="stat" id="copyStat"></span></div>
+      </div>
+      <div class="box">
+        <h2>判断が変わった記録</h2>
+        <div class="stat" style="line-height:1.8;margin-bottom:.5rem">この仕組みが役に立っているかの物差しです。この画面を見て指導や対応の判断が変わった時だけ記録してください。今年度の記録：<b id="decN">0</b> 件</div>
+        <textarea id="decMemo" rows="4" placeholder="何を見て、何を変えたか（任意。氏名は書かない）"></textarea>
+        <div class="row"><button id="decSave" class="ghost">記録する</button><span class="stat" id="decStat"></span></div>
+      </div>
     </div>
   </div>
-
-  <div class="sub" id="cfgline"></div>
 </div>
 
 <script>
-var BOOT = null, DATA = null, KEY = '', OPEN = '', SEL_TYPES = {};
+var BOOT = null, DATA = null, KEY = '', SEL_KID = '', KFILT = 'flag', CUNIT = '', SFILT = 'open', SEL_TYPES = {};
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
@@ -127,120 +160,150 @@ function secTxt(x){ return x==null ? '—' : x.toFixed(1)+'秒'; }
 function unitTitle(u){ return (BOOT.units[u] && BOOT.units[u].title) || u; }
 function today(){ var d=new Date(); function z(n){return (n<10?'0':'')+n;} return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); }
 function fail(el){ return function(e){ $(el).textContent = 'エラー: ' + (e && e.message || e); }; }
+function chip(on, attr, label){ return '<span class="chip'+(on?' on':'')+'" '+attr+'>'+label+'</span>'; }
 
 /* ---------- タブ ---------- */
 $('tabs').addEventListener('click', function(e){
-  var p = e.target.dataset.p; if(!p) return;
+  var p = e.target.dataset && e.target.dataset.p; if(!p) return;
   [].forEach.call(document.querySelectorAll('#tabs button'), function(b){ b.classList.toggle('on', b.dataset.p===p); });
   [].forEach.call(document.querySelectorAll('.pg'), function(g){ g.classList.toggle('on', g.dataset.pg===p); });
   if(p==='out' && DATA) loadExport();
 });
 
-/* ---------- 児童 ---------- */
-// 印は色でなく形と文字で伝える（◆◇↓と月数）
-function mark(x){
-  if(!x) return '<span class="dim">記録なし</span>';
-  if(!x.months.length) return '<span class="dim">データ不足</span>';
-  var out = [];
-  function one(label, p){
-    if(!p.on) return;
-    var strong = p.strong >= DATA.cfg.an_persist_months;
-    out.push(label + (strong ? '◆' : '◇') + p.months + 'か月');
-  }
-  one('速さ', x.speedPersist); one('正確さ', x.accPersist);
-  if(x.dual) out.push('伸び↓');
-  return out.length ? '<span class="mk">' + out.join(' ') + '</span>' : '<span class="dim">・</span>';
+/* ---------- 基準と読み方 ---------- */
+function renderGuide(){
+  var c = DATA ? DATA.cfg : BOOT.cfg;
+  $('guide').innerHTML =
+    '<b>比較の相手</b>：同じ学年の全児童。数字は学年内のパーセンタイル（0〜100、小さいほど低い、50が中央）。<br>' +
+    '<b>◆</b>：' + c.an_band_strong + 'パーセンタイル以下が ' + c.an_persist_months + 'か月以上続いている<br>' +
+    '<b>◇</b>：' + c.an_band_low + 'パーセンタイル以下が ' + c.an_persist_months + 'か月以上続いている<br>' +
+    '<b>伸び↓</b>：最新月の速さと、' + c.an_growth_weeks + '週以上の伸びが、ともに ' + c.an_band_low + 'パーセンタイル以下<br>' +
+    '速さ＝最初のキーを押すまでの時間、正確さ＝誤答率（試行の少ない児童は学年平均側へ補正）。型×月で ' + c.an_min_trials + '試行未満は判定しません。<br>' +
+    '手立ての効果は前後 ' + c.an_effect_weeks + '週を比べ、同じ学年の対象外の児童の変化を差し引きます。<br>' +
+    '<b>これは判定ではありません。</b>担任の見取りと合わない時は、見取りと数字の両方を疑ってください。<br>' +
+    '<span class="dim">基準は config シートの an_* に置いてあり、この画面からは変えられません（データを見てから基準を動かさないため）。</span>';
 }
 
-function renderKids(){
-  var c = DATA.cfg;
-  $('legend').innerHTML =
-    '比較は同じ学年の全児童。<b>◆</b>＝' + c.an_band_strong + 'パーセンタイル以下が ' + c.an_persist_months + 'か月以上、' +
-    '<b>◇</b>＝' + c.an_band_low + 'パーセンタイル以下が ' + c.an_persist_months + 'か月以上、' +
-    '<b>伸び↓</b>＝水準も伸びも ' + c.an_band_low + 'パーセンタイル以下。<b>・</b>＝続いていない。行を押すと月ごとの値。' +
-    '<br>これは判定ではありません。担任の見取りと合わない時は、見取りの側も数字の側も疑ってください。';
-  var units = DATA.units;
-  if(!units.length){ $('kids').innerHTML = '<div class="dim">まだ集計がありません。リンク集の各単元に「記録シート」を入れ、「いま集計する」を押してください。</div>'; return; }
-  var h = '<table><tr><th>番</th><th>名前</th>' + units.map(function(u){ return '<th>'+esc(unitTitle(u))+'</th>'; }).join('') + '</tr>';
-  DATA.children.forEach(function(k){
-    h += '<tr class="kid'+(OPEN===k.email?' open':'')+'" data-k="'+esc(k.email)+'"><td>'+k.no+'</td><td>'+esc(k.name)+'</td>' +
-      units.map(function(u){ return '<td>'+mark(k.units[u])+'</td>'; }).join('') + '</tr>';
-    if(OPEN===k.email) h += '<tr><td colspan="'+(units.length+2)+'">'+detail(k)+'</td></tr>';
+/* ---------- 児童別 ---------- */
+function flagsOf(k){
+  var s = 0, w = 0, d = 0;
+  DATA.units.forEach(function(u){
+    var x = k.units[u]; if(!x) return;
+    var strong = function(p){ return p.on && p.strong >= DATA.cfg.an_persist_months; };
+    if(strong(x.speedPersist) || strong(x.accPersist)) s++;
+    else if(x.speedPersist.on || x.accPersist.on) w++;
+    if(x.dual) d++;
   });
-  $('kids').innerHTML = h + '</table>';
+  return { s: s, w: w, d: d, any: s + w + d > 0 };
 }
-
-function detail(k){
-  var cards = DATA.units.map(function(u){
-    var x = k.units[u]; if(!x) return '';
+function flagTxt(f){
+  var o = [];
+  if(f.s) o.push('◆' + f.s + '単元');
+  if(f.w) o.push('◇' + f.w + '単元');
+  if(f.d) o.push('伸び↓' + f.d);
+  return o.join(' ');
+}
+function renderKidList(){
+  var all = DATA.children, flagged = all.filter(function(k){ return flagsOf(k).any; });
+  if(KFILT==='flag' && !flagged.length) KFILT = 'all';
+  $('kfilt').innerHTML = chip(KFILT==='flag','data-kf="flag"','印のある児童（'+flagged.length+'）') + chip(KFILT==='all','data-kf="all"','全員（'+all.length+'）');
+  var list = KFILT==='flag' ? flagged : all;
+  if(!DATA.units.length){ $('klist').innerHTML = '<div class="empty">集計がまだありません。ハブ設定の各単元に「記録シート」を入れ、「今すぐ集計」を押してください。</div>'; $('kdetail').innerHTML=''; return; }
+  if(!list.some(function(k){ return k.email===SEL_KID; })) SEL_KID = list.length ? list[0].email : '';
+  $('klist').innerHTML = list.map(function(k){
+    var f = flagsOf(k);
+    return '<div class="krow'+(k.email===SEL_KID?' sel':'')+'" data-k="'+esc(k.email)+'"><span class="no">'+k.no+'</span>' +
+      '<span class="nm">'+esc(k.name)+'</span><span class="sm mk">'+(f.any ? flagTxt(f) : '<span class="dim">・</span>')+'</span></div>';
+  }).join('') || '<div class="empty">該当する児童はいません。</div>';
+  renderKidDetail();
+}
+function persistTxt(label, p){
+  if(!p.on) return '';
+  return label + (p.strong >= DATA.cfg.an_persist_months ? '◆' : '◇') + p.months + 'か月';
+}
+/* 1児童＝1つの表（行＝単元、列＝月）。単元が増えても縦に伸びるのは1行ずつ */
+function bandMark(b){ return b===2 ? '◆' : b===1 ? '◇' : ''; }
+function renderKidDetail(){
+  var k = DATA.children.filter(function(c){ return c.email===SEL_KID; })[0];
+  if(!k){ $('kdetail').innerHTML = '<div class="empty">左の一覧から児童を選んでください。</div>'; return; }
+  var mons = {};
+  DATA.units.forEach(function(u){ var x = k.units[u]; if(x) x.months.forEach(function(m){ mons[m.m] = true; }); });
+  mons = Object.keys(mons).sort();
+  var head = '<tr><th>単元</th><th>続いている低さ</th><th>本番</th><th>伸び</th>' +
+    mons.map(function(m){ return '<th>'+Number(m.slice(5))+'月</th>'; }).join('') + '</tr>';
+  var body = DATA.units.map(function(u){
+    var x = k.units[u];
+    if(!x) return '<tr><td>'+esc(unitTitle(u))+'</td><td class="dim" colspan="'+(3+mons.length)+'">記録なし</td></tr>';
     var g = x.growth;
-    var gt = !g ? '—' : (g.short ? DATA.cfg.an_growth_weeks+'週に満たない' : ('学年内 ' + pctTxt(g.pct)));
-    var rows = x.months.map(function(m){
-      return '<tr><td>'+m.m+'</td><td>'+pctTxt(m.sp)+(m.bsp===2?' ◆':m.bsp===1?' ◇':'')+'</td><td>'+pctTxt(m.ac)+(m.bac===2?' ◆':m.bac===1?' ◇':'')+'</td></tr>';
-    }).join('');
-    return '<div class="card"><h3>'+esc(unitTitle(u))+'</h3>' +
-      '<div class="sub">本番 '+x.sessions+'回 ・ 伸び '+gt+'</div>' +
-      (rows ? '<table><tr><th>月</th><th>速さ</th><th>正確さ</th></tr>'+rows+'</table>' : '<div class="dim">型×月で '+DATA.cfg.an_min_trials+'試行に届いていません</div>') +
-      '</div>';
+    var gt = !g ? '—' : (g.short ? '<span class="dim">期間不足</span>' : pctTxt(g.pct));
+    var marks = [persistTxt('速さ', x.speedPersist), persistTxt('正確さ', x.accPersist), x.dual ? '伸び↓' : ''].filter(Boolean).join(' ');
+    var byM = {}; x.months.forEach(function(m){ byM[m.m] = m; });
+    return '<tr><td><b>'+esc(unitTitle(u))+'</b></td><td class="mk">'+(marks || '<span class="dim" style="font-weight:400">なし</span>')+'</td>' +
+      '<td>'+x.sessions+'回</td><td>'+gt+'</td>' +
+      mons.map(function(m){
+        var v = byM[m];
+        if(!v) return '<td class="dim">—</td>';
+        return '<td class="mcell">速 '+pctTxt(v.sp)+bandMark(v.bsp)+'<br>正 '+pctTxt(v.ac)+bandMark(v.bac)+'</td>';
+      }).join('') + '</tr>';
   }).join('');
   var sups = (DATA.supports||[]).filter(function(s){ return s.target==='child:'+k.email; });
-  return '<div class="detail"><div class="sub" style="margin-bottom:.5rem">数字は学年内のパーセンタイル（小さいほど低い。50が真ん中）</div>' +
-    '<div class="grid">'+cards+'</div>' +
-    '<div class="row"><button class="ghost tiny" data-sup="'+esc(k.email)+'">この児童の手立てを記録</button>' +
-    (sups.length ? '<span class="sub">記録済みの手立て '+sups.length+'件（「手立て」タブ）</span>' : '') + '</div></div>';
+  $('kdetail').innerHTML =
+    '<div class="tool"><h3 style="margin:0">'+k.no+'　'+esc(k.name)+'</h3><span style="flex:1"></span>' +
+    (sups.length ? '<span class="stat">記録済みの手立て '+sups.length+'件</span>' : '') +
+    '<button class="ghost tiny" data-sup="'+esc(k.email)+'">この児童の手立てを記録</button></div>' +
+    '<table class="ktab">'+head+body+'</table>' +
+    '<div class="stat" style="margin-top:.5rem">速＝速さ、正＝正確さ。数字は学年内のパーセンタイル（小さいほど低い、50が中央）。伸びも学年内のパーセンタイル。' +
+    '型×月で '+DATA.cfg.an_min_trials+'試行に届かない月は「—」。</div>';
 }
-
-$('kids').addEventListener('click', function(e){
-  var s = e.target.dataset.sup;
-  if(s){ gotoSupport('child:'+s); return; }
-  var tr = e.target.closest('tr.kid'); if(!tr) return;
-  OPEN = OPEN===tr.dataset.k ? '' : tr.dataset.k;
-  renderKids();
+$('kfilt').addEventListener('click', function(e){ var f = e.target.dataset.kf; if(!f) return; KFILT = f; renderKidList(); });
+$('klist').addEventListener('click', function(e){
+  var r = e.target.closest('.krow'); if(!r) return;
+  SEL_KID = r.dataset.k; renderKidList();
 });
+$('kdetail').addEventListener('click', function(e){ var s = e.target.dataset.sup; if(s) gotoSupport('child:'+s); });
 
-/* ---------- 学級 ---------- */
+/* ---------- 学級の傾向（単元を1つずつ） ---------- */
 function renderClass(){
-  var h = '';
-  DATA.classView.forEach(function(u){
-    h += '<div class="box"><h3>'+esc(u.title)+'</h3>';
-    if(u.normWarn) h += '<div class="warn">学年の比較人数が最大 '+u.normN+' 人で、基準（'+DATA.cfg.an_norm_min+'人）に届きません。帯は参考にとどめてください。</div>';
-    h += '<div class="sub">学級の児童の学年内パーセンタイルの平均：速さ '+pctTxt(u.classSpeedPct)+' ／ 正確さ '+pctTxt(u.classAccPct)+'（50前後なら学年並み。学年が1学級だけなら常に50前後）</div>';
-    h += '<table><tr><th>型</th><th>誤答率 学級</th><th>学年</th><th>想起 学級</th><th>学年</th><th>学級の人数</th></tr>' +
-      u.types.map(function(t){
-        return '<tr><td>'+esc(t.name)+'</td><td>'+errTxt(t.cls.err)+'</td><td class="dim">'+errTxt(t.grd.err)+'</td>' +
-          '<td>'+secTxt(t.cls.sec)+'</td><td class="dim">'+secTxt(t.grd.sec)+'</td><td>'+t.cls.kids+'</td></tr>';
-      }).join('') + '</table></div>';
-  });
-  if(DATA.overlaps.length){
-    h += '<div class="box"><h2>下位が続く児童の重なり</h2><div class="legend">偶然でも期待人数くらいは重なります。大きく超える時だけ、単元をまたぐ共通の原因を疑います。</div>' +
+  var cv = DATA.classView;
+  if(!cv.length){ $('cunits').innerHTML=''; $('cview').innerHTML = '<div class="empty">集計がまだありません。</div>'; return; }
+  if(CUNIT !== '__ov' && !cv.some(function(u){ return u.unit===CUNIT; })) CUNIT = cv[0].unit;
+  $('cunits').innerHTML = cv.map(function(u){ return chip(u.unit===CUNIT, 'data-cu="'+esc(u.unit)+'"', esc(u.title)); }).join('') +
+    (DATA.overlaps.length ? chip(CUNIT==='__ov','data-cu="__ov"','単元間の重なり') : '');
+  if(CUNIT==='__ov'){
+    $('cview').innerHTML = '<div class="stat" style="margin-bottom:.5rem">下位が続く児童が2つの単元で何人重なるか。偶然でも期待人数くらいは重なります。大きく超える時だけ、単元をまたぐ共通の要因を疑います。</div>' +
       '<table><tr><th>単元の組</th><th>重なり</th><th>偶然の期待</th><th>両方に記録のある人数</th></tr>' +
-      DATA.overlaps.map(function(o){
-        return '<tr><td>'+esc(o.t1)+' × '+esc(o.t2)+'</td><td>'+o.k+'人</td><td>'+o.expected.toFixed(1)+'人</td><td>'+o.n+'人</td></tr>';
-      }).join('') + '</table></div>';
+      DATA.overlaps.map(function(o){ return '<tr><td>'+esc(o.t1)+' × '+esc(o.t2)+'</td><td>'+o.k+'人</td><td>'+o.expected.toFixed(1)+'人</td><td>'+o.n+'人</td></tr>'; }).join('') + '</table>';
+    return;
   }
-  $('classv').innerHTML = h || '<div class="box dim">まだ集計がありません。</div>';
+  var u = cv.filter(function(x){ return x.unit===CUNIT; })[0];
+  $('cview').innerHTML =
+    (u.normWarn ? '<div class="warn">学年の比較人数が最大 '+u.normN+'人で、目安（'+DATA.cfg.an_norm_min+'人）に届きません。印は参考にとどめてください。</div>' : '') +
+    '<div class="stat" style="margin-bottom:.5rem">学級の児童の学年内パーセンタイル平均：速さ <b>'+pctTxt(u.classSpeedPct)+'</b> ／ 正確さ <b>'+pctTxt(u.classAccPct)+'</b>（50前後で学年並み。学年が1学級なら常に50前後）</div>' +
+    '<table><tr><th>型</th><th>誤答率（学級）</th><th>（学年）</th><th>想起時間（学級）</th><th>（学年）</th><th>学級の人数</th></tr>' +
+    u.types.map(function(t){
+      return '<tr><td>'+esc(t.name)+'</td><td>'+errTxt(t.cls.err)+'</td><td class="dim">'+errTxt(t.grd.err)+'</td>' +
+        '<td>'+secTxt(t.cls.sec)+'</td><td class="dim">'+secTxt(t.grd.sec)+'</td><td>'+t.cls.kids+'</td></tr>';
+    }).join('') + '</table>';
 }
+$('cunits').addEventListener('click', function(e){ var u = e.target.dataset.cu; if(!u) return; CUNIT = u; renderClass(); });
 
 /* ---------- 手立て ---------- */
 function renderSupportForm(){
-  var cur = $('sTarget').value;
-  var p = KEY.split('-');
+  var cur = $('sTarget').value, p = KEY.split('-');
   $('sTarget').innerHTML = '<option value="class:'+esc(KEY)+'">学級全体（'+esc(p[0])+'年'+esc(p.slice(1).join('-'))+'組）</option>' +
     DATA.children.map(function(k){ return '<option value="child:'+esc(k.email)+'">'+k.no+' '+esc(k.name)+'</option>'; }).join('');
   if(cur) $('sTarget').value = cur;
   var ucur = $('sUnit').value;
-  var us = Object.keys(BOOT.units).filter(function(u){ return !DATA.grade || !BOOT.units[u].grade || BOOT.units[u].grade===DATA.grade; });
+  var us = Object.keys(BOOT.units).filter(function(u){ return !BOOT.units[u].grade || BOOT.units[u].grade===DATA.grade; });
   $('sUnit').innerHTML = us.map(function(u){ return '<option value="'+esc(u)+'">'+esc(unitTitle(u))+'</option>'; }).join('');
   if(ucur && us.indexOf(ucur)>=0) $('sUnit').value = ucur;
   renderTypeChips();
   if(!$('sStart').value) $('sStart').value = today();
-  $('effW').textContent = DATA.cfg.an_effect_weeks;
+  $('sNote').textContent = '効果は前後 ' + DATA.cfg.an_effect_weeks + '週で比べ、同じ学年の対象外の児童の変化を差し引いて示します（下位の児童は偶然でも上がりやすいため）。';
 }
 function renderTypeChips(){
-  var u = BOOT.units[$('sUnit').value]; var types = u ? u.types : {};
-  $('sTypes').innerHTML = Object.keys(types).map(function(t){
-    return '<span class="chip'+(SEL_TYPES[t]?' on':'')+'" data-t="'+esc(t)+'">'+esc(types[t])+'</span>';
-  }).join('');
+  var u = BOOT.units[$('sUnit').value], types = u ? u.types : {};
+  $('sTypes').innerHTML = Object.keys(types).map(function(t){ return chip(SEL_TYPES[t], 'data-t="'+esc(t)+'"', esc(types[t])); }).join('') || '<span class="stat">型の情報がありません</span>';
 }
 $('sUnit').onchange = function(){ SEL_TYPES = {}; renderTypeChips(); };
 $('sTypes').addEventListener('click', function(e){
@@ -257,45 +320,46 @@ $('sSave').onclick = function(){
   var btn = this; btn.disabled = true; $('sStat').textContent = '記録中…';
   google.script.run.withSuccessHandler(function(){
     btn.disabled = false; $('sStat').textContent = '記録しました';
-    $('sContent').value = ''; SEL_TYPES = {}; loadClass(true);
+    $('sContent').value = ''; SEL_TYPES = {}; SFILT = 'open'; loadClass();
   }).withFailureHandler(function(e){ btn.disabled = false; fail('sStat')(e); })
     .anSaveSupport(KEY, { target: $('sTarget').value, unit: $('sUnit').value, types: Object.keys(SEL_TYPES),
                           content: $('sContent').value, freq: $('sFreq').value, start: $('sStart').value });
 };
-
 function effTxt(e){
   if(!e) return '';
-  var T = e.target, C = e.compare;
   function side(x){
     if(!x) return '比較できる群がありません';
     return '時間 ' + (x.rtRatio==null ? '試行不足' : '×'+x.rtRatio.toFixed(2)) +
       ' ／ 誤答率 ' + (x.errDiff==null ? '試行不足' : (x.errDiff>=0?'+':'') + (x.errDiff*100).toFixed(1)+'pt');
   }
-  var rel = (e.rtRel==null && e.errRel==null) ? '—' :
+  var rel = (e.rtRel==null && e.errRel==null) ? '算出できません' :
     ('時間 ' + (e.rtRel==null ? '—' : '×'+e.rtRel.toFixed(2)) + ' ／ 誤答率 ' + (e.errRel==null ? '—' : (e.errRel>=0?'+':'')+(e.errRel*100).toFixed(1)+'pt'));
-  return '<div class="sub">対象：' + side(T) + '<br>比較群：' + side(C) + '</div>' +
-    '<div><b>比較群を引いた変化：' + rel + '</b>' + (e.ongoing ? ' <span class="dim">（まだ途中）</span>' : '') + '</div>';
+  return '<div><b>比較群を差し引いた変化：' + rel + '</b>' + (e.ongoing ? ' <span class="dim">（期間の途中）</span>' : '') + '</div>' +
+    '<div class="sub">対象：' + side(e.target) + '　比較群：' + side(e.compare) + '</div>';
 }
 function renderSupports(){
   var list = DATA.supports || [];
-  $('sups').innerHTML = list.length ? list.map(function(s){
+  var open = list.filter(function(s){ return !s.end; }), done = list.filter(function(s){ return !!s.end; });
+  $('sfilt').innerHTML = chip(SFILT==='open','data-sf="open"','継続中（'+open.length+'）') + chip(SFILT==='done','data-sf="done"','終了（'+done.length+'）');
+  var show = SFILT==='open' ? open : done;
+  $('sups').innerHTML = show.length ? show.map(function(s){
+    var u = BOOT.units[s.unit];
     return '<div class="sup"><div><b>'+esc(s.who)+'</b> ・ '+esc(unitTitle(s.unit)) +
-      (s.types.length ? '（'+s.types.map(function(t){ var u=BOOT.units[s.unit]; return esc(u&&u.types[t]||t); }).join('・')+'）' : '') +
-      ' ・ '+esc(s.content)+' ・ '+esc(s.freq)+'</div>' +
-      '<div class="sub">'+esc(s.start)+' 〜 '+(s.end ? esc(s.end) : '続けている')+'</div>' +
+      (s.types.length ? '（'+s.types.map(function(t){ return esc(u&&u.types[t]||t); }).join('・')+'）' : '') + '</div>' +
+      '<div>'+esc(s.content)+' <span class="dim">・ '+esc(s.freq)+' ・ '+esc(s.start)+' 〜 '+(s.end ? esc(s.end) : '')+'</span></div>' +
       effTxt(s.effect) +
-      (s.end ? '' : '<div class="row"><button class="ghost tiny" data-end="'+esc(s.id)+'">今日で終える</button></div>') +
+      (s.end ? '' : '<div class="row"><button class="ghost tiny" data-end="'+esc(s.id)+'">今日で終了</button></div>') +
       '</div>';
-  }).join('') : '<div class="dim">まだ記録がありません。</div>';
+  }).join('') : '<div class="empty">'+(SFILT==='open' ? '継続中の手立てはありません。右の欄から記録します。' : '終了した手立てはありません。')+'</div>';
 }
+$('sfilt').addEventListener('click', function(e){ var f = e.target.dataset.sf; if(!f) return; SFILT = f; renderSupports(); });
 $('sups').addEventListener('click', function(e){
   var id = e.target.dataset.end; if(!id) return;
   e.target.disabled = true;
-  google.script.run.withSuccessHandler(function(){ loadClass(true); })
-    .withFailureHandler(fail('sStat')).anEndSupport(KEY, id, today());
+  google.script.run.withSuccessHandler(function(){ loadClass(); }).withFailureHandler(fail('sStat')).anEndSupport(KEY, id, today());
 });
 
-/* ---------- 書き出し・記録 ---------- */
+/* ---------- 出力・記録 ---------- */
 function loadExport(){
   $('outText').value = '作成中…';
   google.script.run.withSuccessHandler(function(t){ $('outText').value = t; })
@@ -313,27 +377,24 @@ $('decSave').onclick = function(){
 };
 
 /* ---------- 読み込み ---------- */
-function loadClass(keepOpen){
-  if(!keepOpen) OPEN = '';
-  $('kids').innerHTML = '読み込み中…';
+function loadClass(){
+  $('klist').innerHTML = '読み込み中…';
   google.script.run.withSuccessHandler(function(d){
     DATA = d;
     $('decN').textContent = d.decisions || 0;
-    renderKids(); renderClass(); renderSupportForm(); renderSupports();
+    renderGuide(); renderKidList(); renderClass(); renderSupportForm(); renderSupports();
     if(document.querySelector('#tabs button.on').dataset.p==='out') loadExport();
-  }).withFailureHandler(function(e){ $('kids').innerHTML = 'エラー: ' + esc(e.message); }).anClassData(KEY);
+  }).withFailureHandler(function(e){ $('klist').innerHTML = 'エラー: ' + esc(e.message); }).anClassData(KEY);
 }
 function renderSources(){
   var s = BOOT.sources || [];
   var bad = s.filter(function(x){ return x.status && x.status !== 'OK'; });
   var last = s.map(function(x){ return x.updated; }).sort().pop();
-  $('srcs').textContent = s.length ? ('単元 ' + s.length + '件 ・ 最終集計 ' + (last||'—') + (bad.length ? ' ・ 要確認: ' + bad.map(function(x){ return (x.title||'?') + '（' + x.status + '）'; }).join('、') : ''))
-                                   : '読み元の単元がありません（リンク集の「記録シート」欄）';
-  var c = BOOT.cfg;
-  $('cfgline').textContent = '基準（config の an_*。データを見る前に決める）：最低 ' + c.an_min_trials + '試行 ・ 帯 ' + c.an_band_strong + '／' + c.an_band_low +
-    ' ・ 持続 ' + c.an_persist_months + 'か月 ・ 伸び ' + c.an_growth_weeks + '週以上 ・ 手立て前後 ' + c.an_effect_weeks + '週 ・ 比較集団の目安 ' + c.an_norm_min + '人';
+  $('srcs').textContent = s.length
+    ? ('単元 ' + s.length + '件 ・ 最終集計 ' + (last||'—') + (bad.length ? ' ・ 要確認：' + bad.map(function(x){ return (x.title||'?') + '（' + x.status + '）'; }).join('、') : ''))
+    : '集計元の単元がありません（ハブ設定の「記録シート」欄）';
 }
-$('cls').onchange = function(){ KEY = this.value; lsSet('an_cls', KEY); loadClass(); };
+$('cls').onchange = function(){ KEY = this.value; lsSet('an_cls', KEY); SEL_KID = ''; loadClass(); };
 $('ingest').onclick = function(){
   var btn = this; btn.disabled = true; $('srcs').textContent = '集計中…（数分かかることがあります）';
   google.script.run.withSuccessHandler(function(m){
@@ -344,14 +405,14 @@ $('ingest').onclick = function(){
 
 google.script.run.withSuccessHandler(function(b){
   BOOT = b;
-  renderSources();
-  if(!b.classes.length){ $('kids').innerHTML = '<div class="dim">見られる学級がありません（名簿と config の an_analysts を確認）。</div>'; return; }
+  renderSources(); renderGuide();
+  if(!b.classes.length){ $('klist').innerHTML = '<div class="empty">閲覧できる学級がありません（名簿と config シートの an_analysts を確認）。</div>'; return; }
   $('cls').innerHTML = b.classes.map(function(c){ return '<option value="'+esc(c.key)+'">'+c.grade+'年'+esc(c.cls)+'組</option>'; }).join('');
   var saved = lsGet('an_cls');
   KEY = (saved && b.classes.some(function(c){ return c.key===saved; })) ? saved : b.classes[0].key;
   $('cls').value = KEY;
   loadClass();
-}).withFailureHandler(function(e){ $('kids').innerHTML = 'エラー: ' + esc(e.message); }).anBoot();
+}).withFailureHandler(function(e){ $('klist').innerHTML = 'エラー: ' + esc(e.message); }).anBoot();
 </script>
 </body>
 </html>
