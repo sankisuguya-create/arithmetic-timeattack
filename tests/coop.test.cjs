@@ -186,6 +186,8 @@ assert.equal(p.cls, '3-1'); assert.equal(p.ev.length, 3); assert.equal(p.total, 
 assert.equal(JSON.stringify(p.gi), '[0,0,1,1,2,2,0,1]');
 assert.equal(p.names.length, 8);
 assert.ok(!ctx.coopLoad('no_such').ok);
+// 再生でも「1正答の枚数」を開始時と同じに自動計算できるよう、速さ・予定の分・1回の秒・数えない人数を残す
+assert.ok(p.pace >= 1 && p.minutes === 10 && p.lim === 60 && typeof p.skip === 'number', JSON.stringify([p.pace, p.minutes, p.lim, p.skip]));
 
 /* ---- キャッシュが消えても、進行中のセッションを失わない（coop シートの最後の行と coop_log から組み直す） ---- */
 const st4 = ctx.coopStart({ cls: '3-1' });
@@ -306,6 +308,19 @@ assert.equal(rowsD(), 0);
 ctx.coopNote_(c1, 1, 1);
 assert.equal(rowsD(), 40);
 
+/* ---- 「1正答の枚数」の自動計算に使う速さ：サイト全体の本番の1分あたりの正答（下駄つき） ---- */
+{
+  const m0 = ctx.modeIds_()[0];
+  sheets.summary = new Sheet('summary', ['email', 'mode', 'name', 'limit_sec', 'kind', 'tries', 'total_correct', 'total_attempts', 'best', 'best_count']);
+  sheets.summary.appendRow(['k01@x', m0, '', 60, 'r', 10, 300, 320, 35, 1]);   // 本番 10分で300問＝1分30問
+  sheets.summary.appendRow(['k02@x', m0, '', 60, 'p', 10, 900, 900, 90, 1]);   // 練習は入れない
+  Object.keys(store).filter(k => /^sumidx_/.test(k)).forEach(k => delete store[k]);
+  assert.equal(ctx.coopPace_(), 25);                                       // （300 ＋ 20×10）÷（10 ＋ 10）
+  const stP = ctx.coopStart({ reset: true });
+  assert.equal(stP.session.pace, 25); assert.equal(stP.session.minutes, 10);
+  delete sheets.summary; Object.keys(store).filter(k => /^sumidx_/.test(k)).forEach(k => delete store[k]);
+}
+
 /* ---- 開始のカウントダウン：始まりをサーバーが5秒後に置く（教師画面はこの start に合わせて 5→1→スタート を出す） ---- */
 const t0 = Date.now();
 const stE = ctx.coopReset({ countdown: true });
@@ -330,6 +345,19 @@ assert.equal(tui.split('id="coopStart"').length - 1, 1);
 assert.ok(tui.indexOf('id="coopStart"') > tui.indexOf('<div id="coopStage"'));
 assert.ok(tui.includes('run.coopReset({ countdown: true })') && tui.includes("var opts = { countdown: true };"));
 assert.ok(/requestFullscreen/.test(tui) && /fullscreenchange/.test(tui));
+// 進行中の時計は実際の時刻で出す（再生位置で出すと3秒ごとの問い合わせで 10:00 に戻って見えた）
+assert.ok(/liveRun \? coopLiveRemain\(\)/.test(tui));
+// 名前（名札）の表示切り替え
+assert.ok(tui.includes('id="coopNames"') && tui.includes('#coopStage.nonames #coopRoster{display:none}'));
+// 自動の枚数：九九（1分20問）・29人・10分・1回60秒・完成34,669枚（1920×1080 のペンローズ）で約8枚
+{
+  const src = tui.match(/var CAIM = [^\n]*\n/)[0] + tui.match(/function coopAutoRateOf\(p\)\{[\s\S]*?\n\}/)[0];
+  const f = vm.runInNewContext(src + ';coopAutoRateOf');
+  assert.equal(f({ tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20 }), 8);
+  assert.equal(f({ tfin: 21465, n: 29, minutes: 10, lim: 60, pace: 20 }), 5);
+  assert.equal(f({ tfin: 34669, n: 29, minutes: 5, lim: 60, pace: 20 }), 16);   // 時間が半分なら倍
+  assert.equal(f({ tfin: 10, n: 29, minutes: 10, lim: 60, pace: 20 }), 0.5);    // 下限
+}
 assert.ok(/&& !CP\.endSeen\)\{/.test(tui));                           // 終わりの位置送りは最初の1回だけ（シークが飛ばない）
 assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));   // 列が縮んだら取り直す
 
