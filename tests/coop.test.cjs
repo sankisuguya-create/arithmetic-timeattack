@@ -584,6 +584,11 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const rv = ui2.slice(ui2.indexOf('<div id="coopRv" hidden>'), ui2.indexOf('</div>\n<!-- 協力モード中だけ出る'));
   assert.equal((rv.match(/<button/g) || []).length, 2, 'ボタンは2つだけ');
   assert.ok(!/coopRvCv'\)\.addEventListener|coopRvCv\.on/.test(ui2), '図形を押して他の人の色を選ぶ手段は無い');
+  // 自分の正答数は届いた列から数える（続きからの前の回の分も含む）。他の児童の数は出さない
+  const myTot = vm.runInNewContext(ui2.match(/function coopRvMyTotal\(d\)\{[\s\S]*?\n\}/)[0] + ';coopRvMyTotal');
+  assert.equal(myTot(v), 11);
+  assert.equal(myTot({ me: 2, ev: [[1, 2, 5], [2, 0, 9], [3, 2, 4]] }), 9);
+  assert.ok(ui2.includes("'<small>じぶん</small>' + coopRvMyTotal(d) + ' もん"));
   // 教師画面：一気に組み直す時も引いた後で数え直す
   assert.ok(/if\(instant\)\{ CP\.S = ns; CP\.RENDER_S = ns; coopRecount\(\); return; \}/.test(tui));
 }

@@ -156,6 +156,7 @@ body.coopPast #coop:active{background:#E1E4E8}
 #coopRv button.on{background:var(--ink);color:#fff}
 #coopRv .tot{margin-left:auto;background:rgba(255,255,255,.95);border:2px solid var(--line,#DFDFD8);border-radius:14px;padding:.5rem 1rem;font-weight:800}
 #coopRv .tot small{font-size:.8rem;color:#6B7280;margin-right:.3rem}
+#coopRv .tot .sep{display:inline-block;width:1px;height:1.1em;background:var(--line,#DFDFD8);margin:0 .8rem;vertical-align:-.2em}
 #coopRv .msg{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);font-weight:800;font-size:1.2rem;z-index:2;text-align:center}
 #coopRv .me{display:inline-block;width:1em;height:1em;border-radius:50%;vertical-align:-.12em;margin-right:.35em;border:1.5px solid rgba(16,23,40,.35)}
 #coop.off .b .dot{display:none}
@@ -764,9 +765,13 @@ function coopRvOpen(){
     $('coopRvDot').style.background = 'rgb(' + mine + ')';
     coopRvMineLabel();
     $('coopRvMine').style.visibility = '';
-    $('coopRvTot').innerHTML = '<small>みんなで</small>' + d.total + ' もん';
+    $('coopRvTot').innerHTML = '<small>じぶん</small>' + coopRvMyTotal(d) + ' もん<i class="sep"></i><small>みんなで</small>' + d.total + ' もん';
     coopRvDraw();
   }).withFailureHandler(function(){ $('coopRvMsg').textContent = 'よみこめませんでした'; }).coopReview();
+}
+/* 自分の正答数：届いた正答の列から自分の index の分を足すだけ（サーバーへの問い合わせは増やさない）。続きからの回は前の回の分も含む */
+function coopRvMyTotal(d){
+  var n = 0; (d.ev || []).forEach(function(e){ if(e[1] === d.me) n += Number(e[2]) || 0; }); return n;
 }
 function coopRvClose(){ $('coopRv').hidden = true; RV.d = null; RV.tiles = null; }
 function coopRvDraw(){
