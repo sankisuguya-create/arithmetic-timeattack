@@ -741,8 +741,8 @@ function coopPeekApply_(r){
  * 教師画面（teacher.html）の協力の図形と同じ規則で、最後の形を1枚だけ描く（動きや再生はしない）。
  * 下の数値と coopRvAutoRate は teacher.html の CVW / CSMIN / CZOOM_STEP / CCOVER / CAIM / CPART / CGAP と coopAutoRateOf の写し。
  * 直す時は両方を同じに直す（tests/coop.test.cjs が照合する）。
- * できる操作は「自分（自分の組）の色を目立たせる」だけ。サーバー（coopReview）は他の児童の index を毎回並べ替えて返すので、
- * 画面のどの色が誰かは分からない。名前・番号も届かない。 */
+ * できる操作は「自分（自分の組）の色を目立たせる」だけ。色はモニターと同じ（回ごとのシードで決まり、新しく始めるたびに変わる）。
+ * 名前・番号・組の一覧は届かない。 */
 var CRV = { CVW: 3.6, CSMIN: 0.32, CZOOM_STEP: 0.72, CCOVER: 0.9, CAIM: 0.85, CPART: 0.9, CGAP: 25 };
 var RV = { d: null, hi: false, tiles: null, W: 0, H: 0 };
 function coopRvAutoRate(p){

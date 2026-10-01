@@ -1897,9 +1897,8 @@ function coopPeek(lim) {
 /*
  * 児童が、終わった協力プレイの図形を見返す（児童画面の左上の「前回の協力プレイ」）。
  * できるのは自分（グループなら自分の組）の色を目立たせることだけ。他の児童の色を選んで目立たせる手段は作らない
- * （誰の正答が少ないかを児童どうしで見つけられないようにするため）。そのため応答にも次のものを入れない：
- *  - 名前・番号・メール・組の一覧（gi）
- *  - 他の児童の本当の index：自分以外は、呼ばれるたびに並べ替えた番号に付け替える（色はばらばらに入れ替わるが、誰の分かは分からない）
+ * （誰の正答が少ないかを児童どうしで見つけられないようにするため）。応答には名前・番号・メール・組の一覧（gi）を入れない。
+ * 色は教師画面（モニター）と同じ（index はそのまま）。色の割り当ては回ごとのシードで決まり、新しく始めるたびに変わる（続きからの回だけ前の回と同じ）。
  * 組の色づかいでは、各正答にその児童の組番号だけを付ける（組の合計はモニターにも出ている）。
  */
 function coopReview() {
@@ -1911,14 +1910,10 @@ function coopReview() {
   if (!s) return { ok: false, msg: 'まだ 見られる 協力プレイが ありません。' };
   var me = s.kids[c.email];
   if (me === undefined) return { ok: false, msg: 'この 協力プレイには あなたの きろくが ありません。' };
-  var n = (s.names || []).length, others = [], i;
-  for (i = 0; i < n; i++) if (i !== me) others.push(i);
-  var perm = others.slice();
-  for (i = perm.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
-  var map = {}; others.forEach(function (o, k) { map[o] = perm[k]; }); map[me] = me;
+  var n = (s.names || []).length;
   var group = s.mode === 'group', pri = (s.prior && s.prior.dur) || 0;
   function out(e, shift) {
-    var o = [Number(e[0]) + shift, map[e[1]], Number(e[2]) || 0];
+    var o = [Number(e[0]) + shift, Number(e[1]) || 0, Number(e[2]) || 0];
     if (group) o.push(Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[e[1]]) || 0)));
     return o;
   }

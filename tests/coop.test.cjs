@@ -535,11 +535,18 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(!txt.includes('@') && !txt.includes('児童') && !('names' in v) && !('nos' in v) && !('gi' in v), '名前・番号・メール・組の一覧を入れない');
   assert.equal(v.ev.filter(e => e[1] === 1).length, 1, '自分の分は自分の index のまま');
   assert.equal(v.ev.find(e => e[1] === 1)[2], 11);
-  // 他の児童の index は呼ぶたびに並べ替える（自分以外の誰の分かは分からない）
-  const seen = new Set();
-  for (let t = 0; t < 30; t++) seen.add(JSON.stringify(ctx.coopReview().ev.filter(e => e[1] !== 1).map(e => e[1])));
-  assert.ok(seen.size > 1, '並べ替えが毎回違う');
-  ctx.coopReview().ev.forEach(e => assert.ok(e[1] >= 0 && e[1] < 8));
+  // 色はモニターと同じ：他の児童の index も名簿の並びのまま、呼ぶたびに変わらない
+  assert.equal(JSON.stringify(v.ev.map(e => [e[1], e[2]])), '[[0,10],[1,11],[2,12],[4,13]]');
+  for (let t = 0; t < 5; t++) assert.equal(JSON.stringify(ctx.coopReview().ev), JSON.stringify(v.ev));
+  // 色の割り当て（シード）は新しく始めるたびに引き直す（続きからの回だけ前の回と同じ。上の b2 / b3 で確かめている）
+  ctx.Session = teacherSession;
+  const seeds = new Set();
+  for (let t = 0; t < 5; t++) {
+    assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 5, mode: 'child' }).ok);
+    seeds.add(ctx.coopLive_().seed); ctx.coopStop();
+  }
+  assert.equal(seeds.size, 5, '新しく始めるたびにシードが変わる');
+  asKid('k02@kyoiku.edu.nishi.or.jp');
   // 別のクラスの児童には出さない
   asKid('other@kyoiku.edu.nishi.or.jp');
   assert.ok(!ctx.coopReview().ok); assert.ok(!ctx.coopPeek(60).review);
@@ -621,6 +628,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
     assert.ok(minDe(p29) >= 8, '29人の最小色差 ' + minDe(p29).toFixed(1));
     assert.ok(minDe(fT(6, seed * 31 + 11)) >= 18, '6組の最小色差');
   }
+  // シードが変われば、同じ index・同じ組でも色が変わる
+  assert.equal(new Set(Array.from({ length: 30 }, (_, k) => fT(29, k + 1)[0])).size, 30);
+  assert.ok(new Set(Array.from({ length: 30 }, (_, k) => fT(6, (k + 1) * 31 + 11)[0])).size >= 25);
 }
 
 /* ---- 児童画面：協力していない間は左上が灰色の「前回の協力プレイ」になり、押すと見返しを開く ---- */
