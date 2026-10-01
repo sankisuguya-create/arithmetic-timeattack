@@ -1876,7 +1876,7 @@ function coopForChild_(c, lim) {
   if (!s || s.status !== 'run' || Date.now() > s.end || !c || classKey_(c) !== s.cls) {
     // 終わった回を見返せるか（自分のクラスの回で、自分が名簿にいる）。キャッシュだけを見る軽い判定
     var rv = !!(s && c && classKey_(c) === s.cls && s.kids[c.email] !== undefined && (s.status !== 'run' || Date.now() > s.end));
-    return rv ? { active: false, review: true, rid: s.id } : { active: false };
+    return rv ? { active: false, review: true, rid: s.id, pat: s.pat } : { active: false };
   }
   var i = s.kids[c.email];
   if (i === undefined) return { active: false };
@@ -1895,7 +1895,7 @@ function coopPeek(lim) {
 }
 
 /*
- * 児童が、終わった協力プレイの図形を見返す（児童画面の「きょうりょくの もよう」）。
+ * 児童が、終わった協力プレイの図形を見返す（児童画面の左上の「前回の協力プレイ」）。
  * できるのは自分（グループなら自分の組）の色を目立たせることだけ。他の児童の色を選んで目立たせる手段は作らない
  * （誰の正答が少ないかを児童どうしで見つけられないようにするため）。そのため応答にも次のものを入れない：
  *  - 名前・番号・メール・組の一覧（gi）

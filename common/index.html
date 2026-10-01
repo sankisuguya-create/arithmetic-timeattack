@@ -136,10 +136,16 @@ body.coopOn[data-scr="result"] #coop{display:flex;color:var(--ink);background:rg
 body.coopOn[data-scr="start"] #coop .b .dot,
 body.coopOn[data-scr="result"] #coop .b .dot{border-color:rgba(16,23,40,.35)}
 #coop.off .emblem{opacity:.35;filter:grayscale(1)}
-/* 終わった協力プレイの図形を見返す（メニューの右下の入口と、全画面の見返し） */
-#coopRvBtn{position:absolute;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:3;
-  font:inherit;font-weight:800;font-size:1rem;padding:.75rem 1.1rem;min-height:56px;border-radius:14px;
-  border:2px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
+/* 協力が終わった後は、同じ場所に灰色の「前回の協力プレイ」の札を出す（メニュー・結果の画面だけ）。押すと見返しを開く。
+   色づかいを灰色にして、いま数えている札（自分の色）と取り違えないようにする */
+body.coopPast[data-scr="start"] #coop,
+body.coopPast[data-scr="result"] #coop{display:flex;color:#5A6068;background:#EEF0F2;
+  border:1.5px solid #C4C9CF;border-radius:16px;padding:.45rem .8rem;cursor:pointer;-webkit-tap-highlight-color:transparent}
+body.coopPast #coop:active{background:#E1E4E8}
+#coop.past .emblem{box-shadow:0 0 0 2px rgba(16,23,40,.12)}
+#coop.past .emblem canvas{animation:none}
+#coop.past .b{color:#5A6068}
+#coop.past .b .dot{display:none}
 #coopRv{position:fixed;inset:0;z-index:30;background:#F2F1EC}
 #coopRv[hidden]{display:none}
 #coopRvCv{position:absolute;inset:0;width:100%;height:100%}
@@ -386,8 +392,6 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   <!-- 教師のアカウントで開いた時だけ出る。児童のアカウントには描かれない -->
   <div class="tline" id="teacherLink" style="display:none"></div>
   <!-- 床の広がりを見返す。押すと無地に戻り、押すたびに今の育ちの 1/6 ずつ広がる（記録には触れない） -->
-  <!-- 終わった協力プレイの図形を見返す入口。自分のクラスの終わった回があるときだけ出る -->
-  <button type="button" id="coopRvBtn" hidden>きょうりょくの もよう</button>
   <button type="button" id="floorReplay" aria-label="もようの ひろがりを 見る" title="もようの ひろがりを 見る" hidden>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5 16.5 10 6 16.5z" fill="currentColor"/></svg>
   </button>
@@ -647,21 +651,42 @@ function floorFam_(hex){
 /* ---- 協力モード：自分の色の印 ----
    boot() / startSession() が運んでくる coop で描く。
    色の割り当ては教師画面（teacher.html）と同じ決まった手順：
-   シードから金色の角度で色を散らし、シードでシャッフルする。
+   シードから色の候補を最遠点選択で選び、シードでシャッフルする。
    サーバーから届くのは自分の index だけ（他の児童の色は届かない）。 */
 var COOP = { active: false };
 function coopRng_(seed){ var s = seed >>> 0; return function(){ s = (s * 1103515245 + 12345) >>> 0; return (s >>> 8) / 16777216; }; }
-function coopHsl_(h, s, l){ h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
-  var a = s * Math.min(l, 1 - l);
-  var f = function(n){ var k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
-  return [f(0), f(8), f(4)].map(function(v){ return Math.round(v * 255); }).join(',');
+/* 色の候補：OKLab（見た目の差がほぼ距離に比例する色空間）で、色相10°ごと×明るさ4段×鮮やかさ2段のうち
+ * 画面で出せるものを並べ、すでに選んだ色から最も遠い候補を順に取る（最遠点選択）。
+ * 金色の角度で色相だけを回す旧手順は、明るさ・鮮やかさが揃いやすく似た色が多かった。
+ * 明るさの差は色覚の型を問わず残るので、L に重み1.6をかけて明るさの違いを優先させる（重みは実測で調整、根拠は計算のみ）。
+ * 29色すべてを見分けられる配色は存在しない。見分けは「自分の色を目立たせる」（色以外の手がかり）で行う */
+function coopOkToRgb_(L, C, h){
+  var a = C * Math.cos(h * Math.PI / 180), b = C * Math.sin(h * Math.PI / 180);
+  var l = Math.pow(L + 0.3963377774 * a + 0.2158037573 * b, 3), m = Math.pow(L - 0.1055613458 * a - 0.0638541728 * b, 3),
+      s = Math.pow(L - 0.0894841775 * a - 1.2914855480 * b, 3);
+  var lin = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+             -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+  for(var i = 0; i < 3; i++){ if(lin[i] < -1e-4 || lin[i] > 1.0001) return null; }
+  return lin.map(function(c){ c = Math.min(1, Math.max(0, c)); return Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055)); });
 }
 function coopPalette_(n, seed){
-  var rand = coopRng_(seed * 7919), h0 = rand() * 360, cols = [], i;
-  for(i = 0; i < n; i++){
-    cols.push(coopHsl_(h0 + i * 137.508, [72, 58, 82][i % 3], [52, 66, 42, 58][i % 4]));
+  var rand = coopRng_(seed * 7919), h0 = rand() * 360, cand = [], i, j, h, L, C;
+  var LS = [0.50, 0.61, 0.72, 0.83], CS = [0.10, 0.16];
+  for(h = 0; h < 360; h += 10) for(i = 0; i < LS.length; i++) for(j = 0; j < CS.length; j++){
+    L = LS[i]; C = CS[j];
+    var rgb = coopOkToRgb_(L, C, h0 + h);
+    if(rgb) cand.push({ L: L * 1.6, a: C * Math.cos((h0 + h) * Math.PI / 180), b: C * Math.sin((h0 + h) * Math.PI / 180), rgb: rgb.join(',') });
   }
-  for(i = n - 1; i > 0; i--){ var j = Math.floor(rand() * (i + 1)), t = cols[i]; cols[i] = cols[j]; cols[j] = t; }
+  var cols = [], md = cand.map(function(){ return 1e9; }), k = Math.floor(rand() * cand.length);
+  for(i = 0; i < n; i++){
+    if(i > 0){ k = 0; for(j = 1; j < cand.length; j++) if(md[j] > md[k]) k = j; }
+    var c = cand[k]; cols.push(c.rgb);
+    for(j = 0; j < cand.length; j++){
+      var d = (cand[j].L - c.L) * (cand[j].L - c.L) + (cand[j].a - c.a) * (cand[j].a - c.a) + (cand[j].b - c.b) * (cand[j].b - c.b);
+      if(d < md[j]) md[j] = d;
+    }
+  }
+  for(i = n - 1; i > 0; i--){ j = Math.floor(rand() * (i + 1)); var t = cols[i]; cols[i] = cols[j]; cols[j] = t; }
   return cols;
 }
 /* 自分の色：児童ごとなら自分の index、グループなら自分の組の色（教師画面と同じ式） */
@@ -724,10 +749,6 @@ function coopRvAutoRate(p){
   var plays = p.minutes * 60 / (p.lim + CRV.CGAP);
   var expect = Math.max(1, p.n) * CRV.CPART * plays * p.pace * p.lim / 60;
   return Math.max(0.5, Math.round((CRV.CAIM * p.tfin - (p.used || 0)) / expect * 10) / 10);
-}
-function coopRvBtn_(){
-  var b = $('coopRvBtn'); if(!b) return;
-  b.hidden = !(COOP && COOP.review && !COOP.active);
 }
 function coopRvOpen(){
   $('coopRv').hidden = false; RV.hi = false; RV.d = null; $('coopRvMine').classList.remove('on');
@@ -813,7 +834,8 @@ function coopRvDraw(){
     ctx.strokeStyle = 'rgba(16,23,40,' + (0.16 * Number(p2[1])) + ')'; ctx.lineWidth = .8 / S; ctx.stroke(bk[k2]);
   }
 }
-$('coopRvBtn').addEventListener('click', coopRvOpen);
+// 左上の灰色の札（「前回の協力プレイ」）が見返しの入口。協力中の札は押しても何も起きない
+$('coop').addEventListener('click', function(){ if($('coop').classList.contains('past')) coopRvOpen(); });
 $('coopRvClose').addEventListener('click', coopRvClose);
 function coopRvMineLabel(){
   var d = RV.d || {};
@@ -834,29 +856,47 @@ window.addEventListener('keydown', function(e){
 
 /* 自分の色のフラクタル球（っぽい平面図）：協力画面と同じ生成器を小さい円に描く */
 function coopBadge_(practice){
-  coopRvBtn_();
-  var cv = $('coopEmblem');
+  var cv = $('coopEmblem'), el = $('coop');
   // れんしゅうは協力の正答に数えないので、印を出さない（出すと数えられていると思わせる）
   var on = !practice && !!(COOP.active && cv && window.GrowingFigures);
+  // 協力をしていない間：自分のクラスの終わった回があれば「前回の協力プレイ」（灰色）にして、押すと見返せる
+  var past = !COOP.active && !!COOP.review && !!cv;
   $('play').classList.toggle('coopOn', on);
   document.body.classList.toggle('coopOn', on);
+  document.body.classList.toggle('coopPast', past);
+  el.classList.toggle('past', past);
+  if(past){ el.setAttribute('role', 'button'); el.setAttribute('aria-label', '前回の協力プレイを見る'); }
+  else { el.removeAttribute('role'); el.removeAttribute('aria-label'); }
+  if(past){
+    el.classList.remove('off');
+    $('coopA').textContent = '前回の協力プレイ';
+    $('coopB').textContent = 'おして 見る';
+    coopEmblem_('150,155,162', COOP.pat);
+    return;
+  }
   if(!on) return;
   // 協力の残りが1回分より短いと、この回は時間内に終わらないので数えない。色の印のままだと
   // 数えられていると思わせるので、印を薄くして「数えません」と出す（サーバーが counts=false を返す）
   var off = COOP.counts === false;
-  $('coop').classList.toggle('off', off);
+  el.classList.toggle('off', off);
   $('coopA').textContent = off ? '数えません' : '協力プレイ中';   // 右の表示（padding-left 160px）に重ならない長さ
   $('coopB').textContent = off ? '協力の 時間ぎれ'
                          : COOP.mode === 'group' ? 'あなたの組の色' : 'あなたの色';
+  var col = coopMyColor_();
+  $('coopDot').style.background = 'rgb(' + col + ')';
+  coopEmblem_(col, COOP.pat);
+}
+function coopEmblem_(col, pat){
+  var cv = $('coopEmblem');
+  if(!cv || !window.GrowingFigures) return;
   try{
-    var col = coopMyColor_(), d = 104, ctx = cv.getContext('2d');
-    $('coopDot').style.background = 'rgb(' + col + ')';
+    var d = 104, ctx = cv.getContext('2d');
     cv.width = d; cv.height = d;
     ctx.clearRect(0, 0, d, d);
     ctx.save();
     ctx.beginPath(); ctx.arc(d / 2, d / 2, d / 2 - 1, 0, 6.2832); ctx.clip();
     ctx.fillStyle = '#0A0F1E'; ctx.fillRect(0, 0, d, d);
-    var G = window.GrowingFigures.GENERATORS, gen = G[COOP.pat] || G.penrose;
+    var G = window.GrowingFigures.GENERATORS, gen = G[pat] || G.penrose;
     var raw = gen.make({ W: d, H: d, ox: d / 2, oy: d / 2, edge: 7, margin: 3 });
     var fm = coopFam_(col), bk = {}, i, j, t, P, p, h;
     for(i = 0; i < raw.length; i++){

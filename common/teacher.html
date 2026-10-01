@@ -140,8 +140,8 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 /* ===== きょうりょくタブ =====
  * ステージは箱の中では16:9の枠、「全画面でうつす」で fixed に変わる（モニターうつし）。
  * 時計・正答数・名札は白い下地付きの札にして、図形が一面に育っても埋もれない。 */
-#coopStage{position:relative;width:var(--stageW,100%);margin-left:auto;margin-right:auto;aspect-ratio:16/9;border:1.5px solid var(--line);
-  border-radius:10px;overflow:hidden;background:#F2F1EC;margin-top:.8rem}
+#coopStage{position:relative;width:var(--stageW,100%);aspect-ratio:16/9;border:1.5px solid var(--line);
+  border-radius:10px;overflow:hidden;background:#F2F1EC}
 #coopStage.full{position:fixed;inset:0;z-index:40;aspect-ratio:auto;width:auto;border-radius:0;border:none;margin:0}
 #coopStage canvas{position:absolute;inset:0;width:100%;height:100%}
 #coopHud{position:absolute;top:2.4vmin;right:2.4vmin;display:flex;gap:1.2vmin;align-items:flex-start;z-index:2}
@@ -186,19 +186,32 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .clsPick button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .clsPick button.on small{color:#D6D9E0}
 .clsPick button:disabled:not(.on){opacity:.4}
-/* 協力モードの操作欄：3段。段の中は「見出し（小さい灰色）＋操作」のまとまりを横に並べる */
-.coopBox .crow{display:flex;gap:.6rem 1.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.65rem}
-.coopBox .crow:last-of-type{margin-bottom:.3rem}
-.coopBox .crow .clsPick{margin:0}
-.coopBox .grp{display:inline-flex;align-items:center;gap:.4rem}
+/* 協力モードは左右2列：左に操作欄（上から使う順）、右に図形のステージ。
+   上下に積むと操作欄の高さのぶんステージが縮み、横長の画面（1366×768）で図形が小さくなるため。狭い画面では上下に戻す */
+#pageCoop{display:grid;grid-template-columns:minmax(300px,350px) minmax(0,1fr);gap:1rem;align-items:start}
+#pageCoop > .coopBox{grid-column:1;grid-row:1;margin-bottom:0;overflow-y:auto;overscroll-behavior:contain}
+/* 欄の中を送る時に切れないよう、協力の「詳細」は画面に固定して開く（位置は開いた時に summary から決める） */
+#coopMore .morePanel{position:fixed;bottom:auto}
+#pageCoop > #coopStage{grid-column:2;grid-row:1;justify-self:start}
+@media (max-width:900px){
+  #pageCoop{grid-template-columns:minmax(0,1fr)}
+  #pageCoop > #coopStage{grid-column:1;grid-row:2;justify-self:center}
+}
+.coopBox{padding:.85rem 1rem}
+.coopBox .crow{display:flex;flex-direction:column;gap:.4rem;align-items:stretch;padding:.55rem 0;border-top:1px solid var(--line)}
+.coopBox .crow:first-child{border-top:none;padding-top:0}
+.coopBox .crow .clsPick{margin:0;gap:.35rem}
+.coopBox .clsPick button{padding:.3rem .7rem;font-size:.9rem}
+.coopBox .grp{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.coopBox .grp > .ctl:first-child{width:4.2em;flex:none}
 .coopBox .ctl,.morePanel .ctl{font-size:.8rem;font-weight:700;color:var(--mute)}
 .coopBox .step{padding:.2rem .65rem;font-size:1rem;line-height:1.2}
 .coopBox .minIn{width:4.2rem;padding:.35rem .3rem;text-align:center;font-weight:800}
 .coopBox .unit{font-size:.88rem;font-weight:700}
-.coopBox .act{border-top:1px solid var(--line);padding-top:.65rem}
-.coopBox .act button{padding:.5rem 1rem}
+.coopBox .act button{padding:.38rem .7rem;font-size:.9rem}
+.coopBox .act #coopFull{width:100%;padding:.55rem 1rem;font-size:1rem}
 .coopBox select{width:auto}
-.coopBox #coopSaves{min-width:9rem;max-width:14rem}
+.coopBox #coopSaves{flex:1;min-width:0}
 .coopBox #coopPlanBtn{padding:.35rem .9rem}
 .seg{display:inline-flex;border:2px solid var(--ink);border-radius:10px;overflow:hidden}
 .seg button{font:inherit;font-weight:800;font-size:.88rem;padding:.35rem .9rem;border:none;border-radius:0;background:#fff;color:var(--ink)}
@@ -208,7 +221,7 @@ details.more{position:relative}
 details.more summary{list-style:none;cursor:pointer;font-size:.84rem;font-weight:700;border:1.5px solid var(--line);border-radius:9px;padding:.45rem .8rem;background:#fff}
 details.more summary::-webkit-details-marker{display:none}
 details.more[open] summary{border-color:var(--ink)}
-.morePanel{position:absolute;right:0;top:2.6rem;z-index:20;width:min(460px,86vw);background:#fff;border:1.5px solid var(--ink);border-radius:12px;padding:.8rem .9rem;box-shadow:0 6px 24px rgba(16,23,40,.18)}
+.morePanel{position:absolute;left:0;bottom:calc(100% + .4rem);z-index:20;width:min(460px,86vw);background:#fff;border:1.5px solid var(--ink);border-radius:12px;padding:.8rem .9rem;box-shadow:0 6px 24px rgba(16,23,40,.18)}
 .morePanel .mrow{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem}
 /* 組の編集のポップアップ。組は文字（A組…）で示し、色は使わない（色は開始時のシードで決まるため、開始前に出すと開始後と食い違う） */
 .cmodal{position:fixed;inset:0;z-index:50;background:rgba(16,23,40,.45);display:flex;align-items:center;justify-content:center;padding:2vh 2vw}
@@ -254,7 +267,7 @@ details.more[open] summary{border-color:var(--ink)}
   background:#fff;color:var(--ink);border:2px solid var(--ink)}
 #coopCont.off{display:none}
 /* 操作欄の下の案内（状態・理由）は、出ても箱の高さが変わらないよう1行ずつ場所を取っておく（ステージの大きさを決め直さずに済む） */
-#coopStat{min-height:1.45rem}
+#coopStat{min-height:1.45rem;font-size:.78rem;line-height:1.5}
 #coopGuide{min-height:1.25rem}
 /* カウントダウン：5→1→スタート。図形の上に大きく重ねる */
 #coopCount{position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;
@@ -389,8 +402,9 @@ details.more[open] summary{border-color:var(--ink)}
   </div><!-- /pageAna -->
 
   <div id="pageCoop" style="display:none">
-  <!-- 操作は使う順に3段：①だれで（クラス） ②どう遊ぶ（時間・色づかい・組） ③うつす・止める・残す。
-       めったに触らない図形と「1正答の枚数」と説明は、右端の「詳細」の中にしまう -->
+  <!-- 左の操作欄は使う順に上から：①だれで（クラス） ②どう遊ぶ（時間・色づかい・組） ③うつす・止める・残す（その下に今の状態）
+       ④保存した回の再生。めったに触らない図形と「1正答の枚数」と説明は、いちばん下の「詳細」の中にしまう。
+       画面の高さが足りない時は、ページではなくこの欄の中を送る（右のステージは動かない） -->
   <div class="box coopBox">
     <div class="crow"><div class="clsPick" id="coopClsPick"><span class="lab2">クラス</span></div></div>
     <select id="coopCls" style="display:none" aria-hidden="true"></select>
@@ -408,12 +422,16 @@ details.more[open] summary{border-color:var(--ink)}
     </div>
     <div class="crow act">
       <button id="coopFull">全画面でうつす</button>
-      <button id="coopStop" class="ghost" disabled>終了</button>
-      <button id="coopReset" class="ghost" disabled>リセット</button>
-      <span style="flex:1"></span>
-      <button id="coopSave" class="ghost">この回を保存…</button>
-      <select id="coopSaves" aria-label="保存データ"></select>
-      <button id="coopLoad" class="ghost">再生</button>
+      <span class="grp"><button id="coopStop" class="ghost" disabled>終了</button>
+        <button id="coopReset" class="ghost" disabled>リセット</button>
+        <span style="flex:1"></span>
+        <button id="coopSave" class="ghost">この回を保存…</button></span>
+      <div class="stat" id="coopStat"></div>
+      <div class="note" id="coopGuide" style="margin:0"></div>
+    </div>
+    <div class="crow act">
+      <span class="grp"><select id="coopSaves" aria-label="保存データ"></select>
+        <button id="coopLoad" class="ghost">再生</button>
       <details class="more" id="coopMore"><summary>詳細</summary>
         <div class="morePanel">
           <div class="mrow"><span class="ctl">図形</span> <select id="coopPat"></select></div>
@@ -426,10 +444,8 @@ details.more[open] summary{border-color:var(--ink)}
             「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと 5 から数えてスタート、時間が来たら自動で打ち切りです。
             終わった図形を映している間は、画面の「続きから」で同じ図形を育て続けられます。</p>
         </div>
-      </details>
+      </details></span>
     </div>
-    <div class="stat" id="coopStat"></div>
-    <div class="note" id="coopGuide" style="margin:.2rem 0 0"></div>
   </div>
 
   <!-- 組の編集はポップアップ。開始前の予定（「組分け」シート）も、映している回の組も、ここで直して「保存」 -->
@@ -891,15 +907,21 @@ function showPage(p){
   if(p === 'set' && FP.on) fpDraw(FP.shown);
   if(p === 'coop') coopFit_();
 }
-/* 協力モードのステージを、操作欄の下に残った高さへ収める（16:9 を保つ）。
-   操作欄は画面幅で折り返して高さが変わるので、CSS の固定の式ではなく実際の位置から求める。全画面のときは効かない */
+/* 協力モードのステージを、右の列の幅と画面の残りの高さに収める（16:9 を保つ）。
+   列の幅と上端は画面幅で変わる（狭い画面では操作欄の下に回る）ので、CSS の固定の式ではなく実際の大きさから求める。全画面のときは効かない */
+var COOP_STACK = window.matchMedia ? matchMedia('(max-width:900px)') : { matches: false };
 function coopFit_(){
-  var st = document.getElementById('coopStage');
-  if(!st || st.style.display === 'none' || document.getElementById('pageCoop').style.display === 'none') return;
+  var st = document.getElementById('coopStage'), bx = document.querySelector('#pageCoop > .coopBox');
+  if(document.getElementById('pageCoop').style.display === 'none') return;
+  // 左右に並べている間は、操作欄を画面の残りの高さまでにして中を送る（ページは送らない）
+  bx.style.maxHeight = COOP_STACK.matches ? '' : Math.max(240, innerHeight - bx.getBoundingClientRect().top - (window.scrollY || 0) - 16) + 'px';
+  if(!st || st.style.display === 'none') return;
+  if(st.classList.contains('full')) return;
   st.style.removeProperty('--stageW');
+  var full = st.offsetWidth;                      // --stageW を外すと 100%＝列の幅
   var top = st.getBoundingClientRect().top + (window.scrollY || 0);
-  var room = innerHeight - top - 16;
-  var full = st.parentElement.clientWidth;
+  // 狭い画面で操作欄の下に回った時は、下へ送って見る前提で画面の高さいっぱいまで使う
+  var room = COOP_STACK.matches ? innerHeight - 32 : innerHeight - top - 16;
   st.style.setProperty('--stageW', Math.max(320, Math.min(full, room * 16 / 9)) + 'px');
 }
 addEventListener('resize', coopFit_);
@@ -1264,19 +1286,38 @@ var CAIM = 0.85, CPART = 0.9, CGAP = 25;
 
 /* 色の割り当て：児童画面（index.html）と同じ手順。同じシードなら同じ色になる */
 function coopRng(seed){ var s = seed >>> 0; return function(){ s = (s * 1103515245 + 12345) >>> 0; return (s >>> 8) / 16777216; }; }
-function coopHsl(h, s, l){ h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
-  var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2, r, g, b;
-  if(h < 60){ r = c; g = x; b = 0; } else if(h < 120){ r = x; g = c; b = 0; }
-  else if(h < 180){ r = 0; g = c; b = x; } else if(h < 240){ r = 0; g = x; b = c; }
-  else if(h < 300){ r = x; g = 0; b = c; } else { r = c; g = 0; b = x; }
-  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)].join(',');
+/* 色の候補：OKLab（見た目の差がほぼ距離に比例する色空間）で、色相10°ごと×明るさ4段×鮮やかさ2段のうち
+ * 画面で出せるものを並べ、すでに選んだ色から最も遠い候補を順に取る（最遠点選択）。
+ * 金色の角度で色相だけを回す旧手順は、明るさ・鮮やかさが揃いやすく似た色が多かった。
+ * 明るさの差は色覚の型を問わず残るので、L に重み1.6をかけて明るさの違いを優先させる（重みは実測で調整、根拠は計算のみ）。
+ * 29色すべてを見分けられる配色は存在しない。見分けは「自分の色を目立たせる」（色以外の手がかり）で行う */
+function coopOkToRgb(L, C, h){
+  var a = C * Math.cos(h * Math.PI / 180), b = C * Math.sin(h * Math.PI / 180);
+  var l = Math.pow(L + 0.3963377774 * a + 0.2158037573 * b, 3), m = Math.pow(L - 0.1055613458 * a - 0.0638541728 * b, 3),
+      s = Math.pow(L - 0.0894841775 * a - 1.2914855480 * b, 3);
+  var lin = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+             -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+  for(var i = 0; i < 3; i++){ if(lin[i] < -1e-4 || lin[i] > 1.0001) return null; }
+  return lin.map(function(c){ c = Math.min(1, Math.max(0, c)); return Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055)); });
 }
 function coopPalette(n, seed){
-  var rand = coopRng(seed * 7919), h0 = rand() * 360, cols = [], i;
-  for(i = 0; i < n; i++){
-    cols.push(coopHsl(h0 + i * 137.508, [72, 58, 82][i % 3], [52, 66, 42, 58][i % 4]));
+  var rand = coopRng(seed * 7919), h0 = rand() * 360, cand = [], i, j, h, L, C;
+  var LS = [0.50, 0.61, 0.72, 0.83], CS = [0.10, 0.16];
+  for(h = 0; h < 360; h += 10) for(i = 0; i < LS.length; i++) for(j = 0; j < CS.length; j++){
+    L = LS[i]; C = CS[j];
+    var rgb = coopOkToRgb(L, C, h0 + h);
+    if(rgb) cand.push({ L: L * 1.6, a: C * Math.cos((h0 + h) * Math.PI / 180), b: C * Math.sin((h0 + h) * Math.PI / 180), rgb: rgb.join(',') });
   }
-  for(i = n - 1; i > 0; i--){ var j = Math.floor(rand() * (i + 1)), t = cols[i]; cols[i] = cols[j]; cols[j] = t; }
+  var cols = [], md = cand.map(function(){ return 1e9; }), k = Math.floor(rand() * cand.length);
+  for(i = 0; i < n; i++){
+    if(i > 0){ k = 0; for(j = 1; j < cand.length; j++) if(md[j] > md[k]) k = j; }
+    var c = cand[k]; cols.push(c.rgb);
+    for(j = 0; j < cand.length; j++){
+      var d = (cand[j].L - c.L) * (cand[j].L - c.L) + (cand[j].a - c.a) * (cand[j].a - c.a) + (cand[j].b - c.b) * (cand[j].b - c.b);
+      if(d < md[j]) md[j] = d;
+    }
+  }
+  for(i = n - 1; i > 0; i--){ j = Math.floor(rand() * (i + 1)); var t = cols[i]; cols[i] = cols[j]; cols[j] = t; }
   return cols;
 }
 function coopFam(rgb){ var c = rgb.split(',').map(Number);
@@ -1769,6 +1810,15 @@ function coopModeRender(){
   });
   document.getElementById('coopGnRow').style.display = sel.value === 'group' ? '' : 'none';
 }
+/* 協力の「詳細」：summary の上に開く（上に入らなければ下）。画面の左右からはみ出さない */
+document.getElementById('coopMore').addEventListener('toggle', function(){
+  if(!this.open) return;
+  var pn = this.querySelector('.morePanel'), r = this.querySelector('summary').getBoundingClientRect();
+  var w = pn.offsetWidth, h = pn.offsetHeight;
+  pn.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
+  pn.style.top = (r.top - h - 6 >= 8 ? r.top - h - 6 : Math.min(r.bottom + 6, innerHeight - h - 8)) + 'px';
+});
+addEventListener('resize', function(){ var m = document.getElementById('coopMore'); if(m) m.open = false; });
 /* 「詳細」は外を押したら閉じる */
 document.addEventListener('click', function(e){
   var m = document.getElementById('coopMore');
@@ -2055,6 +2105,7 @@ document.getElementById('coopFull').onclick = function(){
 };
 function coopLeaveFull(){
   document.getElementById('coopStage').classList.remove('full');
+  coopFit_();                                     // 全画面の間に窓の大きさが変わっていても列に収め直す
   coopRelayout();
 }
 document.getElementById('coopClose').onclick = function(){

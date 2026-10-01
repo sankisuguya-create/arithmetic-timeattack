@@ -581,4 +581,68 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(/if\(instant\)\{ CP\.S = ns; CP\.RENDER_S = ns; coopRecount\(\); return; \}/.test(tui));
 }
 
+/* ---- 色：児童画面と教師画面で同じ手順・同じ色。似た色を減らす（CIEDE2000 の最小色差で確かめる） ---- */
+{
+  const tui = read('common/teacher.html'), ui = read('common/index.html');
+  const fT = vm.runInNewContext(tui.match(/function coopRng\(seed\)[^\n]*\n/)[0] +
+    tui.slice(tui.indexOf('function coopOkToRgb('), tui.indexOf('function coopFam(rgb)')) + ';coopPalette');
+  const fC = vm.runInNewContext(ui.match(/function coopRng_\(seed\)[^\n]*\n/)[0] +
+    ui.slice(ui.indexOf('function coopOkToRgb_('), ui.indexOf('/* 自分の色：児童ごとなら')) + ';coopPalette_');
+  const lab = rgb => {
+    const c = rgb.split(',').map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    const X = (0.4124 * c[0] + 0.3576 * c[1] + 0.1805 * c[2]) / 0.95047, Y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2],
+      Z = (0.0193 * c[0] + 0.1192 * c[1] + 0.9505 * c[2]) / 1.08883;
+    const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+    return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+  };
+  const de00 = ([L1, a1, b1], [L2, a2, b2]) => {
+    const rad = Math.PI / 180, p7 = x => Math.pow(x, 7);
+    const Cb = (Math.hypot(a1, b1) + Math.hypot(a2, b2)) / 2, G = 0.5 * (1 - Math.sqrt(p7(Cb) / (p7(Cb) + p7(25))));
+    const ap1 = a1 * (1 + G), ap2 = a2 * (1 + G), Cp1 = Math.hypot(ap1, b1), Cp2 = Math.hypot(ap2, b2);
+    const hp = (x, y) => { if(!x && !y) return 0; const h = Math.atan2(y, x) / rad; return h < 0 ? h + 360 : h; };
+    const h1 = hp(ap1, b1), h2 = hp(ap2, b2), dL = L2 - L1, dC = Cp2 - Cp1;
+    let dh = 0; if(Cp1 * Cp2){ dh = h2 - h1; if(dh > 180) dh -= 360; else if(dh < -180) dh += 360; }
+    const dH = 2 * Math.sqrt(Cp1 * Cp2) * Math.sin(dh / 2 * rad), Lb = (L1 + L2) / 2, Cpb = (Cp1 + Cp2) / 2;
+    let hb = h1 + h2; if(Cp1 * Cp2) hb = Math.abs(h1 - h2) > 180 ? (h1 + h2 + (h1 + h2 < 360 ? 360 : -360)) / 2 : (h1 + h2) / 2;
+    const T = 1 - 0.17 * Math.cos((hb - 30) * rad) + 0.24 * Math.cos(2 * hb * rad) + 0.32 * Math.cos((3 * hb + 6) * rad) - 0.20 * Math.cos((4 * hb - 63) * rad);
+    const dT = 30 * Math.exp(-Math.pow((hb - 275) / 25, 2)), RC = 2 * Math.sqrt(p7(Cpb) / (p7(Cpb) + p7(25)));
+    const SL = 1 + 0.015 * Math.pow(Lb - 50, 2) / Math.sqrt(20 + Math.pow(Lb - 50, 2)), SC = 1 + 0.045 * Cpb, SH = 1 + 0.015 * Cpb * T;
+    const RT = -Math.sin(2 * dT * rad) * RC;
+    return Math.sqrt(Math.pow(dL / SL, 2) + Math.pow(dC / SC, 2) + Math.pow(dH / SH, 2) + RT * (dC / SC) * (dH / SH));
+  };
+  const minDe = cols => { const L = cols.map(lab); let m = 1e9;
+    for(let i = 0; i < L.length; i++) for(let j = i + 1; j < L.length; j++) m = Math.min(m, de00(L[i], L[j])); return m; };
+  for(let seed = 1; seed <= 30; seed++){
+    [29, 6, 1].forEach(n => assert.equal(JSON.stringify(fC(n, seed)), JSON.stringify(fT(n, seed)), '同じシードなら同じ色 n=' + n));
+    const p29 = fT(29, seed);
+    assert.equal(p29.length, 29); assert.equal(new Set(p29).size, 29);
+    p29.forEach(c => assert.ok(/^\d{1,3},\d{1,3},\d{1,3}$/.test(c) && c.split(',').every(v => +v <= 255), c));
+    // 旧手順（金色の角度で色相だけを回す）は 29人で最小 1.5〜4.6。新しい手順は 9 を超える（実測）
+    assert.ok(minDe(p29) >= 8, '29人の最小色差 ' + minDe(p29).toFixed(1));
+    assert.ok(minDe(fT(6, seed * 31 + 11)) >= 18, '6組の最小色差');
+  }
+}
+
+/* ---- 児童画面：協力していない間は左上が灰色の「前回の協力プレイ」になり、押すと見返しを開く ---- */
+{
+  const ui = read('common/index.html'), core = read('common/Core.gs');
+  assert.ok(!ui.includes('coopRvBtn'), '右下の入口は無くした');
+  assert.ok(/var past = !COOP\.active && !!COOP\.review && !!cv;/.test(ui));
+  assert.ok(ui.includes("$('coopA').textContent = '前回の協力プレイ';"));
+  assert.ok(/body\.coopPast\[data-scr="start"\] #coop,\nbody\.coopPast\[data-scr="result"\] #coop\{display:flex;color:#5A6068;background:#EEF0F2;/.test(ui), '灰色の札はメニュー・結果の画面だけ');
+  assert.ok(!/body\.coopPast\[data-scr="play"\]/.test(ui), '遊んでいる間は出さない');
+  assert.ok(ui.includes("$('coop').addEventListener('click', function(){ if($('coop').classList.contains('past')) coopRvOpen(); });"));
+  assert.ok(core.includes('{ active: false, review: true, rid: s.id, pat: s.pat }'));
+}
+
+/* ---- 教師画面：協力モードは左に操作欄、右にステージ（狭い画面では上下） ---- */
+{
+  const tui = read('common/teacher.html');
+  assert.ok(tui.includes('#pageCoop{display:grid;grid-template-columns:minmax(300px,350px) minmax(0,1fr);'));
+  assert.ok(tui.includes('#pageCoop > #coopStage{grid-column:2;grid-row:1;'));
+  const pc = tui.slice(tui.indexOf('<div id="pageCoop"'), tui.indexOf('</div><!-- /pageCoop -->'));
+  assert.ok(pc.indexOf('class="box coopBox"') < pc.indexOf('<div id="coopStage"'));
+  assert.ok(/var full = st\.offsetWidth;/.test(tui), 'ステージの幅は右の列の幅から');
+}
+
 console.log('coop.test.cjs: all assertions passed.');
