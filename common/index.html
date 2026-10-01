@@ -776,26 +776,32 @@ function coopRvMyTotal(d){
 }
 /* ---- 起点（teacher.html と index.html に同じものを置く。tests/coop.test.cjs が照合する） ----
  * 起点ごとに担当が決まり、児童 i（グループなら組 g）の正答は起点 (i mod 起点の数) から近い順に、空いているタイルへ貼る。
- * 起点が1つなら育ち始める点（vx, vy）だけで、今までと同じ形になる。2つ以上なら最初の画面（縮尺1）の中に格子状に散らし、
- * どの起点がどこに来るかはシードで混ぜる（番号の若い児童がいつも左上、にならないように） */
-function coopOrigins(k, vx, vy, ox, oy, w, h, seed){
-  if(k <= 1) return [[vx, vy]];
-  var x0 = vx - ox + w * 0.1, y0 = vy - oy + h * 0.12, ww = w * 0.8, hh = h * 0.76;
-  var cols = Math.max(1, Math.min(k, Math.round(Math.sqrt(k * ww / hh)))), rows = Math.ceil(k / cols), pts = [], r, c;
+ * 位置は最初の画面（縮尺1）の左上を (0, 0)、右下を (1, 1) とした割合 [u, v] で持つ（画面の大きさが違っても同じ所に来る）。
+ * 既定の位置（coopOriginsN）：起点1つなら育ち始める点（vx, vy）だけで今までと同じ形、2つ以上なら最初の画面の中に格子状。
+ * 教師が見本の上で動かした位置（pos）があればそれを使う。どの起点を誰が担当するかはシードで混ぜる（番号の若い児童がいつも同じ所、にならないように） */
+function coopOriginsN(k, ox, oy, w, h){
+  if(k <= 1) return [[ox / w, oy / h]];
+  var cols = Math.max(1, Math.min(k, Math.round(Math.sqrt(k * 0.8 * w / (0.76 * h))))), rows = Math.ceil(k / cols), pts = [], r, c;
   for(r = 0; r < rows; r++){
     var inRow = Math.min(cols, k - r * cols);
-    for(c = 0; c < inRow; c++) pts.push([x0 + ww * (c + 0.5 + (cols - inRow) / 2) / cols, y0 + hh * (r + 0.5) / rows]);
+    for(c = 0; c < inRow; c++) pts.push([0.1 + 0.8 * (c + 0.5 + (cols - inRow) / 2) / cols, 0.12 + 0.76 * (r + 0.5) / rows]);
   }
-  var sd = (seed * 131 + 7) >>> 0, i, j, t;
+  return pts;
+}
+function coopOrigins(k, vx, vy, ox, oy, w, h, seed, pos){
+  var custom = pos && pos.length === k, i, j, t;
+  if(k <= 1 && !custom){ var a = [vx, vy]; a.anchor = true; return [a]; }   // 育ち始める点そのもの（並びを作り直さない）
+  var pts = (custom ? pos : coopOriginsN(k, ox, oy, w, h)).map(function(q){ return [vx - ox + q[0] * w, vy - oy + q[1] * h]; });
+  var sd = (seed * 131 + 7) >>> 0;
   for(i = pts.length - 1; i > 0; i--){ sd = (sd * 1103515245 + 12345) >>> 0; j = (sd >>> 8) % (i + 1); t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
   return pts;
 }
-/* 起点ごとのタイルの並び。tiles はすでに育ち始める点から近い順なので、起点1つならそのまま使う。
+/* 起点ごとのタイルの並び。tiles はすでに育ち始める点から近い順なので、起点が育ち始める点1つならそのまま使う。
  * 起点が複数なら、まず自分の領域（いちばん近い起点が自分のタイル）を近い順に、埋まったら外のタイルを近い順に使う。
  * 近い順だけにすると、正答の多い隣の島が先に起点のまわりを埋め、正答の少ない子の島が他の島の縁に細く押し出された */
 function coopOrders(tiles, pts){
   var n = tiles.length, i, k;
-  if(pts.length <= 1){ var id = new Int32Array(n); for(i = 0; i < n; i++) id[i] = i; return [id]; }
+  if(pts.length === 1 && pts[0].anchor){ var id = new Int32Array(n); for(i = 0; i < n; i++) id[i] = i; return [id]; }
   var own = new Int32Array(n);
   for(i = 0; i < n; i++){
     var best = 0, bd = Infinity;
@@ -847,7 +853,7 @@ function coopRvDraw(){
       var cx = 0, cy = 0; t.p.forEach(function(q){ cx += q[0]; cy += q[1]; }); cx /= t.p.length; cy /= t.p.length;
       return { p: t.p, h: t.h, dir: t.dir, d: Math.hypot(cx - VX, cy - VY), cx: cx, cy: cy };
     }).sort(function(a, b){ return a.d - b.d; });
-    RV.ord = coopOrders(RV.tiles, coopOrigins(d.org || 1, VX, VY, OX, OY, W, H, d.seed || 1));
+    RV.ord = coopOrders(RV.tiles, coopOrigins(d.org || 1, VX, VY, OX, OY, W, H, d.seed || 1, d.orgPts));
     RV.W = W; RV.H = H;
   }
   var tiles = RV.tiles, ord = RV.ord, grp = d.mode === 'group', i;
