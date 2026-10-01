@@ -395,8 +395,10 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const p3 = ctx.coopSavePlan('3-1', 3, null, true);
   assert.ok(p3.ok); assert.equal(J(p3.gi), '[0,0,0,1,1,1,2,2,2]');
   sheets.roster.values.pop();
-  // 画面：開始前の欄はステージと別。組は文字で示す
-  assert.ok(tui.includes('id="coopPlan"') && tui.includes('.coopSavePlan(PLAN.cls, PLAN.gn, PLAN.gi.slice())'));
+  // 画面：組の編集はステージと別のポップアップ。開始前は予定（シート）へ、映している回はその回へ「保存」で書く
+  assert.ok(tui.includes('id="coopPlanModal" class="cmodal" hidden') && tui.includes('id="coopPlan" class="cdlg" role="dialog"'));
+  assert.ok(tui.includes('if(live) run.coopSetGroups(gi); else run.coopSavePlan(PLAN.cls, PLAN.gn, gi);'));
+  assert.ok(!tui.includes('id="coopGedit"'), '名札のタップで組を変える古いボタンは無い（ポップアップに一本化）');
   assert.ok(tui.indexOf('id="coopPlan"') < tui.indexOf('<div id="coopStage"'));
   // 正本は単元の「組分け」シート。保存するとクラス×組数の塊が書かれる
   ctx.coopSavePlan('3-1', 3, [2, 2, 1, 1, 0, 0, 2, 1]);
