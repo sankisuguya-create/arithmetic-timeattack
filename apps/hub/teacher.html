@@ -54,6 +54,15 @@ code{background:#EDEDE8;padding:.05rem .3rem;border-radius:4px;font-size:.86em}
 .chips{display:flex;gap:.3rem;flex-wrap:wrap}
 .chip{padding:.2rem .55rem;border-radius:999px;border:1.5px solid var(--line);font-size:.78rem;font-weight:700;cursor:pointer;background:#fff;color:var(--mute)}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip.lock{cursor:default;opacity:.72;border-style:dashed}
+/* 保存の型を欄・ボタンに併記する（すぐ反映／保存して反映／この端末だけ） */
+.ptag{font-size:.66rem;color:var(--mute);border:1px solid var(--line);border-radius:6px;padding:.06rem .35rem;white-space:nowrap}
+.uwarn{font-size:.74rem;color:#B45309;font-weight:700;display:none;margin-top:.25rem}
+a.openlink{font-size:.78rem;font-weight:700;color:var(--ink);border:1.5px solid var(--line);border-radius:8px;padding:.25rem .6rem;text-decoration:none;background:#fff}
+a.openlink:hover{border-color:var(--ink)}
+/* 未保存がある編集領域：枠を橙にして保存ボタンを目立たせる（単元の教師画面と同じ型） */
+.box.dirty{border-color:#E8A33D;box-shadow:0 0 0 3px rgba(232,163,61,.16)}
+.box.dirty #save,.box.dirty #saveTabs,.box.dirty #saveCfg{background:#E8A33D}
 .lrow{display:flex;align-items:center;gap:.55rem;padding:.5rem .55rem;border-radius:9px;cursor:pointer;border:1.5px solid transparent}
 .lrow:hover{background:#FAFAF7}
 .lrow.sel{background:var(--sel);border-color:var(--ink)}
@@ -100,12 +109,13 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
   <!-- ============ 単元リンク ============ -->
   <div class="tabpage on" data-pg="links">
     <div class="split">
-      <div class="box">
+      <div class="box" id="linksBox">
         <div class="tool">
           <span class="chips" id="filt"></span>
           <span style="flex:1"></span>
           <button id="add" class="ghost tiny">＋ 追加</button>
         </div>
+        <div class="stat" style="font-size:.74rem;margin:-.2rem 0 .5rem">行の「公開中／非公開」は押すと<b>すぐ反映</b>。それ以外の変更は下の「保存して反映」で確定します。</div>
         <div class="scroll" id="list"></div>
         <div class="bar" style="margin-top:.6rem">
           <button id="save">保存して反映</button>
@@ -135,6 +145,7 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
         <span class="chips" id="rgrade"></span>
         <span class="chips" id="rcls"></span>
         <span style="flex:1"></span>
+        <a class="openlink" id="rsheet" target="_blank" rel="noopener" style="display:none">名簿シートを開く↗</a>
         <span class="chip" id="rmail">メールアドレスも表示</span>
       </div>
       <div class="stat" id="rsum" style="margin-bottom:.5rem"></div>
@@ -151,11 +162,11 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
   <!-- ============ 表示と権限 ============ -->
   <div class="tabpage" data-pg="cfg">
     <div class="split">
-      <div class="box">
-        <h2>学年ごとに表示するタブ</h2>
+      <div class="box" id="tabsetBox">
+        <h2>児童が切り替えられる学年タブ</h2>
         <div class="scroll" id="tabset"></div>
         <div class="bar">
-          <button id="saveTabs">保存</button>
+          <button id="saveTabs">保存して反映</button>
           <span class="stat" id="tabStat"></span>
         </div>
         <details class="help">
@@ -164,8 +175,8 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
           自分の学年は外せません。名簿にない児童は全タブを見られます。
         </details>
       </div>
-      <div class="box">
-        <h2>全体</h2>
+      <div class="box" id="cfgBox">
+        <h2>画面のタイトルと権限</h2>
         <label>児童のホーム画面のタイトル</label>
         <input id="title" type="text" placeholder="算数タイムアタック">
         <div style="margin-top:.8rem">
@@ -173,7 +184,7 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
           <input id="teachers" type="text">
         </div>
         <div class="bar">
-          <button id="saveCfg">保存</button>
+          <button id="saveCfg">保存して反映</button>
           <span class="stat" id="cfgStat"></span>
         </div>
         <details class="help">
@@ -195,7 +206,24 @@ var DIRTY = false; // 保存していない変更があるか
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function $(id){ return document.getElementById(id); }
-function setDirty(v){ DIRTY = v; $('dirty').textContent = v ? '保存していない変更があります' : ''; }
+/* 未保存の印はどの編集領域でも同じ型：枠を橙にし、保存ボタンの名前に「（未保存）」を足す。
+   閉じる時の確認は DIRTY／TABDIRTY／CFGDIRTY のどれかが立っていれば出す */
+var TABDIRTY = false, CFGDIRTY = false;
+function setDirty(v){
+  DIRTY = v; $('dirty').textContent = v ? '保存していない変更があります' : '';
+  $('linksBox').classList.toggle('dirty', v);
+  $('save').textContent = v ? '保存して反映（未保存）' : '保存して反映';
+}
+function setTabsDirty(v){
+  TABDIRTY = v;
+  $('tabsetBox').classList.toggle('dirty', v);
+  $('saveTabs').textContent = v ? '保存して反映（未保存）' : '保存して反映';
+}
+function setCfgDirty(v){
+  CFGDIRTY = v;
+  $('cfgBox').classList.toggle('dirty', v);
+  $('saveCfg').textContent = v ? '保存して反映（未保存）' : '保存して反映';
+}
 
 /* ---------- ページ内タブ ---------- */
 $('maintabs').addEventListener('click', function(e){
@@ -243,7 +271,8 @@ function renderList(){
       '<span class="nm">'+(esc(l.title)||'（名前なし）')+'</span>'+
       '<span class="gr">'+esc(gradeLabel(l))+'</span>'+
       (tu ? '<a href="'+esc(tu)+'" target="_blank" rel="noopener">教師ページ↗</a>' : '')+
-      '<button class="pill'+(l.visible?' on':'')+'" data-vis="'+i+'">'+(l.visible?'公開中':'非公開')+'</button>'+
+      '<button class="pill'+(l.visible?' on':'')+'" data-vis="'+i+'" title="押すとすぐ児童の画面に反映されます">'+(l.visible?'公開中':'非公開')+'</button>'+
+      '<span class="ptag">すぐ反映</span>'+
     '</div>';
   }).join('') || '<div class="empty">リンクがありません。「＋ 追加」で作成します。</div>';
 }
@@ -263,13 +292,30 @@ function renderEditor(){
     '<div class="fields">'+
       '<div class="full"><label>表示名（児童に見える名前）</label><input type="text" data-f="title" value="'+esc(l.title)+'"></div>'+
       '<div class="full"><label>説明（1行・任意）</label><input type="text" data-f="subtitle" value="'+esc(l.subtitle)+'"></div>'+
-      '<div class="full"><label>URL（末尾が /exec）</label><input type="text" data-f="url" value="'+esc(l.url)+'"></div>'+
-      '<div class="full"><label>記録シート（単元のスプレッドシートの URL・任意）</label><input type="text" data-f="sheet" value="'+esc(l.sheet)+'"></div>'+
-      '<div class="full"><label>表示する学年タブ（未選択＝全学年）</label><span class="chips">'+chips+'</span></div>'+
+      '<div class="full"><label>URL（末尾が /exec）</label><input type="text" data-f="url" value="'+esc(l.url)+'"><div class="uwarn" data-w="url"></div></div>'+
+      '<div class="full"><label>記録シート（単元のスプレッドシートの URL・任意）</label><input type="text" data-f="sheet" value="'+esc(l.sheet)+'"><div class="uwarn" data-w="sheet"></div></div>'+
+      '<div class="full"><label>この単元を出す学年タブ（未選択＝全学年）</label><span class="chips">'+chips+'</span></div>'+
       '<div><label>色</label><select data-f="color">'+colorOpts+'</select></div>'+
       '<div><label>並び順</label><button class="tiny ghost" data-mv="up">↑ 上へ</button> <button class="tiny ghost" data-mv="down">↓ 下へ</button></div>'+
     '</div>'+
     '<div class="bar"><button class="tiny ghost" data-del="1">この単元を削除</button></div>';
+  urlWarn();
+}
+
+/* URL欄のやさしい検証。保存は止めず、欄の下に注意だけ出す（児童側に壊れたカードが出るのを防ぐ） */
+function urlWarn(){
+  var w1 = document.querySelector('[data-w="url"]');
+  if(w1){
+    var u = (LINKS[SEL] && LINKS[SEL].url) || '', m = '';
+    if(u && !/^https:\/\//.test(u)) m = 'https:// ではじまる URL を入れてください';
+    else if(u && !/\/exec(\?|#|$)/.test(u)) m = '各単元のデプロイ URL（…/exec で終わるもの）を入れてください';
+    w1.textContent = m; w1.style.display = m ? 'block' : 'none';
+  }
+  var w2 = document.querySelector('[data-w="sheet"]');
+  if(w2){
+    var s = (LINKS[SEL] && LINKS[SEL].sheet) || '', m2 = (s && !/docs\.google\.com\/spreadsheets/.test(s)) ? 'スプレッドシートの URL ではなさそうです' : '';
+    w2.textContent = m2; w2.style.display = m2 ? 'block' : 'none';
+  }
 }
 
 /* 入力はその場で LINKS に反映。編集欄は描き直さない（入力中にカーソルが飛ばない） */
@@ -279,6 +325,7 @@ document.addEventListener('input', function(e){
   LINKS[SEL][f] = e.target.value;
   setDirty(true);
   if(f==='title' || f==='url') renderList();
+  if(f==='url' || f==='sheet') urlWarn();
 });
 document.addEventListener('change', function(e){
   if(e.target.dataset.f==='color'){ renderList(); }
@@ -310,7 +357,7 @@ document.addEventListener('click', function(e){
     if(set[tab]) delete set[tab]; else set[tab] = true;
     set[g] = true;
     CFG['tabs_'+g] = Object.keys(set).map(Number).sort(function(a,b){return a-b;}).join(',');
-    renderTabs(); return;
+    setTabsDirty(true); renderTabs(); return;
   }
   if(d.g !== undefined && LINKS[SEL]){          // 単元の学年タブ
     var cur = String(LINKS[SEL].grades||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
@@ -350,7 +397,7 @@ $('save').onclick = function(){
     btn.disabled = false; $('stat').textContent = 'エラー: ' + e.message;
   }).saveLinks(LINKS);
 };
-window.addEventListener('beforeunload', function(e){ if(DIRTY){ e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', function(e){ if(DIRTY || TABDIRTY || CFGDIRTY){ e.preventDefault(); e.returnValue = ''; } });
 
 /* ---------- 表示するタブ ---------- */
 /* CFG['tabs_'+g] = "3,4" など。自分の学年は常に含める */
@@ -365,7 +412,8 @@ function renderTabs(){
     var set = tabsOf(g);
     var chips = GRADES.map(function(t){
       var own = (t === g);
-      return '<span class="chip'+(set[t]?' on':'')+'" data-tg="'+g+'" data-t="'+t+'">'+t+'年'+(own?'（本人）':'')+'</span>';
+      return '<span class="chip'+(set[t]?' on':'')+(own?' lock':'')+'" data-tg="'+g+'" data-t="'+t+'"'+
+        (own?' title="自分の学年は必ず表示されます"':'')+'>'+t+'年'+(own?'（本人）':'')+'</span>';
     }).join('');
     return '<div class="tabrow"><span class="g">'+g+'年生</span><span class="chips">'+chips+'</span></div>';
   }).join('');
@@ -376,18 +424,20 @@ $('saveTabs').onclick = function(){
   var out = {};
   GRADES.forEach(function(g){ out['tabs_'+g] = Object.keys(tabsOf(g)).map(Number).sort(function(a,b){return a-b;}).join(','); });
   google.script.run.withSuccessHandler(function(r){
-    btn.disabled = false; CFG = r; $('tabStat').textContent = '保存しました';
+    btn.disabled = false; CFG = r; setTabsDirty(false); $('tabStat').textContent = '保存しました';
   }).withFailureHandler(function(e){
     btn.disabled = false; $('tabStat').textContent = 'エラー: ' + e.message;
   }).saveHubConfig(out);
 };
 
 /* ---------- 全体 ---------- */
+$('title').addEventListener('input', function(){ setCfgDirty(true); });
+$('teachers').addEventListener('input', function(){ setCfgDirty(true); });
 $('saveCfg').onclick = function(){
   var btn = this; btn.disabled = true;
   $('cfgStat').textContent = '保存中…';
   google.script.run.withSuccessHandler(function(){
-    btn.disabled = false; $('cfgStat').textContent = '保存しました';
+    btn.disabled = false; setCfgDirty(false); $('cfgStat').textContent = '保存しました';
   }).withFailureHandler(function(e){
     btn.disabled = false; $('cfgStat').textContent = 'エラー: ' + e.message;
   }).saveHubConfig({ title: $('title').value, teachers: $('teachers').value });
@@ -435,6 +485,7 @@ function showWhere(w, analysisUrl){
     (analysisUrl ? '<a href="' + esc(analysisUrl) + '">単元横断分析</a>' : '') +
     (w.url      ? '<a href="' + esc(w.url) + '">児童の画面</a>' : '') +
     (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシート</a>' : '');
+  if(w.sheetUrl){ var r = $('rsheet'); r.href = w.sheetUrl; r.style.display = ''; }   // 名簿タブの「名簿シートを開く」にも使う
   // 写しが2つあると画面が同じで見分けられないので、名前を出す（ID と配布 URL は title に）
   if(w.file){
     $('where').textContent = w.file;

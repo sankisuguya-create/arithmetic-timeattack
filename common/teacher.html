@@ -42,7 +42,10 @@ h1{font-size:1.35rem;font-weight:800;margin-bottom:.3rem}
 /* チェックを触ってから保存するまでの間。押し忘れると児童の画面が変わらないので、
    「まだ効いていない」ことを箱ごと見せる */
 .box.dirty{border-color:#E8A33D;box-shadow:0 0 0 3px rgba(232,163,61,.16)}
-.box.dirty #clsSave{background:#E8A33D}
+.box.dirty #clsSave,.box.dirty #save{background:#E8A33D}
+button.mini{padding:.2rem .55rem;font-size:.74rem;border-radius:7px}
+/* 保存の型を欄・ボタンに併記する（すぐ反映／保存して反映／この端末だけ） */
+.ptag{font-size:.66rem;color:var(--mute);border:1px solid var(--line);border-radius:6px;padding:.06rem .35rem;white-space:nowrap}
 h2{font-size:.72rem;letter-spacing:.14em;color:var(--mute);font-weight:700;margin-bottom:.7rem}
 .row{display:flex;align-items:center;gap:1rem;margin-bottom:.55rem}
 .row label{flex:1;font-size:.94rem;font-weight:600}
@@ -97,6 +100,12 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 .sec{margin-top:1.6rem}
 .sec:first-child{margin-top:.4rem}
 h3.sec{font-size:.9rem;font-weight:800;color:var(--ink);letter-spacing:0}
+/* 各セクションの見方を開ける「？」ボタン */
+details.qh{display:inline-block;vertical-align:.12em;margin-left:.4rem;font-weight:400}
+details.qh summary{list-style:none;cursor:pointer;display:inline-flex;width:1.15rem;height:1.15rem;align-items:center;justify-content:center;border:1.5px solid var(--mute);border-radius:50%;color:var(--mute);font-size:.68rem;font-weight:800;line-height:1}
+details.qh summary::-webkit-details-marker{display:none}
+details.qh[open] summary{border-color:var(--ink);color:var(--ink)}
+.qhp{display:block;font-size:.78rem;font-weight:400;color:var(--mute);border-left:3px solid var(--line);padding:.15rem .6rem;margin:.3rem 0;line-height:1.6}
 .note{font-size:.76rem;color:var(--mute);margin:.1rem 0 .5rem;line-height:1.6}
 .chart{width:100%;height:auto;display:block;overflow:visible}
 .chart .blbl{font-size:11.5px;fill:var(--ink);font-weight:600}
@@ -318,9 +327,7 @@ details.more[open] summary{border-color:var(--ink)}
     </div>
     <div class="stat bad" id="clsOrphan" style="display:none;line-height:1.8;margin-bottom:.8rem"></div>
     <div class="bar">
-      <button id="clsSave">クラス設定を保存</button>
-      <button id="clsAll" class="ghost">すべてオン</button>
-      <button id="clsNone" class="ghost">すべてオフ</button>
+      <button id="clsSave">クラス設定を保存して反映</button>
       <button id="clsReload" class="ghost">最新の状態を読み込む</button>
       <span class="stat" id="clsStat"></span>
     </div>
@@ -330,7 +337,7 @@ details.more[open] summary{border-color:var(--ink)}
 
   <div id="pageSet" style="display:none">
   <div class="cols">
-  <div class="box">
+  <div class="box" id="setBox">
     <h2>設定</h2>
     <div class="row">
       <label>制限時間<span class="note">秒。15〜300 の範囲で</span></label>
@@ -352,7 +359,7 @@ details.more[open] summary{border-color:var(--ink)}
     </div>
     <div id="settingRows"></div>
     <div class="bar">
-      <button id="save">設定を保存</button>
+      <button id="save">設定を保存して反映</button>
       <span class="stat" id="saveStat"></span>
     </div>
   </div>
@@ -402,8 +409,8 @@ details.more[open] summary{border-color:var(--ink)}
   </div><!-- /pageAna -->
 
   <div id="pageCoop" style="display:none">
-  <!-- 左の操作欄は使う順に上から：①だれで（クラス） ②どう遊ぶ（時間・色づかい・組） ③うつす・止める・残す（その下に今の状態）
-       ④保存した回の再生。めったに触らない図形と「1正答の枚数」と説明は、いちばん下の「詳細」の中にしまう。
+  <!-- 左の操作欄は使う順に上から：①だれで（クラス） ②どう遊ぶ（時間・色づかい・組・育ち始める場所） ③うつす・止める・残す（その下に今の状態）
+       ④保存した回の再生。めったに触らない図形と「1正答の枚数」と説明は、いちばん下の「図形と表示の設定」の中にしまう。
        画面の高さが足りない時は、ページではなくこの欄の中を送る（右のステージは動かない） -->
   <div class="box coopBox">
     <div class="crow"><div class="clsPick" id="coopClsPick"><span class="lab2">クラス</span></div></div>
@@ -419,10 +426,10 @@ details.more[open] summary{border-color:var(--ink)}
         <select id="coopMode" style="display:none" aria-hidden="true"><option value="child">児童ごと</option><option value="group">グループ</option></select></span>
       <span class="grp" id="coopGnRow" style="display:none"><span class="ctl">組数</span> <select id="coopGn"></select>
         <button id="coopPlanBtn" class="ghost" type="button">組を編集…</button></span>
-      <span class="grp"><span class="ctl">起点</span>
-        <button id="coopOrgDn" class="ghost step" type="button" aria-label="起点を1つへらす">−</button>
-        <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="起点の数">
-        <button id="coopOrgUp" class="ghost step" type="button" aria-label="起点を1つふやす">＋</button>
+      <span class="grp"><span class="ctl" style="width:auto;white-space:nowrap">育ち始める場所</span>
+        <button id="coopOrgDn" class="ghost step" type="button" aria-label="育ち始める場所を1つへらす">−</button>
+        <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="育ち始める場所の数">
+        <button id="coopOrgUp" class="ghost step" type="button" aria-label="育ち始める場所を1つふやす">＋</button>
         <span class="unit" id="coopOrgMax"></span></span>
     </div>
     <div class="crow act">
@@ -436,8 +443,10 @@ details.more[open] summary{border-color:var(--ink)}
     </div>
     <div class="crow act">
       <span class="grp"><select id="coopSaves" aria-label="保存データ"></select>
-        <button id="coopLoad" class="ghost">再生</button>
-      <details class="more" id="coopMore"><summary>詳細</summary>
+        <button id="coopLoad" class="ghost">再生</button></span>
+    </div>
+    <div class="crow">
+      <span class="grp"><details class="more" id="coopMore"><summary>図形と表示の設定</summary>
         <div class="morePanel">
           <div class="mrow"><span class="ctl">図形</span> <select id="coopPat"></select></div>
           <div class="mrow"><span class="ctl">1正答の枚数</span>
@@ -446,13 +455,14 @@ details.more[open] summary{border-color:var(--ink)}
             <button id="coopRateAuto" class="ghost" type="button" style="display:none;padding:.25rem .6rem">自動にもどす</button></div>
           <div class="mrow"><span class="ctl">児童の見返し</span>
             <select id="coopRvMine"><option value="0">「みんなで」だけ出す</option><option value="1">「じぶん」の正答数も出す</option></select>
+            <span class="ptag">すぐ反映</span>
             <span id="coopRvMineStat" class="note" style="margin:0"></span></div>
           <p class="note" style="margin:.5rem 0 0;line-height:1.7">
             クラス全員の<b>本番の正答</b>で図形がいっしょに育ちます（れんしゅうは数えません）。
             「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと「よーい、3、2、1」でスタート、時間が来たら自動で打ち切りです。
             終わった図形を映している間は、画面の「続きから」で同じ図形を育て続けられます。<br>
-            <b>起点</b>は図形が育ち始める点の数です。2以上にすると、児童（グループなら組）ごとに担当の起点が決まり、そこから育ちます。
-            起点を児童数にすると島の大きさがその子の正答数になり、モニターと児童の見返しで見えます。<br>
+            <b>育ち始める場所</b>は図形が育ち始める点の数です。2以上にすると、児童（グループなら組）ごとに担当の場所が決まり、そこから育ちます。
+            児童数にすると島の大きさがその子の正答数になり、モニターと児童の見返しで見えます。<br>
             <b>児童の見返し</b>は、児童画面の「前回の協力プレイ」で「じぶん ○もん」を出すかどうかです（既定は出さない。変えるとすぐ保存されます）。</p>
         </div>
       </details></span>
@@ -484,7 +494,7 @@ details.more[open] summary{border-color:var(--ink)}
     <canvas id="coopGrow"></canvas>
     <div id="coopTL">
     <button id="coopClose" class="ghost" type="button">× もどる</button>
-    <button id="coopNames" type="button">名前をかくす</button>
+    <button id="coopNames" type="button">名前をかくす <span class="ptag">この端末だけ</span></button>
     <div id="coopReplay">
       <button id="coopRplay" type="button">▶</button>
       <input id="coopSeek" type="range" min="0" max="600000" step="500" value="0">
@@ -734,13 +744,25 @@ document.getElementById('save').onclick = function(){
     obj[k] = textKeys[k] ? el.value : Number(el.value);
   });
   google.script.run.withSuccessHandler(function(){
-    btn.disabled = false;
+    btn.disabled = false; setSetDirty(false);
     setStat('saveStat', '保存しました（次に開いた児童から反映）', false);
   }).withFailureHandler(function(e){
     btn.disabled = false;
     setStat('saveStat', '保存できませんでした: ' + e.message, true);
   }).saveConfig(obj);
 };
+
+/* 設定タブの未保存も、公開モードと同じ型（橙枠＋ボタン名に「（未保存）」）で知らせる。
+   読み込み時に欄へ値を入れるのは代入なので「input」は起きない（プログラムの代入では発火しない） */
+var setDirtyV = false;
+function setSetDirty(v){
+  setDirtyV = v;
+  document.getElementById('setBox').classList.toggle('dirty', v);
+  document.getElementById('save').textContent = v ? '設定を保存して反映（未保存）' : '設定を保存して反映';
+}
+document.getElementById('setBox').addEventListener('input', function(){ setSetDirty(true); });
+document.getElementById('setBox').addEventListener('change', function(){ setSetDirty(true); });
+addEventListener('beforeunload', function(e){ if(clsDirty || setDirtyV){ e.preventDefault(); e.returnValue = ''; } });
 
 document.getElementById('agg').onclick = function(){
   var btn = this; btn.disabled = true;
@@ -765,7 +787,8 @@ function renderClasses(){
     CLS.modes.map(function(m, i){
       return '<th style="text-align:center">'+(i+1)+'</th>';
     }).join('') +
-    (CLS.hasNeeds ? '<th style="text-align:center">順序の<br>解除</th>' : '');
+    (CLS.hasNeeds ? '<th style="text-align:center">順序の<br>解除</th>' : '') +
+    '<th style="text-align:center">一括</th>';
 
   document.getElementById('clsBody').innerHTML = CLS.classes.map(function(c){
     var cells = CLS.modes.map(function(m){
@@ -776,6 +799,9 @@ function renderClasses(){
       cells += '<td style="text-align:center"><input type="checkbox" data-cls="'+c.cls+
                '" data-seq="1"'+(c.seqOff?' checked':'')+'></td>';
     }
+    cells += '<td style="text-align:center;white-space:nowrap">'+
+      '<button type="button" class="ghost mini" data-b="1" data-c="'+esc(c.cls)+'">全オン</button> '+
+      '<button type="button" class="ghost mini" data-b="0" data-c="'+esc(c.cls)+'">オフ</button></td>';
     return '<tr><td style="font-weight:800">'+c.grade+'年 '+c.room+'組</td>'+
       '<td style="color:var(--mute)">'+c.n+'</td>'+cells+'</tr>';
   }).join('');
@@ -813,7 +839,7 @@ function setDirty(v){
   clsDirty = v;
   document.getElementById('clsBox').classList.toggle('dirty', v);
   document.getElementById('clsSave').textContent =
-    v ? 'クラス設定を保存（未保存）' : 'クラス設定を保存';
+    v ? 'クラス設定を保存して反映（未保存）' : 'クラス設定を保存して反映';
 }
 
 /* 画面のチェックを CLS に取り込む。表を描き直す前に必ず呼ぶ（未保存の操作を失わない） */
@@ -884,18 +910,20 @@ document.getElementById('clsSave').onclick = function(){
   }).saveClassConfig(CLS.classes);
 };
 
-function setAll(v){
+/* 一括は押した行のクラスだけに効く。「すべてオン」が全クラスに効くと、
+   自分のクラスだけのつもりで他クラスまで変えてしまう */
+document.getElementById('clsBody').addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('button[data-b]');
+  if(!b) return;
   collectClasses();
-  CLS.classes.forEach(function(c){
-    CLS.modes.forEach(function(m){ c.modes[m.id] = v; });
-  });
-  renderClasses();
-  setDirty(true);
-  setStat('clsStat', (v ? 'すべてオンにしました' : 'すべてオフにしました') +
-                     '（保存を押すと確定）', false);
-}
-document.getElementById('clsAll').onclick  = function(){ setAll(true); };
-document.getElementById('clsNone').onclick = function(){ setAll(false); };
+  var c = null;
+  CLS.classes.forEach(function(x){ if(x.cls === b.dataset.c) c = x; });
+  if(!c) return;
+  var v = b.dataset.b === '1';
+  CLS.modes.forEach(function(m){ c.modes[m.id] = v; });
+  renderClasses(); setDirty(true);
+  setStat('clsStat', c.grade + '年' + c.room + '組をすべて' + (v ? 'オン' : 'オフ') + 'にしました（保存を押すと確定）', false);
+});
 
 /* ===== ぶんせきタブ =====
  * 集計はサーバー側（getAnalysis）が log から一括で作って返す。
@@ -1061,14 +1089,14 @@ function heatHead(r, extra){
 }
 function classHeat(r){
   if(!(r.classes || []).length)
-    return '<h3 class="sec">クラスごとの平均想起時間</h3><div class="note">roster に児童が登録されていません。</div>';
+    return '<h3 class="sec">クラスごとのおもいだす時間（平均）</h3><div class="note">roster に児童が登録されていません。</div>';
   var rows = r.classes.map(function(c){
     var sc = r.scopes[c.cls];
     var tds = r.order.map(function(ty){ return heatCell(sc && sc.types ? sc.types[ty] : null); }).join('');
     return '<tr><td class="nm">' + esc(c.label) + '</td>' + tds +
            '<td class="wk">' + c.trials + '回</td></tr>';
   }).join('');
-  return '<h3 class="sec">クラスごとの平均想起時間</h3>' +
+  return '<h3 class="sec">クラスごとのおもいだす時間（平均）' + qh('セルの数値は秒（最初のキーを押すまでの時間の平均）。濃いほど遅い型です。色の段階と印の意味は、表の下の凡例をどうぞ。') + '</h3>' +
     '<div class="note">セルの数値は秒（初打鍵までの代表値＝幾何平均）。濃いほど遅い。</div>' +
     '<div style="overflow-x:auto"><table class="heat">' +
     heatHead(r, { first: 'クラス', tail: '<th>試行</th>' }) +
@@ -1077,7 +1105,7 @@ function classHeat(r){
 function studentHeat(r, ck){
   var kids = (r.students || {})[ck] || [];
   if(!kids.length)
-    return '<h3 class="sec">児童ごとの平均想起時間</h3>' +
+    return '<h3 class="sec">児童ごとのおもいだす時間（平均）</h3>' +
            '<div class="note">このクラスには名簿の児童がいません。</div>';
   var rows = kids.map(function(k){
     var tds = r.order.map(function(ty){ return heatCell(k.t[ty], true); }).join('');
@@ -1087,7 +1115,7 @@ function studentHeat(r, ck){
     return '<tr><td class="nm">' + (k.no || '') + '　' + esc(k.name) + '</td>' + tds +
            '<td class="wk">' + wob + '</td><td class="wk">' + k.miss + '</td><td class="wk">' + k.tries + '</td></tr>';
   }).join('');
-  return '<h3 class="sec">児童ごとの平均想起時間</h3>' +
+  return '<h3 class="sec">児童ごとのおもいだす時間（平均）' + qh('児童ごと・型ごとの時間（秒・平均）。濃いほど遅い型。▲は回ごとのばらつきが大きい印、◆はその子の中で特に遅い型です。') + '</h3>' +
     '<div class="note">セルの数値は秒（初打鍵までの代表値＝幾何平均）。濃いほど遅い。' +
     '<b>この表は児童に見せないでください</b>（「遅い」を名指すと隠す行動が出ます）。</div>' +
     '<div style="overflow-x:auto"><table class="heat">' +
@@ -1121,7 +1149,7 @@ function distSection(r){
         distSvg(ty, pts) + '</div>';
     }).join('');
     if(!cards) return;
-    out += '<h3 class="sec">型ごとの偏差値の分布（' + g + '年）</h3>' +
+    out += '<h3 class="sec">型ごとの偏差値の分布（' + g + '年）' + qh('偏差値は、同じ学年・同じ型の児童の中での位置（50が真ん中）。左の橙の帯（40未満）がかなり遅い側、右の青の帯（60超）が速い側です。棒に触れると、その範囲の児童名が出ます。') + '</h3>' +
       '<div class="note">同じ学年・同じ型の児童の想起時間を偏差値にした分布。<b>速いほど右</b>（50＝学年の中央）。' +
       '時間は遅い側に裾が長いので対数に直し、中心と広がりは外れ値に強い中央値と MAD で取っている' +
       '（「1σ＝×1.3」なら、中央の1.3倍の時間で＋1σ）。' +
@@ -1217,6 +1245,9 @@ function wrongTable(list, types){
     '<div class="note">全件はスプレッドシートの mistakes シートにあります。</div>';
 }
 
+/* 各セクションの見方を説明する「？」ボタン。details なので開閉の仕組みは要らない */
+function qh(t){ return '<details class="qh"><summary aria-label="説明を開く">?</summary><span class="qhp">' + esc(t) + '</span></details>'; }
+
 function renderAnalysis(){
   var r = ANA; if(!r) return;
   document.getElementById('anaChips').innerHTML =
@@ -1259,15 +1290,14 @@ function renderAnalysis(){
     }).sort(function(a, b){ return b.val - a.val; });
 
   document.getElementById('anaBody').innerHTML =
-    '<h3 class="sec">型ごとの平均想起時間</h3>' +
-    '<div class="note">問題が出てから最初のキーを押すまでの代表値（幾何平均。打鍵は含まない）。' +
-      '強調した棒は、同じ学年の児童の分布で＋標準偏差1つを超える型。</div>' +
+    '<h3 class="sec">型ごとのおもいだす時間（平均）' + qh('問題が出てから最初のキーを押すまでの時間の平均（正確には幾何平均。極端に遅い1回に引っぱられにくい値）。棒が長いほど時間がかかる型です。橙の棒は、同じ学年の児童とくらべて特に遅い型です。') + '</h3>' +
+    '<div class="note">打鍵している時間は含みません。強調した棒は、同じ学年の児童の分布で＋標準偏差1つを超える型。</div>' +
     hbarChart(recall, {}) +
-    '<h3 class="sec">型ごとの誤答の数</h3>' +
+    '<h3 class="sec">型ごとのまちがいの数' + qh('まちがえた回数の合計を型ごとに集計しています。棒が長い型ほど、つまずきが多いです。') + '</h3>' +
     hbarChart(miss, {}) +
-    '<h3 class="sec">日ごとの実施回数</h3>' +
+    '<h3 class="sec">日ごとの実施回数' + qh('その日に記録された本番の回数（れんしゅうは記録されません）。授業や宿題でどれだけ使われたかの目安です。') + '</h3>' +
     colChart(sc.daily) +
-    '<h3 class="sec">よくある誤答</h3>' +
+    '<h3 class="sec">よくある誤答' + qh('どの問題を・何とまちがえたかの上位です。授業で補充する題材の目安に使えます。全件はスプレッドシートの mistakes シートにあります。') + '</h3>' +
     wrongTable(sc.wrongTop, r.types) +
     distSection(r) +
     (anaScope === 'all' ? classHeat(r) : studentHeat(r, anaScope));
@@ -2277,7 +2307,7 @@ document.getElementById('coopRvMine').onchange = function(){
 /* 下の名前（名札）の表示切り替え。モニターに名前を出したくない時に。見る人の端末ごとに覚える */
 function coopNamesSet(on){
   document.getElementById('coopStage').classList.toggle('nonames', !on);
-  document.getElementById('coopNames').textContent = on ? '名前をかくす' : '名前を出す';
+  document.getElementById('coopNames').innerHTML = (on ? '名前をかくす' : '名前を出す') + ' <span class="ptag">この端末だけ</span>';
   try { localStorage.setItem('coopNames', on ? '1' : '0'); } catch(e){}
 }
 document.getElementById('coopNames').onclick = function(){
