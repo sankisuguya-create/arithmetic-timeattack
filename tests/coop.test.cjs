@@ -396,6 +396,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   // 画面：開始前の欄はステージと別。組は文字で示す
   assert.ok(tui.includes('id="coopPlan"') && tui.includes('.coopSavePlan(PLAN.cls, PLAN.gn, PLAN.gi.slice())'));
   assert.ok(tui.indexOf('id="coopPlan"') < tui.indexOf('<div id="coopStage"'));
+  // クラスは大きなボタン。隠したプルダウンが正本で、選んだクラスは端末ごとに覚える
+  assert.ok(tui.includes('id="coopClsPick"') && /<select id="coopCls" style="display:none"/.test(tui));
+  assert.ok(tui.includes("localStorage.setItem('coopCls', sel.value)") && tui.includes("localStorage.getItem('coopCls')"));
 }
 
 console.log('coop.test.cjs: all assertions passed.');

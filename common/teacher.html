@@ -178,6 +178,15 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 #coopRoster .rc.sel{outline:3px solid var(--ink);outline-offset:1px}
 #coopRoster.editing .rc{border-style:dashed;border-color:#B08A00}
 #coopGedit.on{background:#B08A00}
+/* クラスは大きなボタンで1回押せば決まる（小さなプルダウンを開いて選ぶ2段の操作をやめる）。選んだクラスは端末ごとに覚える */
+.clsPick{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin-bottom:.7rem}
+.clsPick .lab2{font-size:.84rem;font-weight:700;margin-right:.2rem}
+.clsPick button{font:inherit;font-weight:800;font-size:.95rem;padding:.45rem 1rem;border-radius:10px;
+  background:#fff;color:var(--ink);border:2px solid var(--line)}
+.clsPick button small{font-weight:600;color:var(--mute);margin-left:.3rem;font-size:.78rem}
+.clsPick button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.clsPick button.on small{color:#D6D9E0}
+.clsPick button:disabled:not(.on){opacity:.4}
 /* 開始前の組分け。組は文字（A組…）で示し、色は使わない（色は開始時のシードで決まるため、ここで出すと開始後と食い違う） */
 #coopPlan{display:none;margin-top:.7rem;border:1.5px solid var(--line);border-radius:10px;padding:.6rem .7rem;max-height:38vh;overflow:auto}
 #coopPlan.on{display:block}
@@ -342,8 +351,9 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
       「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと 5 から数えてスタートします。
       時間が来たら自動で打ち切りです。
     </p></details>
+    <div class="clsPick" id="coopClsPick"><span class="lab2">クラス</span></div>
+    <select id="coopCls" style="display:none" aria-hidden="true"></select>
     <div class="bar" style="margin-top:0">
-      <span class="lab">クラス <select id="coopCls"></select></span>
       <span class="lab">図形 <select id="coopPat"></select></span>
       <span class="lab">時間 <select id="coopMin">
         <option value="5">5分</option><option value="8">8分</option>
@@ -1441,6 +1451,12 @@ function coopUseSession(s, evAll){
   ['coopCls', 'coopPat', 'coopMin', 'coopMode', 'coopGn'].forEach(function(id){
     document.getElementById(id).disabled = running;
   });
+  // 映している回のクラスをボタンにも出す（別の端末で始めた回を開いた時、選択が食い違わないように）
+  if(s.cls && s.id !== 'save'){
+    var cs = document.getElementById('coopCls');
+    if([].some.call(cs.options, function(o){ return o.value === s.cls; })) cs.value = s.cls;
+  }
+  coopClsRender();
   planBtnShow();
 }
 function coopMerge(r, giVer){          // 進行中セッションの差分を受け取る
@@ -1470,6 +1486,7 @@ function coopMerge(r, giVer){          // 進行中セッションの差分を�
     if(r.ended && r.status === 'run') document.getElementById('coopClock').classList.add('end');
     ['coopCls', 'coopPat', 'coopMin', 'coopMode', 'coopGn'].forEach(function(id){
       document.getElementById(id).disabled = false; });
+    coopClsRender(); planBtnShow();          // 終わったらクラスを選び直せる・開始前の組分けを開ける
   }
   document.getElementById('coopSeek').max = coopDur();
   if(live) coopShowT();
@@ -1603,9 +1620,33 @@ function coopInitClasses(classes){
   var sel = document.getElementById('coopCls');
   if(sel.options.length) return;             // 保存後の再読み込みで選択を消さない
   sel.innerHTML = (classes || []).map(function(c){
-    return '<option value="' + c.cls + '">' + c.grade + '年' + c.room + '組（' + c.n + '人）</option>';
+    return '<option value="' + c.cls + '" data-n="' + c.n + '">' + c.grade + '年' + c.room + '組（' + c.n + '人）</option>';
   }).join('');
+  // 前にこの端末で選んだクラスを既定にする（担任は毎回同じクラスを選ぶことが多い）。無ければ先頭
+  var saved = null;
+  try { saved = localStorage.getItem('coopCls'); } catch(e){}
+  if(saved && [].some.call(sel.options, function(o){ return o.value === saved; })) sel.value = saved;
+  coopClsRender();
 }
+/* 隠したプルダウン（#coopCls）が正本。ボタンはその写しで、押すと値を入れて change を起こす（他の処理はプルダウンを見たまま） */
+function coopClsRender(){
+  var sel = document.getElementById('coopCls');
+  document.getElementById('coopClsPick').innerHTML = '<span class="lab2">クラス</span>' +
+    [].map.call(sel.options, function(o){
+      var name = o.textContent.replace(/（.*$/, '');
+      return '<button type="button" data-cls="' + esc(o.value) + '"' + (o.value === sel.value ? ' class="on"' : '') +
+        (sel.disabled ? ' disabled' : '') + '>' + esc(name) + '<small>' + esc(o.getAttribute('data-n') || '') + '人</small></button>';
+    }).join('');
+}
+document.getElementById('coopClsPick').onclick = function(e){
+  var b = e.target.closest('button[data-cls]'); if(!b || b.disabled) return;
+  var sel = document.getElementById('coopCls');
+  if(sel.value === b.dataset.cls) return;
+  sel.value = b.dataset.cls;
+  try { localStorage.setItem('coopCls', sel.value); } catch(e2){}
+  coopClsRender();
+  sel.dispatchEvent(new Event('change'));
+};
 
 /* ---- 操作 ---- */
 document.getElementById('coopPat').onchange = coopPreview;   // 開始前だけ下見を描き直す（進行中は選べない）
