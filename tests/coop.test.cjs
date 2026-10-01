@@ -434,4 +434,81 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes("localStorage.setItem('coopCls', sel.value)") && tui.includes("localStorage.getItem('coopCls')"));
 }
 
+/* ---- 時間は1分刻み・続きから ---- */
+{
+  const J = x => JSON.stringify(Array.from(x));
+  const live0 = ctx.coopLive_(); if (live0 && live0.status === 'run') ctx.coopStop();
+  // 時間：1分刻み、1〜30分に丸める
+  [[7, 7], [0.4, 1], [45, 30], [12.6, 13]].forEach(([inp, want]) => {
+    const r = ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: inp, mode: 'child' });
+    assert.ok(r.ok); assert.equal(ctx.coopLive_().minutes, want, 'minutes ' + inp); ctx.coopStop();
+  });
+  // 1回目：7分、児童1と3が正答
+  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 7, mode: 'child' }).ok);
+  const a1 = ctx.coopLive_();
+  a1.start -= 60000; ctx.coopPutLive_(a1);                    // 1分たったことにする
+  ctx.coopNote_(ctx.child_('k01@kyoiku.edu.nishi.or.jp'), 1, 10);
+  ctx.coopNote_(ctx.child_('k03@kyoiku.edu.nishi.or.jp'), 1, 6);
+  // 進行中は続きからにできない
+  assert.ok(!ctx.coopStart({ cont: 'live', minutes: 5 }).ok);
+  ctx.coopStop();
+  const d1 = ctx.coopLive_(), dur1 = d1.end - d1.start;
+  // 2回目：続きから（図形・色・クラスは前の回のまま、時間は新しく）
+  const c2 = ctx.coopStart({ cont: 'live', minutes: 5, pat: 'penrose', cls: '4-2' });
+  assert.ok(c2.ok, JSON.stringify(c2));
+  const b2 = ctx.coopLive_();
+  assert.equal(b2.pat, 'sunflower'); assert.equal(b2.seed, d1.seed); assert.equal(b2.cls, '3-1'); assert.equal(b2.minutes, 5);
+  assert.equal(b2.prior.dur, dur1);
+  assert.equal(b2.prior.ev.length, 2);
+  assert.equal(J(b2.prior.ev.map(e => e[1])), '[0,2]');      // 児童1・児童3
+  assert.equal(b2.prior.segs.length, 1); assert.equal(b2.prior.segs[0].total, 16); assert.equal(b2.prior.segs[0].minutes, 7);
+  assert.ok(c2.session.prior && c2.session.prior.ev.length === 2, '開始の応答に前の回までの分が入る');
+  assert.ok(ctx.coopState(0).prior, '全件の問い合わせには入る');
+  assert.equal(ctx.coopState(1).prior, undefined, '差分の問い合わせには入れない');
+  assert.equal(b2.total, 0, 'この回の合計は新しく数える');
+  // キャッシュが消えても続きの部分はシートから戻る
+  const keep = store.coop_live; delete store.coop_live;
+  const back = ctx.coopLive_();
+  assert.ok(back && back.prior && back.prior.ev.length === 2, 'coop シートから prior を戻す');
+  store.coop_live = keep;
+  // 2回目の正答 → 保存 → その保存データから3回目を続ける（前の回の prior も引き継ぐ）
+  ctx.coopNote_(ctx.child_('k02@kyoiku.edu.nishi.or.jp'), 1, 9);
+  ctx.coopStop();
+  const sv2 = ctx.coopSave('続きテスト');
+  assert.ok(sv2.ok);
+  ctx.coopStart({ cls: '3-1', pat: 'penrose', minutes: 3, mode: 'child' }); ctx.coopStop();   // 間に別の回を挟む
+  // 児童8が転出した（名簿から外れた）ことにする。その児童の分は落とし、他の児童はメールで照らす
+  const k8 = sheets.roster.values.findIndex(r => r[0] === 'k08@kyoiku.edu.nishi.or.jp');
+  const k8row = sheets.roster.values.splice(k8, 1)[0];
+  const c3 = ctx.coopStart({ cont: 'save:' + sv2.id, minutes: 4 });
+  assert.ok(c3.ok, JSON.stringify(c3));
+  const b3 = ctx.coopLive_();
+  assert.equal(b3.pat, 'sunflower'); assert.equal(b3.seed, d1.seed);
+  assert.equal(b3.prior.segs.length, 2, '1回目と2回目の2つ');
+  assert.equal(b3.prior.ev.length, 3);
+  assert.ok(b3.prior.ev[2][0] >= dur1, '2回目の正答は1回目の後ろへずれる');
+  assert.equal(J(b3.prior.ev.map(e => e[1])), '[0,2,1]');
+  assert.equal(b3.prior.segs[1].total, 9);
+  ctx.coopStop();
+  sheets.roster.values.splice(k8, 0, k8row);
+  // 保存データには order（メール）と prior が入る
+  const pl = ctx.coopLoadRaw_(sv2.id).payload;
+  assert.equal(pl.order.length, 8); assert.equal(pl.prior.ev.length, 2);
+  assert.equal(ctx.coopLoad(sv2.id).payload.order, undefined, '画面にはメールを渡さない');
+  assert.ok(!JSON.stringify(ctx.coopState(0)).includes('@'), 'coopState の応答にもメールが無い');
+  // 存在しない保存データからは続けない
+  assert.ok(!ctx.coopStart({ cont: 'save:nosuch', minutes: 3 }).ok);
+  // 画面：時間は1分刻みの入力、ステージに「続きから」
+  assert.ok(/<input id="coopMin" type="number" min="1" max="30" step="1"/.test(tui));
+  assert.ok(tui.includes('id="coopCont"') && tui.indexOf('id="coopCont"') > tui.indexOf('<div id="coopStage"'));
+  assert.ok(/function coopRateAt\(t\)/.test(tui) && tui.includes('coopRateAt(e[0])'));
+  // 続きの回の枚数は残りの余白で決める（使った枚数が多いほど少ない。下限0.5）
+  const src = tui.match(/var CAIM = [^\n]*\n/)[0] + tui.match(/function coopAutoRateOf\(p\)\{[\s\S]*?\n\}/)[0];
+  const f = vm.runInNewContext(src + ';coopAutoRateOf');
+  const base = { tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20 };
+  assert.equal(f(base), 8);
+  assert.ok(f(Object.assign({ used: 15000 }, base)) < f(base));
+  assert.equal(f(Object.assign({ used: 40000 }, base)), 0.5);
+}
+
 console.log('coop.test.cjs: all assertions passed.');
