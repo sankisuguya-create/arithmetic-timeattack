@@ -696,8 +696,14 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes("var b = document.getElementById('coopStart'), s = CP.prev ? null : CP.sess;"));
   assert.ok(/function coopUseSession\(s, evAll\)\{\n  coopPrevOff_\(\);/.test(tui), '本物の回を映すと見本をやめる');
   ['coopCls', 'coopGn', 'coopMode', 'coopOrg'].forEach(id => assert.ok(tui.includes("'" + id + "'"), id));
-  // 見本の正答は決まった乱数（毎回同じ形）。量は自動の枚数の見込みと同じ前提（参加 CPART）
-  assert.ok(tui.includes('var r = coopRng(20240)') && tui.includes('if(r() > CPART) continue;'));
+  // 見本の正答は全員が毎回同じ数（どの起点も均等に育つ）。量は自動の枚数の見込みと同じ前提（1回の正答 × 参加 CPART）
+  assert.ok(tui.includes('c = Math.max(1, Math.round(pace * lim / 60 * CPART))'));
+  assert.ok(tui.includes("for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, 1]);"));
+  // 再生のつまみ：箱の中はステージの下端、全画面は左上の並び。見本でも使える
+  assert.ok(tui.includes('#coopStage > #coopReplay{position:absolute;left:1.4vmin;right:1.4vmin;bottom:1.4vmin;'));
+  assert.ok(tui.includes("var to = st.classList.contains('full') ? document.getElementById('coopTL') : st;"));
+  assert.ok(tui.includes("document.getElementById('coopReplay').classList.add('on');      // 見本も"));
+  assert.ok(tui.includes('<span id="coopPrevTag">見本</span>'));
   // 輪郭は closePath() で閉じない（多数を1本の Path2D にまとめると二乗で遅くなる）
   const poly = src => src.slice(src.indexOf('function coopPoly(P, t)'), src.indexOf('\n}', src.indexOf('function coopPoly(P, t)')));
   assert.ok(!poly(tui).includes('closePath'));

@@ -185,10 +185,10 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;
   color:var(--ink);padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
 #coopStage.nonames #coopRoster{display:none}
-/* 設定の見本：名札・再生・正答数は出さず、「見本」の札を出す（実際の回と取り違えないように） */
+/* 設定の見本：名札・正答数は出さず、「見本」の札を出す（実際の回と取り違えないように）。再生のつまみは使える */
 #coopPrevTag{display:none;background:#101728;color:#fff;border-radius:9px;padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem);font-weight:700}
 #coopStage.preview #coopPrevTag{display:inline-block}
-#coopStage.preview #coopRoster,#coopStage.preview #coopReplay,#coopStage.preview #coopNames,
+#coopStage.preview #coopRoster,#coopStage.preview #coopNames,
 #coopStage.preview #coopHud .tag:last-child{display:none}
 #coopPrevBack{background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;color:var(--ink);
   padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
@@ -197,6 +197,10 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   background:rgba(255,255,255,.92);border:1.5px solid var(--line);border-radius:12px;
   padding:.5vmin 1.3vmin;box-shadow:0 1px 6px rgba(16,23,40,.14)}
 #coopReplay.on{display:flex}
+/* 箱の中：ステージの下端に横いっぱい。名札はその上へ逃がす */
+#coopStage > #coopReplay{position:absolute;left:1.4vmin;right:1.4vmin;bottom:1.4vmin;z-index:3}
+#coopStage > #coopReplay input[type=range]{flex:1;width:auto;min-width:0}
+#coopStage:has(> #coopReplay.on) #coopRoster{bottom:calc(1.4vmin + 2.9rem)}
 #coopReplay button{padding:.3vmin 1vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
 #coopReplay input[type=range]{width:34vmin}
 #coopReplay #coopRtime{font-size:clamp(.62rem,1.6vmin,1rem);font-weight:700;min-width:9em;text-align:left}
@@ -527,16 +531,17 @@ details.more[open] summary{border-color:var(--ink)}
     <canvas id="coopGrow"></canvas>
     <div id="coopTL">
     <button id="coopClose" class="ghost" type="button">× もどる</button>
-    <span id="coopPrevTag">見本（正答はつくりもの）</span>
+    <span id="coopPrevTag">見本</span>
     <button id="coopPrevBack" type="button" hidden>終わった回にもどる</button>
     <button id="coopNames" type="button">名前をかくす <span class="ptag">この端末だけ</span></button>
+    </div>
+    <!-- 再生の操作：箱の中ではステージの下端に横いっぱい（つまみを長く）。全画面では左上の並び（#coopTL）へ移す（coopReplayPlace） -->
     <div id="coopReplay">
       <button id="coopRplay" type="button">▶</button>
       <input id="coopSeek" type="range" min="0" max="600000" step="500" value="0">
       <span id="coopRtime">0:00 / 10:00</span>
       <select id="coopSpeed"><option value="1">1倍</option><option value="5" selected>5倍</option>
         <option value="25">25倍</option><option value="100">100倍</option></select>
-    </div>
     </div>
     <button id="coopStart" type="button">開始</button>
     <button id="coopCont" type="button" class="off">続きから</button>
@@ -1867,7 +1872,7 @@ function coopGuide(){
 /* ---- 画面時計：残り時間はサーバー時刻のずれを差し引いて数える ---- */
 setInterval(function(){
   coopGuide(); coopGoShow();
-  if(!CP.sess || CP.prev){
+  if(!CP.sess){
     document.getElementById('coopClock').textContent = coopFmt(Number(document.getElementById('coopMin').value || 10) * 60000);
     return;
   }
@@ -1900,7 +1905,7 @@ function coopInitUnit(u){
 }
 /* ---- 設定の見本（プレビュー） ----
  * 左の設定（図形・色づかい・組数・育ち始める場所・クラスの人数・1正答の枚数）で、協力プレイが終わった時の形を右に描く。
- * 正答はつくりもの（決まった乱数で、児童ごとの速さと参加にばらつきを付ける）。量は「1正答の枚数（自動）」の見込みと同じ式で作るので、
+ * 正答はつくりもの（全員が毎回同じ数だけ正答する単純な見込み。どの起点も均等に育つ）。量は「1正答の枚数（自動）」の見込みと同じ式で作るので、
  * 自動のままなら実際の回と同じく完成の85%前後まで育つ。色は開始のたびに変わるので、見本の色は決まった仮の色。
  * CP.prev：'auto'＝回が何も無い時の初めの見本（サーバーに回があれば問い合わせで差し替わる）、
  *          'user'＝教師が設定を変えて出した見本（終わった回で上書きしない。「終わった回にもどる」で戻る） */
@@ -1914,15 +1919,11 @@ function coopPrevSession_(){
   var s = { id: 'preview', cls: cls.value, pat: document.getElementById('coopPat').value, seed: 1, mode: mode, gn: gn,
             org: coopOrgVal(), start: 0, end: minutes * 60000, status: 'done', total: 0, names: names, nos: nos, gi: gi,
             pace: pace, minutes: minutes, lim: lim, skip: 0, prior: null };
-  // つくりものの正答：児童ごとの速さ 0.4〜1.6倍、1回ごとのゆれ、参加 9割（自動の枚数の見込みと同じ前提）
-  var r = coopRng(20240), plays = Math.max(1, Math.round(minutes * 60 / (lim + CGAP))), ev = [], sp = [];
-  for(i = 0; i < n; i++) sp.push(0.4 + 1.2 * r());
+  // つくりものの正答：全員が毎回同じ数だけ正答する単純な見込み（どの起点も均等に育つ）。
+  // 1回の数は自動の枚数の見込み（1回の正答 × 参加 CPART）と同じなので、自動のままなら完成の85%前後まで育つ
+  var plays = Math.max(1, Math.round(minutes * 60 / (lim + CGAP))), ev = [], c = Math.max(1, Math.round(pace * lim / 60 * CPART));
   for(var k = 0; k < plays; k++){
-    for(i = 0; i < n; i++){
-      if(r() > CPART) continue;
-      var c = Math.max(0, Math.round(pace * lim / 60 * sp[i] * (0.75 + 0.5 * r())));
-      if(c) ev.push([Math.round((k * (lim + CGAP) + lim + r() * CGAP) * 1000), i, c, 1]);
-    }
+    for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, 1]);
   }
   ev.sort(function(a, b){ return a[0] - b[0]; });
   s.total = ev.reduce(function(a, e){ return a + e[2]; }, 0);
@@ -1949,11 +1950,12 @@ function coopPreview(user){
   var st = document.getElementById('coopStage');
   st.style.display = ''; st.classList.add('preview');
   document.getElementById('coopPrevBack').hidden = !back;
-  document.getElementById('coopReplay').classList.remove('on');
+  document.getElementById('coopReplay').classList.add('on');      // 見本も再生のつまみで育ちを見られる
   ['coopStop', 'coopReset', 'coopSave'].forEach(function(id){ document.getElementById(id).disabled = true; });
   coopFit_();
   coopGen(); coopRoster(); coopRecompute(CP.ev.length);
-  CP.simT = 0; coopShowT(); coopGoShow(); coopGuide();
+  document.getElementById('coopSeek').max = coopDur();
+  CP.simT = coopDur(); CP.endSeen = true; coopShowT(); coopGoShow(); coopGuide();   // 終わった時の形を出し、つまみは右端
 }
 /* 設定を変えたら見本を描き直す。−／＋の連打で何度も組み直さないよう、少し待ってから1回だけ */
 var coopPrevTimer = 0;
@@ -2350,13 +2352,20 @@ document.getElementById('coopReset').onclick = function(){
 function coopRelayout(){ coopGen(); coopRecompute(CP.evI); }
 document.getElementById('coopFull').onclick = function(){
   var st = document.getElementById('coopStage');
-  st.style.display = ''; st.classList.add('full');
+  st.style.display = ''; st.classList.add('full'); coopReplayPlace();
   // ブラウザの全画面は押した操作の中でしか頼めない。断られても（対応していない・設定で禁止）ページいっぱいの表示で続ける
   try { var p = st.requestFullscreen && st.requestFullscreen(); if(p && p.catch) p.catch(function(){}); } catch(e){}
   coopRelayout();
 };
+/* 再生の操作の置き場：全画面では左上の並び（今まで通り）、箱の中ではステージの下端 */
+function coopReplayPlace(){
+  var st = document.getElementById('coopStage'), rp = document.getElementById('coopReplay');
+  var to = st.classList.contains('full') ? document.getElementById('coopTL') : st;
+  if(rp.parentNode !== to) to.appendChild(rp);
+}
 function coopLeaveFull(){
   document.getElementById('coopStage').classList.remove('full');
+  coopReplayPlace();
   coopFit_();                                     // 全画面の間に窓の大きさが変わっていても列に収め直す
   coopRelayout();
 }
