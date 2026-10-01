@@ -445,7 +445,7 @@ details.more[open] summary{border-color:var(--ink)}
             <span id="coopRateTag" class="note" style="margin:0">自動</span>
             <button id="coopRateAuto" class="ghost" type="button" style="display:none;padding:.25rem .6rem">自動にもどす</button></div>
           <div class="mrow"><span class="ctl">児童の見返し</span>
-            <select id="coopRvMine"><option value="1">「じぶん」の正答数も出す</option><option value="0">「みんなで」だけ出す</option></select>
+            <select id="coopRvMine"><option value="0">「みんなで」だけ出す</option><option value="1">「じぶん」の正答数も出す</option></select>
             <span id="coopRvMineStat" class="note" style="margin:0"></span></div>
           <p class="note" style="margin:.5rem 0 0;line-height:1.7">
             クラス全員の<b>本番の正答</b>で図形がいっしょに育ちます（れんしゅうは数えません）。
@@ -453,7 +453,7 @@ details.more[open] summary{border-color:var(--ink)}
             終わった図形を映している間は、画面の「続きから」で同じ図形を育て続けられます。<br>
             <b>起点</b>は図形が育ち始める点の数です。2以上にすると、児童（グループなら組）ごとに担当の起点が決まり、そこから育ちます。
             起点を児童数にすると島の大きさがその子の正答数になり、モニターと児童の見返しで見えます。<br>
-            <b>児童の見返し</b>は、児童画面の「前回の協力プレイ」で「じぶん ○もん」を出すかどうかです（変えるとすぐ保存されます）。</p>
+            <b>児童の見返し</b>は、児童画面の「前回の協力プレイ」で「じぶん ○もん」を出すかどうかです（既定は出さない。変えるとすぐ保存されます）。</p>
         </div>
       </details></span>
     </div>
@@ -715,7 +715,7 @@ google.script.run.withSuccessHandler(function(r){
     var el = document.getElementById(k);
     if(el) el.value = c[k];
   });
-  document.getElementById('coopRvMine').value = Number(c.coop_mine) === 0 ? '0' : '1';
+  document.getElementById('coopRvMine').value = Number(c.coop_mine) === 1 ? '1' : '0';   // 既定は出さない（1 の時だけ「じぶん」も出す）
   floorPreviewInit(u.floor);
   coopInitUnit(u);
 }).withFailureHandler(function(e){
