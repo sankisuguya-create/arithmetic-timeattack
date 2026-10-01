@@ -687,6 +687,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const pc = tui.slice(tui.indexOf('<div id="pageCoop"'), tui.indexOf('</div><!-- /pageCoop -->'));
   assert.ok(pc.indexOf('class="box coopBox"') < pc.indexOf('<div id="coopStage"'));
   assert.ok(/var full = st\.offsetWidth;/.test(tui), 'ステージの幅は右の列の幅から');
+  // 状態・案内は左の欄の中：高さを取り置かず、空なら詰める（1366×768 で欄の中を送らずに収めるため）
+  assert.ok(tui.includes('#coopStat:empty,#coopGuide:empty{display:none}'));
+  assert.ok(!/#coopStat\{min-height/.test(tui) && !/#coopGuide\{min-height/.test(tui));
 }
 
 /* ---- 起点：1〜児童数（グループは1〜組数）。起点ごとに担当（児童 i／組 g は起点 i mod 数）から育つ ---- */

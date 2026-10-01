@@ -207,7 +207,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   #pageCoop > #coopStage{grid-column:1;grid-row:2;justify-self:center}
 }
 .coopBox{padding:.85rem 1rem}
-.coopBox .crow{display:flex;flex-direction:column;gap:.4rem;align-items:stretch;padding:.5rem 0;border-top:1px solid var(--line)}
+.coopBox .crow{display:flex;flex-direction:column;gap:.35rem;align-items:stretch;padding:.42rem 0;border-top:1px solid var(--line)}
 .coopBox .crow:first-child{border-top:none;padding-top:0}
 .coopBox .crow .clsPick{margin:0;gap:.35rem}
 .coopBox .clsPick button{padding:.3rem .7rem;font-size:.9rem}
@@ -215,7 +215,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .coopBox .grp > .ctl:first-child{width:4.2em;flex:none}
 .coopBox .ctl,.morePanel .ctl{font-size:.8rem;font-weight:700;color:var(--mute)}
 .coopBox .step{padding:.2rem .65rem;font-size:1rem;line-height:1.2}
-.coopBox .minIn{width:4.2rem;padding:.35rem .3rem;text-align:center;font-weight:800}
+.coopBox .minIn{width:4.2rem;padding:.25rem .3rem;text-align:center;font-weight:800}
 .coopBox .unit{font-size:.88rem;font-weight:700}
 .coopBox .act button{padding:.38rem .7rem;font-size:.9rem}
 .coopBox .act #coopFull{width:100%;padding:.55rem 1rem;font-size:1rem}
@@ -276,8 +276,10 @@ details.more[open] summary{border-color:var(--ink)}
   background:#fff;color:var(--ink);border:2px solid var(--ink)}
 #coopCont.off{display:none}
 /* 操作欄の下の案内（状態・理由）は、出ても箱の高さが変わらないよう1行ずつ場所を取っておく（ステージの大きさを決め直さずに済む） */
-#coopStat{min-height:1.45rem;font-size:.78rem;line-height:1.5}
-#coopGuide{min-height:1.25rem}
+/* 状態と案内は左の操作欄の中なので、文が増減してもステージは動かない（高さを取り置かない。空の時は詰める） */
+#coopStat{font-size:.78rem;line-height:1.5}
+#coopGuide{font-size:.76rem;line-height:1.5}
+#coopStat:empty,#coopGuide:empty{display:none}
 /* カウントダウン：よーい…→3→2→1→スタート。図形の上に大きく重ねる */
 #coopCount{position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;
   background:rgba(247,247,244,.6);font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;
