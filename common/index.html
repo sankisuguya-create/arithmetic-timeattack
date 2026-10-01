@@ -765,7 +765,8 @@ function coopRvOpen(){
     $('coopRvDot').style.background = 'rgb(' + mine + ')';
     coopRvMineLabel();
     $('coopRvMine').style.visibility = '';
-    $('coopRvTot').innerHTML = '<small>じぶん</small>' + coopRvMyTotal(d) + ' もん<i class="sep"></i><small>みんなで</small>' + d.total + ' もん';
+    /* 「じぶん」は教師の設定（mine）で出さないこともできる。古い Core は mine を返さないので、そのときは出す */
+    $('coopRvTot').innerHTML = (d.mine === false ? '' : '<small>じぶん</small>' + coopRvMyTotal(d) + ' もん<i class="sep"></i>') + '<small>みんなで</small>' + d.total + ' もん';
     coopRvDraw();
   }).withFailureHandler(function(){ $('coopRvMsg').textContent = 'よみこめませんでした'; }).coopReview();
 }

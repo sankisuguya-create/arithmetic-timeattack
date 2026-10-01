@@ -35,7 +35,11 @@ var BASE_DEFAULTS = {
   // weak_child / weak_class の集計に使う期間（日）。0 なら全期間。
   // 全期間平均にすると、年間数百試行に対して直近の変化が1%程度に薄まり、
   // 伸びも落ちも見えなくなる。
-  window_days: 30
+  window_days: 30,
+
+  // 協力プレイの見返し（児童画面の「前回の協力プレイ」）に「じぶん ○もん」を
+  // 出すか。0 なら「みんなで ○もん」だけ出す（教師画面の協力モードタブで切り替え）。
+  coop_mine: 1
 };
 
 var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
@@ -1935,6 +1939,7 @@ function coopReview() {
     .concat(coopEvents_(s).map(function (e) { return out(e, pri); }));
   var total = ev.reduce(function (a, e) { return a + e[2]; }, 0);
   return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, n: n, me: me,
+           mine: toBool_(config_().coop_mine),   // 教師の設定で「じぶん」の数を出さないこともできる（出すだけ。他の児童の数は出ない）
            g: group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[me]) || 0)) : null,
            ev: ev, total: total, pri: pri, segs: (s.prior && s.prior.segs) || [],
            minutes: s.minutes, lim: Number(config_().limit_sec) || 60, pace: s.pace || FLOOR_PRIOR_.perMin, skip: s.skip || 0,
