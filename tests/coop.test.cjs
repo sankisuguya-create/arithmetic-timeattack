@@ -41,6 +41,7 @@ Sheet.prototype.setTabColor = function () {};
 Sheet.prototype.insertColumnAfter = function () {};
 
 const store = {};
+const props = {};
 const sheets = {};
 const ctx = {
   console,
@@ -49,7 +50,11 @@ const ctx = {
     put: (k, v) => { store[k] = String(v); },
     remove: k => { delete store[k]; }
   }) },
-  PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty() {}, deleteProperty() {} }) },
+  PropertiesService: { getScriptProperties: () => ({
+    getProperty: k => (k in props ? props[k] : null),
+    setProperty: (k, v) => { props[k] = String(v); },
+    deleteProperty: k => { delete props[k]; }
+  }) },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   Session: {
     getActiveUser: () => ({ getEmail: () => 'sensei@edu.nishi.or.jp' }),
@@ -360,5 +365,37 @@ assert.ok(tui.includes('id="coopNames"') && tui.includes('#coopStage.nonames #co
 }
 assert.ok(/&& !CP\.endSeen\)\{/.test(tui));                           // 終わりの位置送りは最初の1回だけ（シークが飛ばない）
 assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));   // 列が縮んだら取り直す
+
+/* ---- 開始前の組分け（予定） ---- */
+{
+  const J = x => JSON.stringify(Array.from(x));
+  ctx.coopStop();
+  const pl = ctx.coopPlan('3-1', 3);
+  assert.ok(pl.ok); assert.equal(pl.names.length, 8);
+  assert.equal(J(pl.gi), '[0,0,0,1,1,1,2,2]');                        // 予定が無ければ番号順の等分
+  assert.ok(ctx.coopSavePlan('3-1', 3, [2, 2, 1, 1, 0, 0, 2, 1]).ok);
+  assert.ok(!ctx.coopSavePlan('3-1', 3, [0, 1]).ok);                   // 名簿と数が合わないものは通さない
+  assert.ok(ctx.coopStart({ cls: '3-1', mode: 'group', gn: 3, minutes: 5 }).ok);
+  assert.equal(J(ctx.coopLive_().gi), '[2,2,1,1,0,0,2,1]');           // 開始すると予定の組で始まる
+  assert.equal(J(ctx.coopPlan('3-1', 4).gi), '[0,0,1,1,2,2,3,3]');     // 組数ごとに別に持つ
+  ctx.coopSetGroups([0, 1, 2, 0, 1, 2, 0, 1]);                         // 遊んでいる途中の編集も予定に残る
+  ctx.coopStop();
+  assert.equal(J(ctx.coopPlan('3-1', 3).gi), '[0,1,2,0,1,2,0,1]');
+  assert.ok(ctx.coopStart({ cls: '3-1', mode: 'group', gn: 3, minutes: 5 }).ok);
+  assert.equal(J(ctx.coopLive_().gi), '[0,1,2,0,1,2,0,1]');           // 次の開始に引き継ぐ
+  ctx.coopStop();
+  // 名簿の並びが変わっても、組はメールで引き継ぐ（転入の児童だけ等分の位置に入る）
+  sheets.roster.values.push(['k00@kyoiku.edu.nishi.or.jp', 3, '1', 0, '転入']);
+  const p2 = ctx.coopPlan('3-1', 3);
+  assert.equal(p2.names[0], '転入'); assert.equal(p2.gi[0], 0);
+  assert.equal(J(Array.from(p2.gi).slice(1)), '[0,1,2,0,1,2,0,1]');
+  // 分け直すと予定を消して番号順の等分へ
+  const p3 = ctx.coopSavePlan('3-1', 3, null, true);
+  assert.ok(p3.ok); assert.equal(J(p3.gi), '[0,0,0,1,1,1,2,2,2]');
+  sheets.roster.values.pop();
+  // 画面：開始前の欄はステージと別。組は文字で示す
+  assert.ok(tui.includes('id="coopPlan"') && tui.includes('.coopSavePlan(PLAN.cls, PLAN.gn, PLAN.gi.slice())'));
+  assert.ok(tui.indexOf('id="coopPlan"') < tui.indexOf('<div id="coopStage"'));
+}
 
 console.log('coop.test.cjs: all assertions passed.');

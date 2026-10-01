@@ -1357,6 +1357,54 @@ function coopPub_(s, since) {
  * 「次の開始」で live から外れた直前のセッション。終了から COOP_LATE_MS の間だけ置き、
  * その間に届いた直前の回の送り直しをこちらに数える（開始を押した瞬間に前の回の取りこぼしが出ないように）
  */
+/*
+ * 組の予定（開始前に教師が作っておく組分け）。クラス×組数ごとにスクリプトプロパティへ置く。
+ * 児童の並びが名簿の変更でずれても組がずれないよう、メールで持つ。名簿にない児童は捨て、新しい児童は番号順の等分の位置に入る。
+ * 組数ごとに分けて持つので、組数を一時的に変えて戻しても、作った組は消えない。
+ */
+function coopPlanKey_(cls, gn) { return 'coop_plan_' + cls + '_' + gn; }
+function coopPlanGet_(cls, gn, kids) {
+  var p = null;
+  try { p = JSON.parse(PropertiesService.getScriptProperties().getProperty(coopPlanKey_(cls, gn)) || 'null'); } catch (e) {}
+  if (!p || !p.order || !p.gi) return null;
+  var by = {};
+  p.order.forEach(function (m, i) { by[m] = Number(p.gi[i]); });
+  return kids.map(function (k, i) {
+    var g = by[k.mail];
+    return (g >= 0 && g < gn && g === Math.floor(g)) ? g : Math.min(gn - 1, Math.floor(i * gn / kids.length));
+  });
+}
+function coopPlanPut_(cls, gn, order, gi) {
+  PropertiesService.getScriptProperties().setProperty(coopPlanKey_(cls, gn), JSON.stringify({ order: order, gi: gi }));
+}
+function coopGnOf_(gn) { return Math.max(2, Math.min(COOP_GN_MAX, Number(gn) || 6)); }
+
+/** 開始前の組分けを読む。予定が無ければ番号順の等分 */
+function coopPlan(cls, gn) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  cls = String(cls || ''); gn = coopGnOf_(gn);
+  var kids = coopKids_(cls);
+  if (!kids.length) return { ok: false, msg: 'そのクラスの児童が名簿にありません。' };
+  var gi = coopPlanGet_(cls, gn, kids) ||
+    kids.map(function (k, i) { return Math.min(gn - 1, Math.floor(i * gn / kids.length)); });
+  return { ok: true, cls: cls, gn: gn, gi: gi,
+           names: kids.map(function (k) { return k.name; }), nos: kids.map(function (k) { return k.no; }) };
+}
+
+/** 開始前の組分けを保存する。gi は coopPlan が返した児童の並びに合わせる。reset なら予定を消して番号順の等分に戻す */
+function coopSavePlan(cls, gn, gi, reset) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  cls = String(cls || ''); gn = coopGnOf_(gn);
+  var kids = coopKids_(cls);
+  if (reset) { PropertiesService.getScriptProperties().deleteProperty(coopPlanKey_(cls, gn)); return coopPlan(cls, gn); }
+  if (!Array.isArray(gi) || gi.length !== kids.length) {
+    return { ok: false, msg: '名簿が変わりました。画面を開き直してください。' };
+  }
+  coopPlanPut_(cls, gn, kids.map(function (k) { return k.mail; }),
+    gi.map(function (g) { return Math.max(0, Math.min(gn - 1, Math.round(Number(g) || 0))); }));
+  return { ok: true };
+}
+
 function coopPrev_() {
   var h = cache_().get('coop_prev');
   if (!h) return null;
@@ -1485,7 +1533,7 @@ function coopPace_() {
 function coopStart_(o, pace) {
   var prev = coopLive_();
   if (prev && prev.status === 'run' && !(o && o.reset)) {
-    return { ok: false, msg: '進行中の協力プレイがあります。「おわる」を押してから始めてください。' };
+    return { ok: false, msg: '進行中の協力プレイがあります。「終了」を押してから始めてください。' };
   }
   var old = prev || {};
   var cls = String((o && o.cls) || old.cls || '');
@@ -1495,13 +1543,15 @@ function coopStart_(o, pace) {
   if (FLOOR_PATTERNS_.indexOf(pat) < 0) pat = 'penrose';
   var minutes = Math.max(1, Math.min(30, Number((o && o.minutes) || old.minutes || COOP_DEF_MIN)));
   var mode = ((o && o.mode) || old.mode) === 'group' ? 'group' : 'child';
-  var gn = Math.max(2, Math.min(COOP_GN_MAX, Number((o && o.gn) || old.gn || 6)));
+  var gn = coopGnOf_((o && o.gn) || old.gn || 6);
   var seed = Math.floor(Math.random() * 2147483647);
   var kidsMap = {}, order = [], gi = [];
+  // 組は「開始前に作った予定」を最優先にする。無ければ前回と同じ顔ぶれなら前の編成、それも無ければ番号順の等分
+  var plan = mode === 'group' ? coopPlanGet_(cls, gn, kids) : null;
   kids.forEach(function (k, i) {
     kidsMap[k.mail] = i; order.push(k.mail);
-    // 組の既定は番号順の等分。前回と同じ顔ぶつなら前の編成を引き継ぐ
-    gi.push(old.gi && old.order && old.order[i] === k.mail ? old.gi[i]
+    gi.push(plan ? plan[i]
+         : old.gi && old.order && old.order[i] === k.mail && old.gn === gn ? old.gi[i]
          : Math.min(gn - 1, Math.floor(i * gn / kids.length)));
   });
   var id = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
@@ -1595,6 +1645,8 @@ function coopSetGroups(gi) {
     s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
     coopPutLive_(s);
     coopRowWrite_(s.id, { gi: s.gi });
+    // 遊んでいる途中の編集も予定に残す（次の開始で同じ組から始められるように）
+    if (s.order) { try { coopPlanPut_(s.cls, s.gn, s.order, s.gi); } catch (e) {} }
     return { ok: true };
   });
 }
