@@ -689,6 +689,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(/var full = st\.offsetWidth;/.test(tui), 'ステージの幅は右の列の幅から');
   // 状態・案内は左の欄の中：高さを取り置かず、空なら詰める（1366×768 で欄の中を送らずに収めるため）
   assert.ok(tui.includes('#coopStat:empty,#coopGuide:empty{display:none}'));
+  // 常に出ている見出しは1段（題名・タブ・写し・注意・行き先）。タブは見出しの段の中
+  const top = tui.slice(tui.indexOf('<div class="topbar">'), tui.indexOf('<div id="verWarn"'));
+  ['id="h1"', 'class="tabs"', 'id="tabCoop"', 'id="sub"', 'id="cautions"', 'id="golinks"'].forEach(k => assert.ok(top.includes(k), k));
   assert.ok(!/#coopStat\{min-height/.test(tui) && !/#coopGuide\{min-height/.test(tui));
 }
 
