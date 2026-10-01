@@ -283,8 +283,18 @@ assert.equal(JSON.parse(store.coop_prev).total, 8);                   // 直前�
 const rowA = () => sheets.coop.values.find(r => r[0] === stA.session.id);
 assert.equal(rowA()[12], 8);                                         // 教師画面の問い合わせで、行の合計も追いつく
 assert.equal(sheets.coop_log.values.filter(r => r[0] === stA.session.id).length, 1);
-ctx.coopNote_(c3, 1, 5, { t: Date.now() - 55000, lim: 60 });         // 新しい方の中で遊び終えた回は新しい方へ
+// 始まりの前に始めておき、始まった直後に正答をまとめて数えさせる抜け道：始まりの5秒より前に始めた回は数えない
+ctx.coopNote_(c3, 1, 9, { t: Date.now() - 55000, lim: 60 });         // 始まりの55秒前に始めた
+assert.equal(ctx.coopState(0).total, 0);
+const LB = ctx.coopLive_(); LB.start -= 58000; ctx.coopPutLive_(LB);   // 始まりを58秒前にずらして確かめる
+ctx.coopNote_(c3, 1, 5, { t: Date.now() - 55000, lim: 60 });         // 始まりの3秒後に始めた：新しい方へ
 assert.equal(ctx.coopState(0).total, 5);
+ctx.coopNote_(c3, 1, 2, { t: LB.start - 4000, lim: 60 });            // 「よーい…」の間（始まりの4秒前）に始めた：数える
+assert.equal(ctx.coopState(0).total, 7);
+ctx.coopNote_(c3, 1, 3, { t: LB.start - 6000, lim: 60 });            // 始まりの6秒前に始めた：数えない
+assert.equal(ctx.coopState(0).total, 7);
+ctx.coopNote_(c3, 1, 4, { t: LB.start - 2000, lim: 30 });            // 制限秒が違っても「始まり＋(制限秒−5秒)」で見る
+assert.equal(ctx.coopState(0).total, 11);
 
 /* ---- リセットで途中から切り直すと、前の協力の終わりはその時点になる（遊び終える回は新しい方へ） ---- */
 const stC = ctx.coopStart({ reset: true });
@@ -452,8 +462,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
     assert.ok(r.ok); assert.equal(ctx.coopLive_().minutes, want, 'minutes ' + inp); ctx.coopStop();
   });
   // 1回目：7分、児童1と3が正答
-  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 7, mode: 'child' }).ok);
+  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 7, mode: 'child', org: 5 }).ok);
   const a1 = ctx.coopLive_();
+  assert.equal(a1.org, 5);
   a1.start -= 60000; ctx.coopPutLive_(a1);                    // 1分たったことにする
   ctx.coopNote_(ctx.child_('k01@kyoiku.edu.nishi.or.jp'), 1, 10);
   ctx.coopNote_(ctx.child_('k03@kyoiku.edu.nishi.or.jp'), 1, 6);
@@ -462,11 +473,12 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   ctx.coopStop();
   const d1 = ctx.coopLive_(), dur1 = d1.end - d1.start;
   // 2回目：続きから（図形・色・クラスは前の回のまま、時間は新しく）
-  const c2 = ctx.coopStart({ cont: 'live', minutes: 5, pat: 'penrose', cls: '4-2' });
+  const c2 = ctx.coopStart({ cont: 'live', minutes: 5, pat: 'penrose', cls: '4-2', org: 2 });
   assert.ok(c2.ok, JSON.stringify(c2));
   const b2 = ctx.coopLive_();
   assert.equal(b2.pat, 'sunflower'); assert.equal(b2.seed, d1.seed); assert.equal(b2.cls, '3-1'); assert.equal(b2.minutes, 5);
   assert.equal(b2.prior.dur, dur1);
+  assert.equal(b2.org, 5, '起点の数も前の回のまま'); assert.equal(c2.session.org, 5);
   assert.equal(b2.prior.ev.length, 2);
   assert.equal(J(b2.prior.ev.map(e => e[1])), '[0,2]');      // 児童1・児童3
   assert.equal(b2.prior.segs.length, 1); assert.equal(b2.prior.segs[0].total, 16); assert.equal(b2.prior.segs[0].minutes, 7);
@@ -478,6 +490,7 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const keep = store.coop_live; delete store.coop_live;
   const back = ctx.coopLive_();
   assert.ok(back && back.prior && back.prior.ev.length === 2, 'coop シートから prior を戻す');
+  assert.equal(back.org, 5, 'coop シートの15列目から起点の数を戻す');
   store.coop_live = keep;
   // 2回目の正答 → 保存 → その保存データから3回目を続ける（前の回の prior も引き継ぐ）
   ctx.coopNote_(ctx.child_('k02@kyoiku.edu.nishi.or.jp'), 1, 9);
@@ -491,7 +504,7 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const c3 = ctx.coopStart({ cont: 'save:' + sv2.id, minutes: 4 });
   assert.ok(c3.ok, JSON.stringify(c3));
   const b3 = ctx.coopLive_();
-  assert.equal(b3.pat, 'sunflower'); assert.equal(b3.seed, d1.seed);
+  assert.equal(b3.pat, 'sunflower'); assert.equal(b3.seed, d1.seed); assert.equal(b3.org, 5, '保存データからも起点の数を引き継ぐ');
   assert.equal(b3.prior.segs.length, 2, '1回目と2回目の2つ');
   assert.equal(b3.prior.ev.length, 3);
   assert.ok(b3.prior.ev[2][0] >= dur1, '2回目の正答は1回目の後ろへずれる');
@@ -664,6 +677,76 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const pc = tui.slice(tui.indexOf('<div id="pageCoop"'), tui.indexOf('</div><!-- /pageCoop -->'));
   assert.ok(pc.indexOf('class="box coopBox"') < pc.indexOf('<div id="coopStage"'));
   assert.ok(/var full = st\.offsetWidth;/.test(tui), 'ステージの幅は右の列の幅から');
+}
+
+/* ---- 起点：1〜児童数（グループは1〜組数）。起点ごとに担当（児童 i／組 g は起点 i mod 数）から育つ ---- */
+{
+  ctx.Session = teacherSession;
+  const S = o => { const r = ctx.coopStart(Object.assign({ cls: '3-1', minutes: 5 }, o)); assert.ok(r.ok, JSON.stringify(r)); const l = ctx.coopLive_(); ctx.coopStop(); return l; };
+  assert.equal(S({ mode: 'child', org: 1 }).org, 1);
+  assert.equal(S({ mode: 'child' }).org, 1, '送らなければ前の回の数（古い画面）');
+  const nKids = S({ mode: 'child', org: 999 });
+  assert.equal(nKids.org, nKids.names.length, '児童ごとは児童数まで');
+  assert.equal(S({ mode: 'group', gn: 3, org: 7 }).org, 3, 'グループは組数まで');
+  assert.equal(S({ mode: 'child', org: -5 }).org, 1);
+  assert.equal(S({ mode: 'child', org: 4 }).org, 4);
+  ctx.coopStart({ reset: true }); assert.equal(ctx.coopLive_().org, 4, 'リセットは同じ起点の数'); ctx.coopStop();
+  assert.equal(sheets.coop.values[sheets.coop.values.length - 1][14], 4, 'coop シートの15列目に置く');
+  assert.equal(ctx.coopState(0).org, 4);
+  const tui = read('common/teacher.html'), ui = read('common/index.html');
+  // 起点の手続きは teacher.html と index.html で一字一句同じ
+  const cut = src => src.slice(src.indexOf('/* ---- 起点（teacher.html と index.html に同じものを置く'), src.indexOf('function coopFinOf(')) +
+    src.slice(src.indexOf('function coopFinOf('), src.indexOf('\n}\n', src.indexOf('function coopFinOf(')) + 3);
+  assert.ok(cut(tui).length > 1500); assert.equal(cut(ui), cut(tui));
+  const F = vm.runInNewContext(cut(tui) + ';({ coopOrigins, coopOrders, coopAlloc, coopTake, coopFinOf })');
+  // 合成のタイル：格子。育ち始める点（vx, vy）から近い順に並べてある（教師画面と同じ前提）
+  const W = 800, H = 450, OX = W * 0.14, OY = H * 0.78, VX = 1.1 * OX / 0.32, VY = 1.1 * OY / 0.32;
+  const tiles = [];
+  for (let x = 0; x < W * 3.6; x += 20) for (let y = 0; y < H * 3.6; y += 20) tiles.push({ cx: x, cy: y, d: Math.hypot(x - VX, y - VY) });
+  tiles.sort((a, b) => a.d - b.d);
+  const view = sc => ({ x0: VX - OX / sc, x1: VX + (W - OX) / sc, y0: VY - OY / sc, y1: VY + (H - OY) / sc });
+  const inV = vr => t => t.cx >= vr.x0 && t.cx <= vr.x1 && t.cy >= vr.y0 && t.cy <= vr.y1;
+  // 起点1つ：今までと同じ（近い順のまま、完成の枚数も今までの式と同じ）
+  const o1 = F.coopOrders(tiles, F.coopOrigins(1, VX, VY, OX, OY, W, H, 7));
+  assert.equal(o1.length, 1); assert.ok(o1[0].every((v, i) => v === i));
+  const vmin = view(0.32), idx = []; tiles.forEach((t, i) => { if (inV(vmin)(t)) idx.push(i); });
+  assert.equal(F.coopFinOf(tiles, o1, inV(vmin), 0.9), idx[Math.ceil(idx.length * 0.9) - 1] + 1);
+  // 起点 k 個：最初の画面の中に k 個、同じシードなら同じ並び、シードが違えば並びが変わる
+  const v1 = view(1);
+  [2, 6, 29].forEach(k => {
+    const p = F.coopOrigins(k, VX, VY, OX, OY, W, H, 7);
+    assert.equal(p.length, k);
+    p.forEach(q => assert.ok(q[0] > v1.x0 && q[0] < v1.x1 && q[1] > v1.y0 && q[1] < v1.y1, '最初の画面の中'));
+    assert.equal(new Set(p.map(q => q.join(','))).size, k, '重ならない');
+    assert.equal(JSON.stringify(F.coopOrigins(k, VX, VY, OX, OY, W, H, 7)), JSON.stringify(p));
+  });
+  assert.notEqual(JSON.stringify(F.coopOrigins(6, VX, VY, OX, OY, W, H, 7)), JSON.stringify(F.coopOrigins(6, VX, VY, OX, OY, W, H, 8)));
+  // 担当：起点0の担当の正答は起点0の近くに、起点1の担当は起点1の近くに貼る。同じタイルを2度使わない
+  const p2 = F.coopOrigins(2, VX, VY, OX, OY, W, H, 3), ord2 = F.coopOrders(tiles, p2), A = F.coopAlloc(ord2);
+  const got = [[], []];
+  for (let r = 0; r < 40; r++) { got[0].push(F.coopTake(A, 0)); got[1].push(F.coopTake(A, 1)); got[1].push(F.coopTake(A, 3)); }  // 3 mod 2 = 1
+  const near = (j, o) => Math.hypot(tiles[j].cx - p2[o][0], tiles[j].cy - p2[o][1]);
+  got[0].forEach(j => assert.ok(near(j, 0) < near(j, 1)));
+  got[1].forEach(j => assert.ok(near(j, 1) < near(j, 0)));
+  assert.equal(new Set(got[0].concat(got[1])).size, 120);
+  // 正答の少ない起点も、自分の起点のまわりに島ができる（多い隣に起点のまわりを先に埋められない）。
+  // 起点0が1枚貼る間に他は6枚ずつ。近い順だけの並びでは起点0の60枚が 180〜234px まで散った（半径の目安は約90px）
+  [5, 6, 7].forEach(seed => {
+    const p6 = F.coopOrigins(6, VX, VY, OX, OY, W, H, seed), A6 = F.coopAlloc(F.coopOrders(tiles, p6)), small = [];
+    for (let r = 0; r < 60; r++) { small.push(F.coopTake(A6, 0)); for (let o = 1; o < 6; o++) for (let q = 0; q < 6; q++) F.coopTake(A6, o); }
+    const far = Math.max(...small.map(j => Math.hypot(tiles[j].cx - p6[0][0], tiles[j].cy - p6[0][1])));
+    assert.ok(far < 130, '正答の少ない起点の島が起点のまわりにまとまる ' + far.toFixed(0));
+  });
+  // 全部埋まったら -1
+  const Af = F.coopAlloc(o1); for (let i = 0; i < tiles.length; i++) F.coopTake(Af, 0); assert.equal(F.coopTake(Af, 0), -1);
+  // 教師画面：貼る位置は担当の起点から。組が変わったら、起点が複数のグループの回は組み直す。開始で起点の数を送る
+  assert.ok(tui.includes('var n = Math.round(e[2] * coopRateAt(e[0])), c0 = CP.cursor, o = keyOf(e[1]), vr = coopView(CP.S);'));
+  assert.ok(tui.includes("if(CP.MODE === 'group' && CP.ORD && CP.ORD.length > 1) coopRecompute(CP.evI); else coopRepaint();"));
+  assert.ok(tui.includes('opts.org = coopOrgVal();'));
+  assert.ok(!/coopRoster\(\); coopRepaint\(\);\n\s*dirty\.textContent = '保存しました。児童/.test(tui));
+  // 児童の見返しも同じ手続き（グループは各正答の組番号が担当）
+  assert.ok(ui.includes("var m = Math.round(e[2] * rateAt(e[0])), o = grp ? (e[3] || 0) : e[1];"));
+  assert.ok(ui.includes('RV.ord = coopOrders(RV.tiles, coopOrigins(d.org || 1, VX, VY, OX, OY, W, H, d.seed || 1));'));
 }
 
 console.log('coop.test.cjs: all assertions passed.');

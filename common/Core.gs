@@ -1244,8 +1244,9 @@ function listClassesCore_(over) {
  * ============================================================ */
 var COOP_DEF_MIN = 10;
 var COOP_GN_MAX = 10;
-var COOP_SLACK_MS = 10000;    // 遊び終えた時刻の余裕（開始前のカウントダウン3秒と通信の遅れ）
+var COOP_SLACK_MS = 10000;    // 遊び終えた時刻の、終了の後ろ側の余裕（時計のずれと通信の遅れ）
 var COOP_COUNTDOWN_MS = 4000;  // 応答から協力が始まるまで（モニターで よーい…(1秒)→3→2→1→スタート を出す間。送信中も「よーい…」）
+var COOP_EARLY_MS = 5000;     // 協力の始まりより前に始めてよい幅。遊び終えた時刻が「始まり＋(制限秒−5秒)」より前の回は数えない
 var COOP_LATE_MS = 600000;    // 送り直しを数える上限：協力の終了から10分（混雑で弾かれた回は次の起動で送り直される）
 var COOP_FLUSH_AT = 40;       // シートへ書いていない分がこの件数を超えたら、提出の側でもまとめ書きする（教師画面が閉じている間の備え）
 
@@ -1265,7 +1266,7 @@ function coopLive_() {
 function coopFromSheet_() {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 14).getValues()[0]);
+  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 15).getValues()[0]);
 }
 /** coop シートの1行からセッションを組み立てる（児童の並びは今の名簿、合計は coop_log） */
 function coopFromRow_(r) {
@@ -1281,7 +1282,7 @@ function coopFromRow_(r) {
             minutes: Math.max(1, Math.round((end - start) / 60000)),
             start: start, end: end, status: String(r[11] || 'done') === 'run' ? 'run' : 'done', total: 0,
             kids: map, order: order, names: arr(r[7]), nos: arr(r[8]), gi: arr(r[6]),
-            skip: coopSkip_(cls) };
+            skip: coopSkip_(cls), org: Number(r[14]) || 1 };
   try { var pr = JSON.parse(String(r[13] || 'null')); if (pr && pr.ev) s.prior = pr; } catch (e) {}
   s.total = coopEvents_(s).reduce(function (a, e) { return a + (Number(e[2]) || 0); }, 0);
   return s;
@@ -1348,7 +1349,7 @@ function coopEvents_(s) {
 /** 教師画面へ返す形（個人情報は名札に必要な氏名と番号まで。mail は出さない） */
 function coopPub_(s, since) {
   var ev = coopEvents_(s), n = ev.length;
-  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn,
+  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1,
            start: s.start, end: s.end, status: s.status, total: s.total,
            names: s.names, nos: s.nos, gi: s.gi,
            // 画面の案内に使う：1回の制限秒（残りがこれを切ると、これから始める回は数えない）・送り直しの締め切り・氏名のない児童の数
@@ -1527,9 +1528,14 @@ function coopNote_(c, mode, correct, game) {
   var now = Date.now();
   // 回の記録が無い呼び出し（古い経路）は届いた時刻で見る。余裕（カウントダウン分）は回の記録があるときだけ
   var known = !!(game && game.t);
-  var played = known ? Number(game.t) + (Number(game.lim) || 60) * 1000 : now;
+  var limMs = (Number(game && game.lim) || 60) * 1000;
+  var played = known ? Number(game.t) + limMs : now;
+  // 始まりより前に始めておいて、始まった直後に正答をまとめて数えさせる回を弾く：
+  // 遊び終えた時刻が「始まり＋(制限秒−5秒)」より前（＝始まりの5秒より前に始めた回）は数えない。
+  // 5秒は「よーい…」の間に押した回と、モニターの表示の遅れを数えるための幅
+  var early = known ? Math.max(0, limMs - COOP_EARLY_MS) : 0;
   function fits(x) {
-    return !!x && played >= x.start && played <= x.end + (known ? COOP_SLACK_MS : 0) &&   // 協力の時間の外で遊び終えた回は数えない
+    return !!x && played >= x.start + early && played <= x.end + (known ? COOP_SLACK_MS : 0) &&   // 協力の時間の外で遊び終えた回は数えない
       now <= x.end + COOP_LATE_MS &&                                                      // 送り直しが遅すぎる
       classKey_(c) === x.cls && x.kids[c.email] !== undefined;
   }
@@ -1620,6 +1626,12 @@ function coopPace_() {
   return Math.max(1, Math.round(tc / min * 10) / 10);
 }
 function coopMinOf_(m) { return Math.max(1, Math.min(30, Math.round(Number(m) || COOP_DEF_MIN))); }
+/*
+ * 起点の数（1〜児童数、グループの色づかいでは1〜組数）。起点ごとに担当が決まり、
+ * 児童 i（グループなら組 g）の正答は起点 (i mod 起点の数) から育つ。1 なら今までどおり1つの図形。
+ * 起点の数を児童数にすると、児童ごとの島の大きさがその子の正答数になる（モニターでも見返しでも見える）
+ */
+function coopOrgOf_(v, max) { return Math.max(1, Math.min(Math.max(1, max), Math.round(Number(v) || 1))); }
 
 /*
  * 続きから（prior）。引き継ぐ前の回の正答を、1本の時間軸に並べ直して新しいセッションに持たせる。
@@ -1657,7 +1669,7 @@ function coopContBase_(cont, prev) {
     n: Math.max(1, n - (src.skip || 0)), lim: Number(src.lim) || Number(config_().limit_sec) || 60,
     pace: Number(src.pace) || FLOOR_PRIOR_.perMin, total: tot }]);
   return { cls: String(src.cls), pat: String(src.pat), seed: Number(src.seed) || 1,
-           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6,
+           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1,
            keys: keys, prior: { dur: pin.dur + dur, ev: all, segs: segs } };
 }
 /** 引き継いだ正答の児童 index を、新しいセッションの名簿の並びへ付け替える */
@@ -1700,6 +1712,8 @@ function coopStart_(o, pace) {
   var mode = base ? base.mode : (((o && o.mode) || old.mode) === 'group' ? 'group' : 'child');
   var gn = coopGnOf_(base ? base.gn : ((o && o.gn) || old.gn || 6));
   var seed = base ? base.seed : Math.floor(Math.random() * 2147483647);
+  // 起点の数：続きからは前の回のまま（変えると引き継いだ部分の形が変わる）。名簿・組数が減っていれば上限で切る
+  var org = coopOrgOf_(base ? base.org : ((o && o.org) || old.org || 1), mode === 'group' ? gn : kids.length);
   var kidsMap = {}, order = [], gi = [];
   // 組は「開始前に作った予定」を最優先にする。無ければ前回と同じ顔ぶれなら前の編成、それも無ければ番号順の等分
   var plan = mode === 'group' ? coopPlanGet_(cls, gn, kids) : null;
@@ -1720,10 +1734,10 @@ function coopStart_(o, pace) {
             kids: kidsMap, order: order,
             names: kids.map(function (k) { return k.name; }),
             nos: kids.map(function (k) { return k.no; }),
-            gi: gi, skip: coopSkip_(cls), prior: prior,
+            gi: gi, skip: coopSkip_(cls), prior: prior, org: org,
             pace: Number(pace) || old.pace || FLOOR_PRIOR_.perMin };   // 画面が「1正答の枚数」を自動で決めるのに使う
   sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
-    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior)]);
+    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior), org]);
   cache_().put('coop_ev_' + id, '[]', TTL.session);
   cache_().put('coop_fl_' + id, '0', TTL.session);
   if (prev) {
@@ -1814,7 +1828,7 @@ function coopSave(name) {
   if (!s) return { ok: false, msg: '保存する協力プレイがありません。' };
   coopFlush_(s, false);
   // pace・lim・skip は再生で「1正答の枚数」を開始時と同じに自動計算するため（無い古い保存は既定値で計算する）
-  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn,
+  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1,
                   start: s.start, end: s.end, total: s.total,
                   pace: s.pace || FLOOR_PRIOR_.perMin, minutes: s.minutes, lim: Number(config_().limit_sec) || 60, skip: s.skip || 0,
                   names: s.names, nos: s.nos, gi: s.gi, ev: coopEvents_(s),
@@ -1881,7 +1895,7 @@ function coopForChild_(c, lim) {
   var i = s.kids[c.email];
   if (i === undefined) return { active: false };
   var r = { active: true, i: i, n: s.order.length, seed: s.seed, pat: s.pat, mode: s.mode };
-  if (lim) r.counts = Date.now() + Number(lim) * 1000 <= s.end + COOP_SLACK_MS;
+  if (lim) r.counts = Date.now() + Number(lim) * 1000 <= s.end + COOP_SLACK_MS && Date.now() >= s.start - COOP_EARLY_MS;
   if (s.mode === 'group') { r.g = s.gi[i]; r.gn = s.gn; }
   return r;
 }
@@ -1920,7 +1934,7 @@ function coopReview() {
   var ev = ((s.prior && s.prior.ev) || []).map(function (e) { return out(e, 0); })
     .concat(coopEvents_(s).map(function (e) { return out(e, pri); }));
   var total = ev.reduce(function (a, e) { return a + e[2]; }, 0);
-  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, n: n, me: me,
+  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, n: n, me: me,
            g: group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[me]) || 0)) : null,
            ev: ev, total: total, pri: pri, segs: (s.prior && s.prior.segs) || [],
            minutes: s.minutes, lim: Number(config_().limit_sec) || 60, pace: s.pace || FLOOR_PRIOR_.perMin, skip: s.skip || 0,
@@ -1930,7 +1944,7 @@ function coopReview() {
 function coopLastDone_(ck) {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 14).getValues(), now = Date.now();
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 15).getValues(), now = Date.now();
   for (var i = v.length - 1; i >= 0; i--) {
     if (String(v[i][1]) !== ck) continue;
     var end = v[i][10] instanceof Date ? v[i][10].getTime() : new Date(v[i][10]).getTime();
@@ -3018,7 +3032,7 @@ function ensureSheets_() {
   defs[SHEETS.WCHILD] = [];
   defs[SHEETS.WCLASS] = [];
   defs[SHEETS.COOP] = ['id', 'class', 'pattern', 'seed', 'mode', 'gn', 'groups',
-                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior'];
+                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins'];
   defs[SHEETS.COOPLOG] = ['session', 't', 'email', 'correct', 'mode'];
   defs[SHEETS.COOPSAVE] = ['save_id', 'name', 'saved', 'session', 'payload'];
 
