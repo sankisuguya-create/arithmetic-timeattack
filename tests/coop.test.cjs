@@ -513,4 +513,72 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.equal(f(Object.assign({ used: 40000 }, base)), 0.5);
 }
 
+/* ---- 児童の見返し（終わった回の図形。自分の色を目立たせるだけ） ---- */
+{
+  const asKid = m => { ctx.Session = { getActiveUser: () => ({ getEmail: () => m }), getScriptTimeZone: () => 'Asia/Tokyo' }; };
+  const live0 = ctx.coopLive_(); if (live0 && live0.status === 'run') ctx.coopStop();
+  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 5, mode: 'child' }).ok);
+  const r1 = ctx.coopLive_(); r1.start -= 60000; ctx.coopPutLive_(r1);
+  ['k01', 'k02', 'k03', 'k05'].forEach((k, i) => ctx.coopNote_(ctx.child_(k + '@kyoiku.edu.nishi.or.jp'), 1, 10 + i));
+  // 遊んでいる間は見返せない
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  assert.ok(!ctx.coopReview().ok);
+  assert.ok(!ctx.coopPeek(60).review);
+  ctx.Session = teacherSession; ctx.coopStop();
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  const pk = ctx.coopPeek(60);
+  assert.equal(pk.active, false); assert.equal(pk.review, true, '終わったら入口を出す');
+  const v = ctx.coopReview();
+  assert.ok(v.ok, JSON.stringify(v));
+  assert.equal(v.me, 1); assert.equal(v.n, 8); assert.equal(v.total, 46); assert.equal(v.ev.length, 4);
+  const txt = JSON.stringify(v);
+  assert.ok(!txt.includes('@') && !txt.includes('児童') && !('names' in v) && !('nos' in v) && !('gi' in v), '名前・番号・メール・組の一覧を入れない');
+  assert.equal(v.ev.filter(e => e[1] === 1).length, 1, '自分の分は自分の index のまま');
+  assert.equal(v.ev.find(e => e[1] === 1)[2], 11);
+  // 他の児童の index は呼ぶたびに並べ替える（自分以外の誰の分かは分からない）
+  const seen = new Set();
+  for (let t = 0; t < 30; t++) seen.add(JSON.stringify(ctx.coopReview().ev.filter(e => e[1] !== 1).map(e => e[1])));
+  assert.ok(seen.size > 1, '並べ替えが毎回違う');
+  ctx.coopReview().ev.forEach(e => assert.ok(e[1] >= 0 && e[1] < 8));
+  // 別のクラスの児童には出さない
+  asKid('other@kyoiku.edu.nishi.or.jp');
+  assert.ok(!ctx.coopReview().ok); assert.ok(!ctx.coopPeek(60).review);
+  // グループの回：各正答に組番号だけを付ける。自分の組を返す
+  ctx.Session = teacherSession;
+  ctx.coopSavePlan('3-1', 3, [0, 1, 2, 0, 1, 2, 0, 1]);
+  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 5, mode: 'group', gn: 3 }).ok);
+  const r2 = ctx.coopLive_(); r2.start -= 60000; ctx.coopPutLive_(r2);
+  ctx.coopNote_(ctx.child_('k02@kyoiku.edu.nishi.or.jp'), 1, 7);
+  ctx.coopNote_(ctx.child_('k03@kyoiku.edu.nishi.or.jp'), 1, 5);
+  ctx.coopStop();
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  const vg = ctx.coopReview();
+  assert.equal(vg.mode, 'group'); assert.equal(vg.g, 1);
+  assert.equal(JSON.stringify(vg.ev.map(e => e[3]).sort()), '[1,2]');
+  // キャッシュに別のクラスの回があっても、自分のクラスの最後に終わった回をシートから探す
+  ctx.Session = teacherSession;
+  const keepLive = store.coop_live;
+  const fake = JSON.parse(keepLive); fake.cls = '4-2'; store.coop_live = JSON.stringify(fake);
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  const vs = ctx.coopReview();
+  assert.ok(vs.ok, JSON.stringify(vs)); assert.equal(vs.mode, 'group');
+  store.coop_live = keepLive;
+  ctx.Session = teacherSession;
+  // 画面：数値と枚数の式は教師画面の写し。できる操作は「とじる」と「自分の色を目立たせる」だけ
+  const ui2 = read('common/index.html');
+  const num = (src, k) => Number((src.match(new RegExp('\\b' + k + '\\s*[=:]\\s*([0-9.]+)')) || [])[1]);
+  ['CVW', 'CSMIN', 'CZOOM_STEP', 'CCOVER', 'CAIM', 'CPART', 'CGAP'].forEach(k => {
+    assert.ok(num(tui, k) > 0 && num(tui, k) === num(ui2.slice(ui2.indexOf('var CRV')), k), k + ' が教師画面と同じ');
+  });
+  const fT = vm.runInNewContext(tui.match(/var CAIM = [^\n]*\n/)[0] + tui.match(/function coopAutoRateOf\(p\)\{[\s\S]*?\n\}/)[0] + ';coopAutoRateOf');
+  const fC = vm.runInNewContext(ui2.match(/var CRV = [^\n]*\n/)[0] + ui2.match(/function coopRvAutoRate\(p\)\{[\s\S]*?\n\}/)[0] + ';coopRvAutoRate');
+  [{ tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20 }, { tfin: 21465, n: 25, minutes: 7, lim: 45, pace: 14, used: 9000 }, { tfin: 10, n: 3, minutes: 1, lim: 60, pace: 20 }]
+    .forEach(p => assert.equal(fC(p), fT(p)));
+  const rv = ui2.slice(ui2.indexOf('<div id="coopRv" hidden>'), ui2.indexOf('</div>\n<!-- 協力モード中だけ出る'));
+  assert.equal((rv.match(/<button/g) || []).length, 2, 'ボタンは2つだけ');
+  assert.ok(!/coopRvCv'\)\.addEventListener|coopRvCv\.on/.test(ui2), '図形を押して他の人の色を選ぶ手段は無い');
+  // 教師画面：一気に組み直す時も引いた後で数え直す
+  assert.ok(/if\(instant\)\{ CP\.S = ns; CP\.RENDER_S = ns; coopRecount\(\); return; \}/.test(tui));
+}
+
 console.log('coop.test.cjs: all assertions passed.');

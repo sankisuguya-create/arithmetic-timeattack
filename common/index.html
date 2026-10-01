@@ -136,6 +136,22 @@ body.coopOn[data-scr="result"] #coop{display:flex;color:var(--ink);background:rg
 body.coopOn[data-scr="start"] #coop .b .dot,
 body.coopOn[data-scr="result"] #coop .b .dot{border-color:rgba(16,23,40,.35)}
 #coop.off .emblem{opacity:.35;filter:grayscale(1)}
+/* 終わった協力プレイの図形を見返す（メニューの右下の入口と、全画面の見返し） */
+#coopRvBtn{position:absolute;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:3;
+  font:inherit;font-weight:800;font-size:1rem;padding:.75rem 1.1rem;min-height:56px;border-radius:14px;
+  border:2px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
+#coopRv{position:fixed;inset:0;z-index:30;background:#F2F1EC}
+#coopRv[hidden]{display:none}
+#coopRvCv{position:absolute;inset:0;width:100%;height:100%}
+#coopRv .bar{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:10px;align-items:center;z-index:2;pointer-events:none}
+#coopRv .bar > *{pointer-events:auto}
+#coopRv button{font:inherit;font-weight:800;font-size:1.05rem;min-height:56px;padding:.6rem 1.2rem;border-radius:14px;
+  border:2px solid var(--ink);background:rgba(255,255,255,.95);color:var(--ink);cursor:pointer}
+#coopRv button.on{background:var(--ink);color:#fff}
+#coopRv .tot{margin-left:auto;background:rgba(255,255,255,.95);border:2px solid var(--line,#DFDFD8);border-radius:14px;padding:.5rem 1rem;font-weight:800}
+#coopRv .tot small{font-size:.8rem;color:#6B7280;margin-right:.3rem}
+#coopRv .msg{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);font-weight:800;font-size:1.2rem;z-index:2;text-align:center}
+#coopRv .me{display:inline-block;width:1em;height:1em;border-radius:50%;vertical-align:-.12em;margin-right:.35em;border:1.5px solid rgba(16,23,40,.35)}
 #coop.off .b .dot{display:none}
 #play.coopOn .hud,#play.coopOn.dial-mode .hud{padding-left:160px}
 .stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;padding-bottom:2vh}
@@ -370,6 +386,8 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   <!-- 教師のアカウントで開いた時だけ出る。児童のアカウントには描かれない -->
   <div class="tline" id="teacherLink" style="display:none"></div>
   <!-- 床の広がりを見返す。押すと無地に戻り、押すたびに今の育ちの 1/6 ずつ広がる（記録には触れない） -->
+  <!-- 終わった協力プレイの図形を見返す入口。自分のクラスの終わった回があるときだけ出る -->
+  <button type="button" id="coopRvBtn" hidden>きょうりょくの もよう</button>
   <button type="button" id="floorReplay" aria-label="もようの ひろがりを 見る" title="もようの ひろがりを 見る" hidden>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5 16.5 10 6 16.5z" fill="currentColor"/></svg>
   </button>
@@ -443,6 +461,16 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   <div id="countdown"></div>
 </section>
 
+<!-- 終わった協力プレイの見返し。できるのは自分（自分の組）の色を目立たせることだけ（他の人の色は選べない） -->
+<div id="coopRv" hidden>
+  <canvas id="coopRvCv" aria-label="きょうりょくの もよう"></canvas>
+  <div class="bar">
+    <button type="button" id="coopRvClose">とじる</button>
+    <button type="button" id="coopRvMine"><span class="me" id="coopRvDot"></span><span id="coopRvMineT">じぶんの いろを 目立たせる</span></button>
+    <span class="tot" id="coopRvTot"></span>
+  </div>
+  <div class="msg" id="coopRvMsg"></div>
+</div>
 <!-- 協力モード中だけ出る自分の色の印（Core.gs の coop が active のとき）。
      画面のどこに居ても出せるよう、どの section にも入れず fixed で重ねる -->
 <div id="coop">
@@ -679,13 +707,134 @@ function coopPeekApply_(r){
   var c = r || {};
   if(c.active === COOP.active && c.seed === COOP.seed && c.mode === COOP.mode &&
      c.i === COOP.i && c.g === COOP.g && c.gn === COOP.gn &&
-     c.pat === COOP.pat && c.counts === COOP.counts) return;
+     c.pat === COOP.pat && c.counts === COOP.counts && c.review === COOP.review && c.rid === COOP.rid) return;
   COOP = c;
   coopBadge_(practice);               // れんしゅう中は出さない（れんしゅうは数えない）
 }
 
+/* ===== 終わった協力プレイの見返し =====
+ * 教師画面（teacher.html）の協力の図形と同じ規則で、最後の形を1枚だけ描く（動きや再生はしない）。
+ * 下の数値と coopRvAutoRate は teacher.html の CVW / CSMIN / CZOOM_STEP / CCOVER / CAIM / CPART / CGAP と coopAutoRateOf の写し。
+ * 直す時は両方を同じに直す（tests/coop.test.cjs が照合する）。
+ * できる操作は「自分（自分の組）の色を目立たせる」だけ。サーバー（coopReview）は他の児童の index を毎回並べ替えて返すので、
+ * 画面のどの色が誰かは分からない。名前・番号も届かない。 */
+var CRV = { CVW: 3.6, CSMIN: 0.32, CZOOM_STEP: 0.72, CCOVER: 0.9, CAIM: 0.85, CPART: 0.9, CGAP: 25 };
+var RV = { d: null, hi: false, tiles: null, W: 0, H: 0 };
+function coopRvAutoRate(p){
+  var plays = p.minutes * 60 / (p.lim + CRV.CGAP);
+  var expect = Math.max(1, p.n) * CRV.CPART * plays * p.pace * p.lim / 60;
+  return Math.max(0.5, Math.round((CRV.CAIM * p.tfin - (p.used || 0)) / expect * 10) / 10);
+}
+function coopRvBtn_(){
+  var b = $('coopRvBtn'); if(!b) return;
+  b.hidden = !(COOP && COOP.review && !COOP.active);
+}
+function coopRvOpen(){
+  $('coopRv').hidden = false; RV.hi = false; RV.d = null; $('coopRvMine').classList.remove('on');
+  $('coopRvMsg').textContent = 'よみこみ中…'; $('coopRvTot').textContent = '';
+  $('coopRvMine').style.visibility = 'hidden';
+  var ctx = $('coopRvCv').getContext('2d'); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0, 0, $('coopRvCv').width, $('coopRvCv').height);
+  google.script.run.withSuccessHandler(function(d){
+    if($('coopRv').hidden) return;
+    if(!d || !d.ok){ $('coopRvMsg').textContent = (d && d.msg) || 'よみこめませんでした'; return; }
+    RV.d = d; RV.tiles = null;
+    $('coopRvMsg').textContent = '';
+    var mine = d.mode === 'group' ? coopPalette_(d.gn || 1, d.seed * 31 + 11)[d.g || 0] : coopPalette_(d.n || 1, d.seed)[d.me || 0];
+    $('coopRvDot').style.background = 'rgb(' + mine + ')';
+    coopRvMineLabel();
+    $('coopRvMine').style.visibility = '';
+    $('coopRvTot').innerHTML = '<small>みんなで</small>' + d.total + ' もん';
+    coopRvDraw();
+  }).withFailureHandler(function(){ $('coopRvMsg').textContent = 'よみこめませんでした'; }).coopReview();
+}
+function coopRvClose(){ $('coopRv').hidden = true; RV.d = null; RV.tiles = null; }
+function coopRvDraw(){
+  var d = RV.d, cv = $('coopRvCv'), GF = window.GrowingFigures;
+  if(!d || !GF || !GF.GENERATORS) return;
+  var W = cv.clientWidth, H = cv.clientHeight; if(!W || !H) return;
+  var DPR = Math.min(window.devicePixelRatio || 1, 2);
+  var EDGE = Math.max(15, Math.min(28, Math.sqrt(W * H) / 40)), OX = W * 0.14, OY = H * 0.78;
+  var VX = 1.1 * OX / CRV.CSMIN, VY = 1.1 * OY / CRV.CSMIN;
+  if(!RV.tiles || RV.W !== W || RV.H !== H){
+    var gen = GF.GENERATORS[d.pat] || GF.GENERATORS.penrose;
+    RV.tiles = gen.make({ W: W * CRV.CVW, H: H * CRV.CVW, ox: VX, oy: VY, edge: EDGE, margin: EDGE * 2 }).map(function(t){
+      var cx = 0, cy = 0; t.p.forEach(function(q){ cx += q[0]; cy += q[1]; }); cx /= t.p.length; cy /= t.p.length;
+      return { p: t.p, h: t.h, dir: t.dir, d: Math.hypot(cx - VX, cy - VY), cx: cx, cy: cy };
+    }).sort(function(a, b){ return a.d - b.d; });
+    RV.W = W; RV.H = H;
+  }
+  var tiles = RV.tiles, i;
+  function view(sc){ return { x0: VX - OX / sc, x1: VX + (W - OX) / sc, y0: VY - OY / sc, y1: VY + (H - OY) / sc }; }
+  function inV(t, vr){ return t.cx >= vr.x0 && t.cx <= vr.x1 && t.cy >= vr.y0 && t.cy <= vr.y1; }
+  // 完成に要る枚数（最小の縮尺の画面に入るタイルの9割まで）→ 回ごとの「1正答の枚数」（続きからの回は残りの余白で）
+  var vmin = view(CRV.CSMIN), idx = [];
+  for(i = 0; i < tiles.length; i++) if(inV(tiles[i], vmin)) idx.push(i);
+  var tfin = idx.length ? idx[Math.ceil(idx.length * CRV.CCOVER) - 1] + 1 : 0, used = 0, segr = [];
+  (d.segs || []).forEach(function(g){
+    var r = coopRvAutoRate({ tfin: tfin, n: g.n, minutes: g.minutes, lim: g.lim, pace: g.pace, used: used });
+    segr.push({ end: g.end, rate: r }); used += (Number(g.total) || 0) * r;
+  });
+  var rate = coopRvAutoRate({ tfin: tfin, n: (d.n || 1) - (d.skip || 0), minutes: d.minutes || 10, lim: d.lim || 60, pace: d.pace || 20, used: used });
+  function rateAt(t){ if(d.pri && t < d.pri){ for(var k = 0; k < segr.length; k++) if(t <= segr[k].end) return segr[k].rate; } return rate; }
+  // 正答を順に貼り、画面の9割が塗れたら1段ずつ引く（教師画面と同じ）
+  var S = 1, cur = 0, vt = 0, pv = 0, vr = view(S);
+  for(i = 0; i < tiles.length; i++){ tiles[i].k = -1; if(inV(tiles[i], vr)) vt++; }
+  d.ev.forEach(function(e){
+    var m = Math.round(e[2] * rateAt(e[0])), c0 = cur;
+    while(cur < tiles.length && m-- > 0){ tiles[cur].k = e[1]; tiles[cur].g = e[3]; cur++; }
+    for(var j = c0; j < cur; j++) if(inV(tiles[j], vr)) pv++;
+    if(vt && pv / vt >= CRV.CCOVER && S > CRV.CSMIN){
+      S = Math.max(CRV.CSMIN, S * CRV.CZOOM_STEP); vr = view(S); vt = 0; pv = 0;
+      for(var q = 0; q < tiles.length; q++) if(inV(tiles[q], vr)){ vt++; if(tiles[q].k >= 0) pv++; }
+    }
+  });
+  // 描く
+  cv.width = W * DPR; cv.height = H * DPR;
+  var ctx = cv.getContext('2d'), group = d.mode === 'group';
+  var pal = group ? coopPalette_(d.gn || 1, d.seed * 31 + 11) : coopPalette_(d.n || 1, d.seed);
+  var fams = pal.map(coopFam_);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
+  ctx.setTransform(DPR * S, 0, 0, DPR * S, DPR * (OX - VX * S), DPR * (OY - VY * S)); ctx.lineJoin = 'round';
+  function poly(P, t){ var p = t.p, j; P.moveTo(p[0][0], p[0][1]); for(j = 1; j < p.length; j++) P.lineTo(p[j][0], p[j][1]); P.closePath();
+    if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(j = 1; j < h.length; j++) P.lineTo(h[j][0], h[j][1]); P.closePath(); } }
+  var base = new Path2D(), bk = {};
+  for(i = 0; i < tiles.length; i++){
+    var t = tiles[i]; if(!inV(t, vr)) continue;
+    if(t.k < 0){ poly(base, t); continue; }
+    var key = group ? (t.g || 0) : t.k;
+    var mine = group ? (t.g === d.g) : (t.k === d.me);
+    var a = (!RV.hi || mine) ? 1 : 0.10;
+    var col = (fams[key] || fams[0])[t.dir] + '|' + a;
+    (bk[col] = bk[col] || new Path2D()); poly(bk[col], t);
+  }
+  ctx.strokeStyle = 'rgba(16,23,40,0.12)'; ctx.lineWidth = .8 / S; ctx.stroke(base);
+  for(var k2 in bk){ var p2 = k2.split('|');
+    ctx.fillStyle = 'rgba(' + p2[0] + ',' + p2[1] + ')'; ctx.fill(bk[k2]);
+    ctx.strokeStyle = 'rgba(16,23,40,' + (0.16 * Number(p2[1])) + ')'; ctx.lineWidth = .8 / S; ctx.stroke(bk[k2]);
+  }
+}
+$('coopRvBtn').addEventListener('click', coopRvOpen);
+$('coopRvClose').addEventListener('click', coopRvClose);
+function coopRvMineLabel(){
+  var d = RV.d || {};
+  $('coopRvMineT').textContent = RV.hi ? 'もとに もどす'
+    : (d.mode === 'group' ? 'じぶんの くみを 目立たせる' : 'じぶんの いろを 目立たせる');
+  $('coopRvMine').classList.toggle('on', RV.hi);
+}
+$('coopRvMine').addEventListener('click', function(){
+  RV.hi = !RV.hi; coopRvMineLabel(); coopRvDraw();
+});
+window.addEventListener('resize', function(){ if(!$('coopRv').hidden) coopRvDraw(); });
+// 見返している間は、数字キーでモードが始まらないようにする（Esc で閉じる）
+window.addEventListener('keydown', function(e){
+  if($('coopRv').hidden) return;
+  if(e.key === 'Escape') coopRvClose();
+  e.stopPropagation(); e.preventDefault();
+}, true);
+
 /* 自分の色のフラクタル球（っぽい平面図）：協力画面と同じ生成器を小さい円に描く */
 function coopBadge_(practice){
+  coopRvBtn_();
   var cv = $('coopEmblem');
   // れんしゅうは協力の正答に数えないので、印を出さない（出すと数えられていると思わせる）
   var on = !practice && !!(COOP.active && cv && window.GrowingFigures);

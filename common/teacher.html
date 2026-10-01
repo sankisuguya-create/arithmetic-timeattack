@@ -1397,7 +1397,9 @@ function coopMaybeZoom(instant){
 }
 function coopZoomTo(ns, instant){
   CP.pendingS = ns;
-  if(instant){ CP.S = ns; CP.RENDER_S = ns; return; }
+  // 一気に組み直す時（シーク・再生の読み込み・終わった回の表示）も、引いた後の画面で数え直す。
+  // 数え直さないと古い画面の数で「9割塗れた」と見なし続け、正答のたびに引いて、最後の形が小さくなりすぎる
+  if(instant){ CP.S = ns; CP.RENDER_S = ns; coopRecount(); return; }
   if(CP.zooming) coopCommitZoom();
   CP.zooming = true;
   var f = ns / CP.RENDER_S;

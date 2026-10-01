@@ -1265,7 +1265,10 @@ function coopLive_() {
 function coopFromSheet_() {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  var r = sh.getRange(sh.getLastRow(), 1, 1, 14).getValues()[0];
+  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 14).getValues()[0]);
+}
+/** coop シートの1行からセッションを組み立てる（児童の並びは今の名簿、合計は coop_log） */
+function coopFromRow_(r) {
   var id = String(r[0] || '');
   if (!id) return null;
   function ms(v) { return v instanceof Date ? v.getTime() : new Date(v).getTime(); }
@@ -1870,7 +1873,11 @@ function coopLoadRaw_(id) {
  */
 function coopForChild_(c, lim) {
   var s = coopLive_();
-  if (!s || s.status !== 'run' || Date.now() > s.end || !c || classKey_(c) !== s.cls) return { active: false };
+  if (!s || s.status !== 'run' || Date.now() > s.end || !c || classKey_(c) !== s.cls) {
+    // 終わった回を見返せるか（自分のクラスの回で、自分が名簿にいる）。キャッシュだけを見る軽い判定
+    var rv = !!(s && c && classKey_(c) === s.cls && s.kids[c.email] !== undefined && (s.status !== 'run' || Date.now() > s.end));
+    return rv ? { active: false, review: true, rid: s.id } : { active: false };
+  }
   var i = s.kids[c.email];
   if (i === undefined) return { active: false };
   var r = { active: true, i: i, n: s.order.length, seed: s.seed, pat: s.pat, mode: s.mode };
@@ -1885,6 +1892,57 @@ function coopForChild_(c, lim) {
  */
 function coopPeek(lim) {
   return coopForChild_(child_(email_()), Number(lim) || 0);
+}
+
+/*
+ * 児童が、終わった協力プレイの図形を見返す（児童画面の「きょうりょくの もよう」）。
+ * できるのは自分（グループなら自分の組）の色を目立たせることだけ。他の児童の色を選んで目立たせる手段は作らない
+ * （誰の正答が少ないかを児童どうしで見つけられないようにするため）。そのため応答にも次のものを入れない：
+ *  - 名前・番号・メール・組の一覧（gi）
+ *  - 他の児童の本当の index：自分以外は、呼ばれるたびに並べ替えた番号に付け替える（色はばらばらに入れ替わるが、誰の分かは分からない）
+ * 組の色づかいでは、各正答にその児童の組番号だけを付ける（組の合計はモニターにも出ている）。
+ */
+function coopReview() {
+  var c = child_(email_());
+  if (!c) return { ok: false, msg: 'めいぼに とうろくが ありません。' };
+  var ck = classKey_(c), s = coopLive_();
+  var running = s && s.status === 'run' && Date.now() <= s.end;
+  if (!s || s.cls !== ck || running) s = running && s.cls === ck ? null : coopLastDone_(ck);
+  if (!s) return { ok: false, msg: 'まだ 見られる 協力プレイが ありません。' };
+  var me = s.kids[c.email];
+  if (me === undefined) return { ok: false, msg: 'この 協力プレイには あなたの きろくが ありません。' };
+  var n = (s.names || []).length, others = [], i;
+  for (i = 0; i < n; i++) if (i !== me) others.push(i);
+  var perm = others.slice();
+  for (i = perm.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+  var map = {}; others.forEach(function (o, k) { map[o] = perm[k]; }); map[me] = me;
+  var group = s.mode === 'group', pri = (s.prior && s.prior.dur) || 0;
+  function out(e, shift) {
+    var o = [Number(e[0]) + shift, map[e[1]], Number(e[2]) || 0];
+    if (group) o.push(Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[e[1]]) || 0)));
+    return o;
+  }
+  var ev = ((s.prior && s.prior.ev) || []).map(function (e) { return out(e, 0); })
+    .concat(coopEvents_(s).map(function (e) { return out(e, pri); }));
+  var total = ev.reduce(function (a, e) { return a + e[2]; }, 0);
+  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, n: n, me: me,
+           g: group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[me]) || 0)) : null,
+           ev: ev, total: total, pri: pri, segs: (s.prior && s.prior.segs) || [],
+           minutes: s.minutes, lim: Number(config_().limit_sec) || 60, pace: s.pace || FLOOR_PRIOR_.perMin, skip: s.skip || 0,
+           end: s.end };
+}
+/** そのクラスの最後に終わった回（キャッシュに無い時は coop シートから） */
+function coopLastDone_(ck) {
+  var sh = ss_().getSheetByName(SHEETS.COOP);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 14).getValues(), now = Date.now();
+  for (var i = v.length - 1; i >= 0; i--) {
+    if (String(v[i][1]) !== ck) continue;
+    var end = v[i][10] instanceof Date ? v[i][10].getTime() : new Date(v[i][10]).getTime();
+    if (String(v[i][11]) === 'run' && now <= end) return null;   // そのクラスはいま遊んでいる
+    return coopFromRow_(v[i]);
+  }
+  return null;
 }
 
 /* ---- 集計 ---- */
