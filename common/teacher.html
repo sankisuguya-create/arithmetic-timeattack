@@ -200,6 +200,16 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 #coopPlan .gk{display:flex;flex-wrap:wrap;gap:.3rem}
 #coopPlan .pk{font:inherit;font-size:.82rem;font-weight:700;padding:.2rem .6rem;border-radius:999px;border:1.5px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
 #coopPlan .pk:hover{border-color:var(--ink)}
+/* 名前のチップはつまんで別の組へ運ぶ（タッチでも動くよう pointer イベントで組む。チップの上では画面を送らない）。
+   運ぶのが難しい時は、チップを押して選び、行き先の組を押してもよい */
+#coopPlan .pk{touch-action:none;user-select:none}
+#coopPlan .pk.sel{background:var(--ink);color:#fff;border-color:var(--ink)}
+#coopPlan .pk.lifted{opacity:.35}
+#coopPlan .grow.over{border-color:var(--ink);background:#F2F2EE}
+#coopPlan .grow.target{cursor:pointer}
+.pkGhost{position:fixed;z-index:60;pointer-events:none;font-size:.82rem;font-weight:700;padding:.2rem .6rem;border-radius:999px;
+  border:1.5px solid var(--ink);background:#fff;box-shadow:0 4px 14px rgba(16,23,40,.25);transform:translate(-50%,-60%)}
+#coopPlanDirty{font-size:.8rem;font-weight:700}
 /* 「止まっている・減った・数えられていない」に見える間だけ、理由をひらがなで出す（モニターを見る児童向け） */
 #coopNote{position:absolute;top:13vmin;left:50%;transform:translateX(-50%);z-index:2;display:none;
   background:rgba(255,255,255,.92);border:1.5px solid var(--line);border-radius:999px;
@@ -211,6 +221,14 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   font-size:clamp(1.2rem,7vmin,4rem);padding:1.4vmin 7vmin;border-radius:999px;box-shadow:0 2px 12px rgba(16,23,40,.25)}
 #coopStart.small{top:16vmin;left:auto;right:2.4vmin;transform:none;font-size:clamp(.8rem,2.4vmin,1.4rem);padding:.6vmin 2.6vmin}
 #coopStart.off{display:none}
+/* 続きから：終わった図形・保存データを映している間だけ、「新しく開始」の下に出す */
+#coopCont{position:absolute;top:calc(16vmin + 3.6vmin + 1.2rem);right:2.4vmin;z-index:3;
+  font-size:clamp(.8rem,2.4vmin,1.4rem);padding:.6vmin 2.6vmin;border-radius:999px;box-shadow:0 2px 12px rgba(16,23,40,.25);
+  background:#fff;color:var(--ink);border:2px solid var(--ink)}
+#coopCont.off{display:none}
+/* 操作欄の下の案内（状態・理由）は、出ても箱の高さが変わらないよう1行ずつ場所を取っておく（ステージの大きさを決め直さずに済む） */
+#coopStat{min-height:1.45rem}
+#coopGuide{min-height:1.25rem}
 /* カウントダウン：5→1→スタート。図形の上に大きく重ねる */
 #coopCount{position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;
   background:rgba(247,247,244,.6);font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;
@@ -355,9 +373,10 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     <select id="coopCls" style="display:none" aria-hidden="true"></select>
     <div class="bar" style="margin-top:0">
       <span class="lab">図形 <select id="coopPat"></select></span>
-      <span class="lab">時間 <select id="coopMin">
-        <option value="5">5分</option><option value="8">8分</option>
-        <option value="10" selected>10分</option><option value="15">15分</option></select></span>
+      <span class="lab">時間
+        <button id="coopMinDn" class="ghost" type="button" style="padding:.15rem .6rem" aria-label="1分へらす">−</button>
+        <input id="coopMin" type="number" min="1" max="30" step="1" value="10" style="width:3.6rem;text-align:center">分
+        <button id="coopMinUp" class="ghost" type="button" style="padding:.15rem .6rem" aria-label="1分ふやす">＋</button></span>
       <span class="lab">色づかい <select id="coopMode">
         <option value="child">児童ごと</option><option value="group">グループ</option></select></span>
       <span class="lab" id="coopGnRow" style="display:none">組数 <select id="coopGn"></select>
@@ -380,9 +399,15 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     <div id="coopPlan">
       <div class="bar" style="margin-top:0">
         <b style="font-size:.88rem" id="coopPlanTitle">開始前のグループ</b>
-        <span class="note" style="margin:0">名前を押すと次の組へ移ります（押すたびに保存）。次に開始した時、この組で始まります。</span>
+        <span class="note" style="margin:0">名前をつまんで別の組へ運びます（押して選び、行き先の組を押してもよい）。保存すると、次に開始した時この組で始まります。</span>
+      </div>
+      <div class="bar" style="margin-top:.4rem">
+        <button id="coopPlanSave" type="button" style="padding:.35rem 1rem" disabled>保存</button>
+        <span id="coopPlanDirty"></span>
         <span style="flex:1"></span>
         <button id="coopPlanReset" class="ghost" type="button" style="padding:.3rem .7rem">番号順に分け直す</button>
+        <a id="coopPlanSheet" class="ghost" target="_blank" rel="noopener" style="font-size:.84rem;font-weight:700;color:var(--ink);padding:.3rem .2rem">シートで編集↗</a>
+        <button id="coopPlanReload" class="ghost" type="button" style="padding:.3rem .7rem">シートから読み直す</button>
         <button id="coopPlanClose" class="ghost" type="button" style="padding:.3rem .7rem">閉じる</button>
       </div>
       <div id="coopPlanBody"></div>
@@ -405,6 +430,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
     </div>
     </div>
     <button id="coopStart" type="button">開始</button>
+    <button id="coopCont" type="button" class="off">続きから</button>
     <div id="coopCount"></div>
     <div id="coopHud">
       <div class="tag"><span class="t" id="coopClock">--:--</span></div>
@@ -1183,6 +1209,7 @@ function renderAnalysis(){
  * （セーブデータ＝再生データ）。色の割り当ては児童画面（index.html）と同じ決まった手順。
  */
 var CP = { sess: null, loaded: false, ev: [], cursor: 0, total: 0,
+  PRI: 0, SEGR: [], saveId: '',   // 続きから：前の回までの長さ(ms)・前の回ごとの枚数・続ける保存データ
   tiles: [], W: 0, H: 0, DPR: 1, EDGE: 24, OX: 0, OY: 0, VX: 0, VY: 0, S: 1, RENDER_S: 1,
   viewTotal: 0, paintedInView: 0, sel: -1, EDIT: false,
   MODE: 'child', GN: 6, gi: [], names: [], nos: [],
@@ -1261,14 +1288,30 @@ function coopFinalTiles(){
 function coopAutoRateOf(p){
   var plays = p.minutes * 60 / (p.lim + CGAP);
   var expect = Math.max(1, p.n) * CPART * plays * p.pace * p.lim / 60;
-  return Math.max(0.5, Math.round(CAIM * p.tfin / expect * 10) / 10);
+  // used：続きからの回で、前の回までに使った枚数。残りの余白で決め直す（前の回の枚数は前の回のまま）
+  return Math.max(0.5, Math.round((CAIM * p.tfin - (p.used || 0)) / expect * 10) / 10);
+}
+/* 時刻 t（続きからの回は前の回までを含む通しの時刻）の正答に使う「1正答の枚数」 */
+function coopRateAt(t){
+  if(CP.PRI && t < CP.PRI){
+    for(var i = 0; i < CP.SEGR.length; i++) if(t <= CP.SEGR[i].end) return CP.SEGR[i].rate;
+  }
+  return CP.RATE;
 }
 function coopRateUpdate(){
   var s = CP.sess, inp = document.getElementById('coopRate');
+  // 続きからの回：前の回ごとに、その回の条件で枚数を決め直す（その回を遊んだ時と同じ順で）。続きの回は残りの余白で決める
+  CP.SEGR = [];
+  var used = 0;
+  ((s && s.prior && s.prior.segs) || []).forEach(function(g){
+    var r = CP.RATE_MANUAL || (CP.TFIN ? coopAutoRateOf({ tfin: CP.TFIN, n: g.n, minutes: g.minutes, lim: g.lim, pace: g.pace, used: used }) : CP.RATE);
+    CP.SEGR.push({ end: g.end, rate: r });
+    used += (Number(g.total) || 0) * r;
+  });
   if(CP.RATE_MANUAL){ CP.RATE = CP.RATE_MANUAL; }
   else if(s && CP.TFIN){
     CP.RATE = coopAutoRateOf({ tfin: CP.TFIN, n: (s.names || []).length - (s.skip || 0),
-      minutes: s.minutes || Math.max(1, (s.end - s.start) / 60000), lim: s.lim || 60, pace: s.pace || 20 });
+      minutes: s.minutes || Math.max(1, (s.end - s.start) / 60000), lim: s.lim || 60, pace: s.pace || 20, used: used });
   }
   if(document.activeElement !== inp) inp.value = (CP.RATE_MANUAL || s) ? CP.RATE : '';   // 開始前の自動は「自動」とだけ出す
   document.getElementById('coopRateTag').style.display = CP.RATE_MANUAL ? 'none' : '';
@@ -1338,7 +1381,7 @@ function coopCommitZoom(){
 
 /* ---- イベントの適用（ライブ受信でもシークの再構築でも同じ手続き） ---- */
 function coopApply(e){                 // e = [t_ms, 児童index, 正答数]
-  var n = Math.round(e[2] * CP.RATE), c0 = CP.cursor;
+  var n = Math.round(e[2] * coopRateAt(e[0])), c0 = CP.cursor;
   while(CP.cursor < CP.tiles.length && n-- > 0){ CP.tiles[CP.cursor++].s = e[1]; }
   var vr = coopView(CP.S);
   for(var j = c0; j < CP.cursor; j++) if(coopInView(CP.tiles[j], vr)) CP.paintedInView++;
@@ -1373,7 +1416,8 @@ function coopRecompute(upto){          // シーク用：先頭から状態を�
 /* ---- 再生（決定的なイベント列。倍速・シーク自在） ---- */
 function coopFmt(ms){ var t = Math.max(0, ms), m = Math.floor(t / 60000), s = Math.floor(t % 60000 / 1000);
   return m + ':' + ('0' + s).slice(-2); }
-function coopDur(){ return CP.sess ? Math.max(0, CP.sess.end - CP.sess.start) : 600000; }
+/* 通しの長さ。続きからの回は前の回までの長さ（CP.PRI）を足す。時計の残りはこの回の終わりで出す（coopLiveRemain） */
+function coopDur(){ return CP.sess ? Math.max(0, CP.sess.end - CP.sess.start) + (CP.PRI || 0) : 600000; }
 function coopFireDue(){
   while(CP.evI < CP.ev.length && CP.ev[CP.evI][0] <= CP.simT){
     var c0 = coopApply(CP.ev[CP.evI]); CP.evI++;
@@ -1428,7 +1472,10 @@ function coopRoster(){
 
 /* ---- セッションの反映（サーバーの応答・セーブデータ共通） ---- */
 function coopUseSession(s, evAll){
-  CP.sess = s; CP.ev = evAll || []; CP.loaded = false;
+  // 続きからの回：前の回までの正答を先頭に置き、この回の正答は前の回までの長さだけ後ろへずらして1本の時間軸にする
+  CP.PRI = (s.prior && s.prior.dur) || 0;
+  var shifted = (evAll || []).map(function(e){ return [e[0] + CP.PRI, e[1], e[2], e[3]]; });
+  CP.sess = s; CP.ev = ((s.prior && s.prior.ev) || []).concat(shifted); CP.loaded = false; CP.saveId = '';
   CP.names = s.names || []; CP.nos = s.nos || []; CP.gi = s.gi || [];
   CP.MODE = s.mode || 'child'; CP.GN = s.gn || 6;
   CP.COLORS = coopPalette(CP.names.length || 1, s.seed || 1); CP.FAMS = CP.COLORS.map(coopFam);
@@ -1440,7 +1487,7 @@ function coopUseSession(s, evAll){
   document.getElementById('coopClock').classList.remove('end');
   document.getElementById('coopReplay').classList.toggle('on', s.status !== 'run');
   document.getElementById('coopSeek').max = coopDur();
-  CP.simT = s.status === 'run' ? 0 : coopDur();
+  CP.simT = s.status === 'run' ? CP.PRI : coopDur();
   CP.endSeen = s.status !== 'run';
   coopShowT();
   var running = s.status === 'run';
@@ -1448,7 +1495,7 @@ function coopUseSession(s, evAll){
   document.getElementById('coopReset').disabled = !CP.sess;
   document.getElementById('coopSave').disabled = false;
   document.getElementById('coopGedit').style.display = CP.MODE === 'group' && s.id !== 'save' ? '' : 'none';
-  ['coopCls', 'coopPat', 'coopMin', 'coopMode', 'coopGn'].forEach(function(id){
+  ['coopCls', 'coopPat', 'coopMin', 'coopMinDn', 'coopMinUp', 'coopMode', 'coopGn'].forEach(function(id){
     document.getElementById(id).disabled = running;
   });
   // 映している回のクラスをボタンにも出す（別の端末で始めた回を開いた時、選択が食い違わないように）
@@ -1470,7 +1517,8 @@ function coopMerge(r, giVer){          // 進行中セッションの差分を�
   // 締め切り後の送り直しは、再生で巻き戻している間にも届く。そのときは列に足すだけにして、
   // 見ている途中の形に割り込ませない（▶で最後まで進めれば入る）
   var live = !CP.playing && CP.evI === CP.ev.length;
-  (r.ev || []).forEach(function(e){
+  (r.ev || []).forEach(function(e0){
+    var e = [e0[0] + (CP.PRI || 0), e0[1], e0[2], e0[3]];   // 続きからの回は通しの時刻へ
     CP.ev.push(e);
     if(!live) return;
     var c0 = coopApply(e); CP.evI++;
@@ -1484,7 +1532,7 @@ function coopMerge(r, giVer){          // 進行中セッションの差分を�
     document.getElementById('coopReplay').classList.add('on');
     document.getElementById('coopStop').disabled = true;
     if(r.ended && r.status === 'run') document.getElementById('coopClock').classList.add('end');
-    ['coopCls', 'coopPat', 'coopMin', 'coopMode', 'coopGn'].forEach(function(id){
+    ['coopCls', 'coopPat', 'coopMin', 'coopMinDn', 'coopMinUp', 'coopMode', 'coopGn'].forEach(function(id){
       document.getElementById(id).disabled = false; });
     coopClsRender(); planBtnShow();          // 終わったらクラスを選び直せる・開始前の組分けを開ける
   }
@@ -1517,7 +1565,7 @@ function coopPoll(){
         if(r2 && r2.ok && r2.status !== 'none'){
           coopUseSession(r2, r2.ev || []);
           CP.off = (r2.now || Date.now()) - Date.now();
-          CP.simT = Math.max(0, Math.min(coopDur(), (r2.now || Date.now()) - r2.start));
+          CP.simT = Math.max(0, Math.min(coopDur(), (r2.now || Date.now()) - r2.start + CP.PRI));
           if(r2.ended) document.getElementById('coopClock').classList.add('end');
         }
       }).withFailureHandler(function(){ CP.polling = false; }).coopState(0);
@@ -1612,7 +1660,7 @@ function coopPreview(){
   if(CP.sess) return;
   document.getElementById('coopStage').style.display = '';   // 先に出さないと幅が取れずタイルが作れない
   coopFit_();
-  CP.names = []; CP.nos = []; CP.gi = []; CP.ev = []; CP.evI = 0;
+  CP.names = []; CP.nos = []; CP.gi = []; CP.ev = []; CP.evI = 0; CP.PRI = 0; CP.SEGR = [];
   coopRoster(); coopRelayout(); coopGoShow();
   document.getElementById('coopScore').textContent = 0;
 }
@@ -1650,24 +1698,49 @@ document.getElementById('coopClsPick').onclick = function(e){
 
 /* ---- 操作 ---- */
 document.getElementById('coopPat').onchange = coopPreview;   // 開始前だけ下見を描き直す（進行中は選べない）
+/* 時間：1分刻み（1〜30分）。数を打っても、−／＋で1分ずつ動かしてもよい。最後に選んだ時間は端末ごとに覚える */
+function coopMinVal(){
+  var v = Math.round(Number(document.getElementById('coopMin').value));
+  return Math.max(1, Math.min(30, v || 10));
+}
+function coopMinSet(v){
+  var el = document.getElementById('coopMin');
+  el.value = Math.max(1, Math.min(30, Math.round(v) || 10));
+  try { localStorage.setItem('coopMin', el.value); } catch(e){}
+}
+document.getElementById('coopMinDn').onclick = function(){ coopMinSet(coopMinVal() - 1); };
+document.getElementById('coopMinUp').onclick = function(){ coopMinSet(coopMinVal() + 1); };
+document.getElementById('coopMin').addEventListener('change', function(){ coopMinSet(coopMinVal()); });
+(function(){ var m = null; try { m = localStorage.getItem('coopMin'); } catch(e){} if(m) document.getElementById('coopMin').value = Math.max(1, Math.min(30, Number(m) || 10)); })();
 document.getElementById('coopMode').onchange = function(){
   document.getElementById('coopGnRow').style.display = this.value === 'group' ? '' : 'none';
   if(this.value !== 'group') planClose(); else planBtnShow();
 };
 
 /* ---- 開始前の組分け ----
- * 選んでいるクラス×組数の予定をサーバーから読み、名前を押すごとに次の組へ移して保存する。
+ * 選んでいるクラス×組数の予定を、単元のスプレッドシートの「組分け」シートから読む。名前のチップを別の組へ運び、
+ * 「保存」でシートへ書く（保存するまではこの画面の中だけの変更）。シートを直接直した時は「シートから読み直す」。
  * ステージ（進行中・保存データの表示）とは別の欄にしてある。ステージは進行中のセッションを3秒ごとに映し直すので、
  * そこに開始前の名簿を出すと、終わった回の表示と取り合いになる */
-var PLAN = { open: false, cls: '', gn: 0, gi: [], names: [], nos: [], ver: 0 };
+var PLAN = { open: false, cls: '', gn: 0, gi: [], names: [], nos: [], ver: 0, dirty: false, sel: -1 };
 function planRunning(){ return !!(CP.sess && CP.sess.status === 'run'); }
 function planBtnShow(){
   var ok = document.getElementById('coopMode').value === 'group' && !planRunning();
   document.getElementById('coopPlanBtn').style.display = ok ? '' : 'none';
-  if(!ok && PLAN.open) planClose();
+  if(!ok && PLAN.open) planClose(true);
 }
-function planClose(){
-  PLAN.open = false;
+function planSetDirty(v){
+  PLAN.dirty = v;
+  document.getElementById('coopPlanSave').disabled = !v;
+  document.getElementById('coopPlanDirty').textContent = v ? '保存していない変更があります' : '';
+}
+/* 保存していない変更を捨ててよいか。捨てない時は false */
+function planCanDiscard(){
+  return !PLAN.dirty || confirm('保存していない組分けの変更があります。保存せずに進みますか？');
+}
+function planClose(force){
+  if(!force && !planCanDiscard()) return;
+  PLAN.open = false; PLAN.sel = -1; planSetDirty(false);
   document.getElementById('coopPlan').classList.remove('on');
   document.getElementById('pageCoop').classList.remove('planning');
   coopFit_(); coopRelayout();
@@ -1679,7 +1752,11 @@ function planLoad(){
   google.script.run.withSuccessHandler(function(r){
     if(ver !== PLAN.ver) return;                       // 読み込み中にクラスや組数を変えた
     if(!r || !r.ok){ document.getElementById('coopPlanBody').innerHTML = '<div class="note">' + esc((r && r.msg) || '読み込めません') + '</div>'; return; }
-    PLAN.cls = r.cls; PLAN.gn = r.gn; PLAN.gi = r.gi; PLAN.names = r.names; PLAN.nos = r.nos;
+    PLAN.cls = r.cls; PLAN.gn = r.gn; PLAN.gi = r.gi.slice(); PLAN.names = r.names; PLAN.nos = r.nos; PLAN.sel = -1;
+    var a = document.getElementById('coopPlanSheet');
+    if(r.sheetUrl){ a.href = r.sheetUrl; a.style.display = ''; } else a.style.display = 'none';
+    planSetDirty(false);
+    setStat('coopStat', r.saved ? '' : 'この組数の組分けはまだ保存されていません（番号順の等分を表示しています）。');
     planRender();
   }).withFailureHandler(function(e){
     document.getElementById('coopPlanBody').innerHTML = '<div class="note">読み込めません：' + esc(e.message || e) + '</div>';
@@ -1693,12 +1770,18 @@ function planRender(){
   for(var g = 0; g < PLAN.gn; g++){
     var ks = [];
     PLAN.gi.forEach(function(x, i){ if(x === g) ks.push(i); });
-    rows.push('<div class="grow"><div class="gl">' + 'ABCDEFGHIJ'[g] + '組<small>' + ks.length + '人</small></div><div class="gk">' +
-      ks.map(function(i){ return '<button type="button" class="pk" data-pi="' + i + '">' + (PLAN.nos[i] || i + 1) + ' ' + esc(PLAN.names[i] || '') + '</button>'; }).join('') +
+    rows.push('<div class="grow' + (PLAN.sel >= 0 ? ' target' : '') + '" data-g="' + g + '"><div class="gl">' + COOP_LETTERS[g] + '組<small>' + ks.length + '人</small></div><div class="gk">' +
+      ks.map(function(i){ return '<button type="button" class="pk' + (i === PLAN.sel ? ' sel' : '') + '" data-pi="' + i + '">' + (PLAN.nos[i] || i + 1) + ' ' + esc(PLAN.names[i] || '') + '</button>'; }).join('') +
       '</div></div>');
   }
   document.getElementById('coopPlanBody').innerHTML = rows.join('');
   planFit();
+}
+var COOP_LETTERS = 'ABCDEFGHIJ';
+function planMove(i, g){
+  if(!(g >= 0 && g < PLAN.gn) || PLAN.gi[i] === g){ PLAN.sel = -1; planRender(); return; }
+  PLAN.gi[i] = g; PLAN.sel = -1;
+  planSetDirty(true); planRender();
 }
 /* 欄の高さを、画面の下端までに収める（操作欄は画面幅で折り返して高さが変わるので、実際の位置から求める） */
 function planFit(){
@@ -1718,41 +1801,99 @@ document.getElementById('coopPlanBtn').onclick = function(){
   document.getElementById('pageCoop').classList.add('planning');
   planLoad();
 };
-document.getElementById('coopPlanClose').onclick = planClose;
-document.getElementById('coopPlanBody').onclick = function(e){
-  var b = e.target.closest('.pk'); if(!b) return;
-  var i = Number(b.dataset.pi);
-  PLAN.gi[i] = (PLAN.gi[i] + 1) % PLAN.gn;
-  planRender();
-  var ver = ++PLAN.ver;
+document.getElementById('coopPlanClose').onclick = function(){ planClose(); };
+
+/* ---- チップを運ぶ（pointer イベント。6px 動いたら運び始める。動かさずに離したら「選ぶ」） ---- */
+var PDRAG = null;
+function planGroupAt(x, y){
+  var el = document.elementFromPoint(x, y);
+  var gEl = el && el.closest ? el.closest('#coopPlan .grow') : null;
+  return gEl ? Number(gEl.dataset.g) : -1;
+}
+function planOver(g){
+  [].forEach.call(document.querySelectorAll('#coopPlan .grow'), function(el){ el.classList.toggle('over', Number(el.dataset.g) === g); });
+}
+var planBody = document.getElementById('coopPlanBody');
+planBody.addEventListener('pointerdown', function(e){
+  var b = e.target.closest('.pk'); if(!b || (e.button !== undefined && e.button > 0)) return;
+  PDRAG = { i: Number(b.dataset.pi), x: e.clientX, y: e.clientY, el: b, ghost: null, id: e.pointerId };
+  try { b.setPointerCapture(e.pointerId); } catch(err){}
+});
+planBody.addEventListener('pointermove', function(e){
+  if(!PDRAG || e.pointerId !== PDRAG.id) return;
+  if(!PDRAG.ghost){
+    if(Math.abs(e.clientX - PDRAG.x) + Math.abs(e.clientY - PDRAG.y) < 6) return;
+    PDRAG.ghost = document.createElement('div');
+    PDRAG.ghost.className = 'pkGhost'; PDRAG.ghost.textContent = PDRAG.el.textContent;
+    document.body.appendChild(PDRAG.ghost);
+    PDRAG.el.classList.add('lifted');
+  }
+  PDRAG.ghost.style.left = e.clientX + 'px'; PDRAG.ghost.style.top = e.clientY + 'px';
+  planOver(planGroupAt(e.clientX, e.clientY));
+});
+function planDragEnd(e, cancel){
+  if(!PDRAG || e.pointerId !== PDRAG.id) return;
+  var d = PDRAG; PDRAG = null;
+  if(d.ghost){
+    d.ghost.remove(); planOver(-1);
+    var g = cancel ? -1 : planGroupAt(e.clientX, e.clientY);
+    if(g >= 0) planMove(d.i, g); else planRender();
+  } else if(!cancel){
+    PLAN.sel = (PLAN.sel === d.i) ? -1 : d.i;        // 動かさずに離した：選ぶ（もう一度押すと外す）
+    planRender();
+  }
+}
+planBody.addEventListener('pointerup', function(e){ planDragEnd(e, false); });
+planBody.addEventListener('pointercancel', function(e){ planDragEnd(e, true); });
+/* 選んだチップがある時、組の枠を押すとそこへ移す */
+planBody.addEventListener('click', function(e){
+  if(PLAN.sel < 0 || e.target.closest('.pk')) return;
+  var gEl = e.target.closest('.grow'); if(!gEl) return;
+  planMove(PLAN.sel, Number(gEl.dataset.g));
+});
+
+document.getElementById('coopPlanSave').onclick = function(){
+  var btn = this; btn.disabled = true; setStat('coopStat', '保存しています…');
   google.script.run.withSuccessHandler(function(r){
-    if(r && !r.ok){ setStat('coopStat', r.msg || '組を保存できませんでした。', true); if(ver === PLAN.ver) planLoad(); }
-  }).withFailureHandler(function(){
-    setStat('coopStat', '組を保存できませんでした。もう一度押してください。', true);
-    if(ver === PLAN.ver) planLoad();                    // 保存に失敗したらサーバーの値に戻す
+    if(!r || !r.ok){ btn.disabled = false; setStat('coopStat', (r && r.msg) || '保存できませんでした。', true); return; }
+    planSetDirty(false); setStat('coopStat', '保存しました（「組分け」シートに書きました）。次に開始した時、この組で始まります。');
+  }).withFailureHandler(function(e){
+    btn.disabled = false; setStat('coopStat', '保存できませんでした：' + (e.message || e), true);
   }).coopSavePlan(PLAN.cls, PLAN.gn, PLAN.gi.slice());
 };
+/* 番号順の等分にする（保存するまでは画面の中だけ） */
 document.getElementById('coopPlanReset').onclick = function(){
-  if(!confirm('番号順に等分し直しますか？（いまの組分けは消えます）')) return;
-  var ver = ++PLAN.ver;
-  google.script.run.withSuccessHandler(function(r){
-    if(ver !== PLAN.ver || !r || !r.ok) return;
-    PLAN.gi = r.gi; planRender();
-  }).withFailureHandler(function(){ setStat('coopStat', '分け直せませんでした。', true); })
-    .coopSavePlan(PLAN.cls, PLAN.gn, null, true);
+  var n = PLAN.gi.length;
+  PLAN.gi = PLAN.gi.map(function(x, i){ return Math.min(PLAN.gn - 1, Math.floor(i * PLAN.gn / n)); });
+  PLAN.sel = -1; planSetDirty(true); planRender();
 };
+document.getElementById('coopPlanReload').onclick = function(){ if(planCanDiscard()) planLoad(); };
+/* クラスや組数を変えた時、保存していない変更があれば確かめる。やめたら元の値に戻す */
 ['coopCls', 'coopGn'].forEach(function(id){
-  document.getElementById(id).addEventListener('change', function(){ if(PLAN.open) planLoad(); });
+  document.getElementById(id).addEventListener('change', function(){
+    if(!PLAN.open) return;
+    if(!planCanDiscard()){
+      document.getElementById('coopCls').value = PLAN.cls;
+      document.getElementById('coopGn').value = String(PLAN.gn);
+      try { localStorage.setItem('coopCls', PLAN.cls); } catch(e){}
+      coopClsRender();
+      return;
+    }
+    planLoad();
+  });
 });
 /* ---- 開始：サーバーが「今から5秒後」を始まりに決め、画面はその時刻に合わせて 5→1→スタート を出す ----
  * 数えている間の表示は、送信中（CP.begin）とセッションの start だけから決める。ページを開き直しても同じ表示に戻る */
-function coopBegin(reset){
+function coopBegin(reset, cont){
   if(PLAN.open) planClose();
   var opts = { countdown: true };
-  if(!reset){
+  if(cont){
+    // 続きから：図形・色・クラス・色づかいは前の回のまま。時間だけ今の欄の値
+    opts.cont = cont; opts.minutes = coopMinVal();
+  } else if(!reset){
     opts.cls = document.getElementById('coopCls').value;
     opts.pat = document.getElementById('coopPat').value;
-    opts.minutes = Number(document.getElementById('coopMin').value);
+    opts.minutes = coopMinVal();
     opts.mode = document.getElementById('coopMode').value;
     opts.gn = Number(document.getElementById('coopGn').value);
   }
@@ -1792,7 +1933,17 @@ function coopGoShow(){                        // 開始ボタン：進行中・�
   var busy = CP.begin || (s && s.status === 'run' && !CP.loaded);
   b.classList.toggle('off', !!busy);
   b.classList.toggle('small', !busy && !!s);   // 終わった図形・保存データを映している間は、時計の下に小さく
+  // 終わった図形を映している時は「新しく開始」と「続きから」の2つを出す（どちらで始めるかを取り違えないよう名前を分ける）
+  b.textContent = (!busy && s) ? '新しく開始' : '開始';
+  var canCont = !busy && !!s && s.status !== 'run' && (!CP.loaded || !!CP.saveId);
+  document.getElementById('coopCont').classList.toggle('off', !canCont);
 }
+document.getElementById('coopCont').onclick = function(){
+  if(CP.begin) return;
+  var cont = CP.loaded ? ('save:' + CP.saveId) : 'live';
+  if(!confirm('いまの図形の続きから、' + coopMinVal() + '分の協力プレイを始めますか？（5 から数えて始めます）')) return;
+  coopBegin(false, cont);
+};
 setInterval(coopCountShow, 100);
 document.getElementById('coopStart').onclick = function(){
   if(CP.begin) return;
@@ -1923,8 +2074,10 @@ document.getElementById('coopLoad').onclick = function(){
     var p = r.payload;
     coopUseSession({ id: 'save', cls: p.cls, pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn,
       start: p.start, end: p.end, status: 'done', total: p.total,
-      names: p.names, nos: p.nos, gi: p.gi, pace: p.pace, minutes: p.minutes, lim: p.lim, skip: p.skip }, p.ev || []);
-    CP.loaded = true;
+      names: p.names, nos: p.nos, gi: p.gi, pace: p.pace, minutes: p.minutes, lim: p.lim, skip: p.skip,
+      prior: p.prior || null }, p.ev || []);
+    CP.loaded = true; CP.saveId = id;           // 「続きから」はこの保存データから始める
+    coopGoShow();
     CP.simT = coopDur(); coopShowT();            // 最終形を出したまま、シークで巻き戻せる
     // リセット・保存は進行中のセッションに効く操作なので、保存データを見ている間は押せなくする
     document.getElementById('coopReset').disabled = true;
