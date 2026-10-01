@@ -690,7 +690,11 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   // 状態・案内は左の欄の中：高さを取り置かず、空なら詰める（1366×768 で欄の中を送らずに収めるため）
   assert.ok(tui.includes('#coopStat:empty,#coopGuide:empty{display:none}'));
   // 設定は見出し｜操作の2列。クラスは3列の格子（6クラスまで2段）。全クラス同じ学年なら「1組」だけ
-  assert.ok(tui.includes('.coopBox .cform{display:grid;grid-template-columns:6.4rem minmax(0,1fr);'));
+  assert.ok(tui.includes('.coopBox .cform{display:grid;grid-template-columns:5.8rem minmax(0,1fr);'));
+  // 欄の名前は「起点」。起点の行の右端に、見本の印の表示⇄非表示（押すたびに文字も切り替わる）
+  assert.ok(tui.includes('<span class="ctl">起点</span>') && !tui.includes('育ち始める場所'));
+  assert.ok(tui.includes("this.textContent = hide ? '表示' : '非表示';"));
+  assert.ok(tui.includes('#coopStage.preview:not(.nomarks) #coopOrgMarks{display:block}'));
   // 設定の見本：設定を変えると右に描き直す。見本の間は終わった回で上書きせず、開始の扱いは「まだ始めていない」
   assert.ok(tui.includes("if(CP.polling || CP.loaded || CP.prev === 'user') return;"));
   assert.ok(tui.includes("var b = document.getElementById('coopStart'), s = CP.prev ? null : CP.sess;"));

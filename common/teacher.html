@@ -198,7 +198,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 /* 開始の直後に映る範囲（縮尺1の画面）。見本は終わった時の縮尺なので、どこから映り始めるかを点線で示す */
 #coopOrgMarks .ov{position:absolute;border:2px dashed rgba(16,23,40,.55);border-radius:4px;pointer-events:none}
 #coopOrgMarks .ov span{position:absolute;left:4px;top:2px;font-size:.72rem;font-weight:700;color:#101728;background:rgba(255,255,255,.85);border-radius:4px;padding:0 .3em}
-#coopStage.preview #coopOrgMarks{display:block}
+#coopStage.preview:not(.nomarks) #coopOrgMarks{display:block}
 #coopOrgMarks .om{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;padding:0;pointer-events:auto;
   touch-action:none;cursor:grab;background:rgba(255,255,255,.88);border:3px solid #101728;box-shadow:0 2px 8px rgba(16,23,40,.35)}
 #coopOrgMarks .om::after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:#101728}
@@ -249,8 +249,8 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .coopBox{padding:.85rem 1rem}
 .coopBox .crow{display:flex;flex-direction:column;gap:.35rem;align-items:stretch;padding:.42rem 0;border-top:1px solid var(--line)}
 .coopBox .crow:first-child{border-top:none;padding-top:0}
-/* 設定の2列：見出しの列は「育ち始める場所」が1行に入る幅でそろえる */
-.coopBox .cform{display:grid;grid-template-columns:6.4rem minmax(0,1fr);gap:.5rem .6rem;align-items:center}
+/* 設定の2列：見出しの列は「クラス（3年）」が1行に入る幅でそろえる */
+.coopBox .cform{display:grid;grid-template-columns:5.8rem minmax(0,1fr);gap:.5rem .6rem;align-items:center}
 .coopBox .frow{display:contents}
 .coopBox .cform .ctl{white-space:nowrap}
 /* クラスは3列の格子：6クラスまで2段で、ボタンの幅がそろう。全クラスが同じ学年なら「1組」だけ出す（学年は見出しへ） */
@@ -267,6 +267,9 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .coopBox select{width:auto}
 .coopBox #coopSaves{flex:1;min-width:0}
 .coopBox #coopPlanBtn{padding:.35rem .9rem}
+/* 起点の印の表示⇄非表示（見本の上）。行の右端に寄せる */
+.coopBox #coopOrgShow{margin-left:auto;padding:.3rem .3rem;font-size:.82rem;min-width:4.2em;flex:none}   /* 文字が変わっても幅を変えない */
+.coopBox .grp:has(> #coopOrgShow){flex-wrap:nowrap;gap:.3rem}
 .seg{display:inline-flex;border:2px solid var(--ink);border-radius:10px;overflow:hidden}
 .seg button{font:inherit;font-weight:800;font-size:.88rem;padding:.35rem .9rem;border:none;border-radius:0;background:#fff;color:var(--ink)}
 .seg button.on{background:var(--ink);color:#fff}
@@ -457,7 +460,7 @@ details.more[open] summary{border-color:var(--ink)}
   </div><!-- /pageAna -->
 
   <div id="pageCoop" style="display:none">
-  <!-- 左の操作欄は使う順に上から：①だれで（クラス） ②どう遊ぶ（時間・色づかい・組・育ち始める場所） ③うつす・止める・残す（その下に今の状態）
+  <!-- 左の操作欄は使う順に上から：①だれで（クラス） ②どう遊ぶ（時間・色づかい・組・起点） ③うつす・止める・残す（その下に今の状態）
        ④保存した回の再生。めったに触らない図形と「1正答の枚数」と説明は、いちばん下の「図形と表示の設定」の中にしまう。
        画面の高さが足りない時は、ページではなくこの欄の中を送る（右のステージは動かない） -->
   <div class="box coopBox">
@@ -476,11 +479,12 @@ details.more[open] summary{border-color:var(--ink)}
       <div class="frow" id="coopGnRow" style="display:none"><span class="ctl">組数</span>
         <span class="grp"><select id="coopGn"></select>
         <button id="coopPlanBtn" class="ghost" type="button">組を編集…</button></span></div>
-      <div class="frow"><span class="ctl">育ち始める場所</span>
-        <span class="grp"><button id="coopOrgDn" class="ghost step" type="button" aria-label="育ち始める場所を1つへらす">−</button>
-        <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="育ち始める場所の数">
-        <button id="coopOrgUp" class="ghost step" type="button" aria-label="育ち始める場所を1つふやす">＋</button>
-        <span class="unit" id="coopOrgMax"></span></span></div>
+      <div class="frow"><span class="ctl">起点</span>
+        <span class="grp"><button id="coopOrgDn" class="ghost step" type="button" aria-label="起点を1つへらす">−</button>
+        <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="起点の数">
+        <button id="coopOrgUp" class="ghost step" type="button" aria-label="起点を1つふやす">＋</button>
+        <span class="unit" id="coopOrgMax"></span>
+        <button id="coopOrgShow" class="ghost" type="button" aria-pressed="true" title="見本の上の起点の印をかくす・出す">非表示</button></span></div>
     </div>
     <div class="crow act">
       <button id="coopFull">全画面でうつす</button>
@@ -511,7 +515,7 @@ details.more[open] summary{border-color:var(--ink)}
             クラス全員の<b>本番の正答</b>で図形がいっしょに育ちます（れんしゅうは数えません）。
             「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと「よーい、3、2、1」でスタート、時間が来たら自動で打ち切りです。
             終わった図形を映している間は、画面の「続きから」で同じ図形を育て続けられます。<br>
-            <b>育ち始める場所</b>は図形が育ち始める点の数です。2以上にすると、児童（グループなら組）ごとに担当の場所が決まり、そこから育ちます。
+            <b>起点</b>は図形が育ち始める点の数です。2以上にすると、児童（グループなら組）ごとに担当の起点が決まり、そこから育ちます。
             児童数にすると島の大きさがその子の正答数になり、モニターと児童の見返しで見えます。<br>
             <b>児童の見返し</b>は、児童画面の「前回の協力プレイ」で「じぶん ○もん」を出すかどうかです（既定は出さない。変えるとすぐ保存されます）。</p>
         </div>
@@ -1927,7 +1931,7 @@ function coopInitUnit(u){
   coopPreview();
 }
 /* ---- 設定の見本（プレビュー） ----
- * 左の設定（図形・色づかい・組数・育ち始める場所・クラスの人数・1正答の枚数）で、協力プレイが終わった時の形を右に描く。
+ * 左の設定（図形・色づかい・組数・起点・クラスの人数・1正答の枚数）で、協力プレイが終わった時の形を右に描く。
  * 正答はつくりもの（全員が毎回同じ数だけ正答する単純な見込み。どの起点も均等に育つ）。量は「1正答の枚数（自動）」の見込みと同じ式で作るので、
  * 自動のままなら実際の回と同じく完成の85%前後まで育つ。色は開始のたびに変わるので、見本の色は決まった仮の色。
  * CP.prev：'auto'＝回が何も無い時の初めの見本（サーバーに回があれば問い合わせで差し替わる）、
@@ -2046,6 +2050,13 @@ function coopOrgMarks(){
   box.addEventListener('pointercancel', drop);
 })();
 document.getElementById('coopOrgReset').onclick = function(){ CP.orgCustom = null; coopPreview(true); };
+/* 起点の印の表示⇄非表示。押すたびに切り替え、ボタンの文字は次に押した時の動き（表示中は「非表示」） */
+document.getElementById('coopOrgShow').onclick = function(){
+  var st = document.getElementById('coopStage'), hide = !st.classList.contains('nomarks');
+  st.classList.toggle('nomarks', hide);
+  this.textContent = hide ? '表示' : '非表示';
+  this.setAttribute('aria-pressed', hide ? 'false' : 'true');
+};
 var coopPrevTimer = 0;
 function coopPreviewSoon(){
   clearTimeout(coopPrevTimer);
