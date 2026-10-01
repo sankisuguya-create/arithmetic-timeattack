@@ -3,12 +3,17 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
+<!-- 日本語の書体：BIZ UDPゴシック（教育向けのUD書体。Google Fonts は使う字の分だけ取りに行く）。読めない時は端末の日本語ゴシック -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700&display=swap">
+
 <style>
 :root{--paper:#F7F7F4;--ink:#101728;--mint:#12C48B;--mute:#6B7280;--line:#DFDFD8;--sel:#EEF0F3}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
 body{background:var(--paper);color:var(--ink);
-  font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans",sans-serif;line-height:1.55}
+  font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;line-height:1.55}
 .wrap{max-width:1180px;margin:0 auto;padding:1rem 1rem 1.2rem;height:100%;display:flex;flex-direction:column}
 .head{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
 h1{font-size:1.15rem;font-weight:800}

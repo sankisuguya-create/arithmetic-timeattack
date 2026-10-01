@@ -38,6 +38,7 @@ Sheet.prototype.getRange = function (r, c, nr, nc) {
 };
 Sheet.prototype.clear = function () { this.values = []; };
 Sheet.prototype.getSheetId = function () { return 123; };
+Sheet.prototype.setName = function (n) { delete sheets[this.name]; this.name = n; sheets[n] = this; return this; };
 Sheet.prototype.setFrozenRows = function () {};
 Sheet.prototype.setTabColor = function () {};
 Sheet.prototype.insertColumnAfter = function () {};
@@ -416,19 +417,22 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes('if(live) run.coopSetGroups(gi); else run.coopSavePlan(PLAN.cls, PLAN.gn, gi);'));
   assert.ok(!tui.includes('id="coopGedit"'), '名札のタップで組を変える古いボタンは無い（ポップアップに一本化）');
   assert.ok(tui.indexOf('id="coopPlan"') < tui.indexOf('<div id="coopStage"'));
-  // 正本は単元の「組分け」シート。保存するとクラス×組数の塊が書かれる
+  // 正本は単元の「グループ分け」シート。保存するとクラス×グループ数の塊が書かれる
   ctx.coopSavePlan('3-1', 3, [2, 2, 1, 1, 0, 0, 2, 1]);
-  const gs = sheets['組分け'];
-  assert.ok(gs, '組分けシートができる');
-  assert.equal(J(gs.values[0]), J(['クラス', '組数', '番号', '氏名', '組', 'email']));
+  const gs = sheets['グループ分け'];
+  assert.ok(gs, 'グループ分けシートができる');
+  assert.equal(J(gs.values[0]), J(['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email']));
   const live = gs.values.slice(1).filter(r => r[0] === '3-1' && r[1] === 3);
   assert.equal(live.length, 8);
   assert.equal(J(live.map(r => r[4])), J(['C', 'C', 'B', 'B', 'A', 'A', 'C', 'B']));
   assert.equal(live[0][3], '児童1');
   assert.ok(ctx.coopPlan('3-1', 3).sheetUrl.includes('#gid=123'));
-  // 教師がシートを直接直す：組は「A組」「1」も読み、クラスは「3年1組」も読む。メールが空なら番号で照らす
+  // 教師がシートを直接直す：グループは「A組」「1」「グループC」「Bグループ」も読み、クラスは「3年1組」も読む。メールが空なら番号で照らす
   live[0][4] = 'A組'; live[1][4] = '2'; live[2][0] = '3年1組'; live[3][5] = ''; live[3][4] = 'a';
   assert.equal(J(ctx.coopPlan('3-1', 3).gi), '[0,1,1,0,0,0,2,1]');
+  live[4][4] = 'グループC'; live[5][4] = 'Bグループ';
+  assert.equal(J(ctx.coopPlan('3-1', 3).gi.slice(4, 6)), '[2,1]');
+  live[4][4] = 'A'; live[5][4] = 'A';
   // 読めない値の行は等分の位置に戻す
   live[7][4] = 'Z';
   assert.equal(ctx.coopPlan('3-1', 3).gi[7], 2);
@@ -682,13 +686,52 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
 /* ---- 教師画面：協力モードは左に操作欄、右にステージ（狭い画面では上下） ---- */
 {
   const tui = read('common/teacher.html');
-  assert.ok(tui.includes('#pageCoop{display:grid;grid-template-columns:minmax(300px,350px) minmax(0,1fr);'));
+  assert.ok(tui.includes('#pageCoop{display:grid;grid-template-columns:minmax(340px,380px) minmax(0,1fr);'));
   assert.ok(tui.includes('#pageCoop > #coopStage{grid-column:2;grid-row:1;'));
   const pc = tui.slice(tui.indexOf('<div id="pageCoop"'), tui.indexOf('</div><!-- /pageCoop -->'));
   assert.ok(pc.indexOf('class="box coopBox"') < pc.indexOf('<div id="coopStage"'));
   assert.ok(/var full = st\.offsetWidth;/.test(tui), 'ステージの幅は右の列の幅から');
   // 状態・案内は左の欄の中：高さを取り置かず、空なら詰める（1366×768 で欄の中を送らずに収めるため）
   assert.ok(tui.includes('#coopStat:empty,#coopGuide:empty{display:none}'));
+  // 設定は見出し｜操作の2列。クラスは3列の格子（6クラスまで2段）。全クラス同じ学年なら「1組」だけ
+  assert.ok(tui.includes('.coopBox .cform{display:grid;grid-template-columns:5.8rem minmax(0,1fr);'));
+  // 欄の名前は「起点」。起点の行の右端に、見本の印の表示⇄非表示（押すたびに文字も切り替わる）
+  assert.ok(tui.includes('<span class="ctl">起点</span>') && !tui.includes('育ち始める場所'));
+  assert.ok(tui.includes("this.textContent = hide ? '非表示' : '表示';"));   // 文字は今の状態、表示中は選んでいる札の塗り
+  // ボタンの役割ごとの見た目：実行＝立体のキー、映し方＝青の塗り、小さく変える＝灰色の丸、選ぶ＝平らな札
+  ['id="coopStartL" class="bkey go"', 'id="coopStop" class="bkey stop"', 'id="coopReset" class="bkey"', 'id="coopSave" class="bkey"',
+   'id="coopFull" class="bview"', 'id="coopLoad" class="bview sm"', 'id="coopOrgShow" class="pick on"'].forEach(k => assert.ok(tui.includes(k), k));
+  assert.ok(tui.includes('.bkey{') && tui.includes('box-shadow:0 3px 0 #101728') && tui.includes('.coopBox .step{width:2rem;height:2rem;'));
+  // 左の「開始」はステージの開始と同じ。進行中・数えている間は押せない
+  assert.ok(tui.includes("document.getElementById('coopStartL').onclick = function(){ document.getElementById('coopStart').onclick(); };"));
+  assert.ok(tui.includes("document.getElementById('coopStartL').disabled = !!busy;"));
+  assert.ok(tui.includes('#coopStage.preview:not(.nomarks) #coopOrgMarks{display:block}'));
+  // 設定の見本：設定を変えると右に描き直す。見本の間は終わった回で上書きせず、開始の扱いは「まだ始めていない」
+  assert.ok(tui.includes("if(CP.polling || CP.loaded || CP.prev === 'user') return;"));
+  // 見本は協力プレイのタブを開くまで描かない（大きさ0のステージで描こうとして、設定の読み込みごと止まっていた）
+  assert.ok(/function coopPreview\(user\)\{\n[^\n]*\n  if\(document\.getElementById\('pageCoop'\)\.style\.display === 'none'\) return;/.test(tui));
+  assert.ok(tui.includes('if(!CP.ORD) return;'));
+  assert.ok(tui.includes("var b = document.getElementById('coopStart'), s = CP.prev ? null : CP.sess;"));
+  assert.ok(/function coopUseSession\(s, evAll\)\{\n  coopPrevOff_\(\);/.test(tui), '本物の回を映すと見本をやめる');
+  ['coopCls', 'coopGn', 'coopMode', 'coopOrg'].forEach(id => assert.ok(tui.includes("'" + id + "'"), id));
+  // 見本の正答は全員が毎回同じ数（どの起点も均等に育つ）。量は自動の枚数の見込みと同じ前提（1回の正答 × 参加 CPART）
+  assert.ok(tui.includes('c = Math.max(1, Math.round(pace * lim / 60 * CPART))'));
+  assert.ok(tui.includes("for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, 1]);"));
+  // 再生のつまみ：箱の中はステージの下端、全画面は左上の並び。見本でも使える
+  assert.ok(tui.includes('#coopStage > #coopReplay{position:absolute;left:1.4vmin;right:1.4vmin;bottom:1.4vmin;'));
+  assert.ok(tui.includes("var to = st.classList.contains('full') ? document.getElementById('coopTL') : st;"));
+  assert.ok(tui.includes("document.getElementById('coopReplay').classList.add('on');      // 見本も"));
+  assert.ok(tui.includes('<span id="coopPrevTag">見本</span>'));
+  // 輪郭は closePath() で閉じない（多数を1本の Path2D にまとめると二乗で遅くなる）
+  const poly = src => src.slice(src.indexOf('function coopPoly(P, t)'), src.indexOf('\n}', src.indexOf('function coopPoly(P, t)')));
+  assert.ok(!poly(tui).includes('closePath'));
+  const rvp = ui0 => ui0.slice(ui0.indexOf('  function poly(P, t){'), ui0.indexOf('} }', ui0.indexOf('  function poly(P, t){')));
+  assert.ok(!rvp(read('common/index.html')).includes('closePath'));
+  assert.ok(tui.includes('.coopBox .clsPick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));'));
+  assert.ok(tui.includes("if(one) name = name.replace(/^\\d+年/, '');"));
+  // 常に出ている見出しは1段（題名・タブ・写し・注意・行き先）。タブは見出しの段の中
+  const top = tui.slice(tui.indexOf('<div class="topbar">'), tui.indexOf('<div id="verWarn"'));
+  ['id="h1"', 'class="tabs"', 'id="tabCoop"', 'id="sub"', 'id="cautions"', 'id="golinks"'].forEach(k => assert.ok(top.includes(k), k));
   assert.ok(!/#coopStat\{min-height/.test(tui) && !/#coopGuide\{min-height/.test(tui));
 }
 
@@ -759,7 +802,81 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(!/coopRoster\(\); coopRepaint\(\);\n\s*dirty\.textContent = '保存しました。児童/.test(tui));
   // 児童の見返しも同じ手続き（グループは各正答の組番号が担当）
   assert.ok(ui.includes("var m = Math.round(e[2] * rateAt(e[0])), o = grp ? (e[3] || 0) : e[1];"));
-  assert.ok(ui.includes('RV.ord = coopOrders(RV.tiles, coopOrigins(d.org || 1, VX, VY, OX, OY, W, H, d.seed || 1));'));
+  assert.ok(ui.includes('RV.ord = coopOrders(RV.tiles, coopOrigins(d.org || 1, VX, VY, OX, OY, W, H, d.seed || 1, d.orgPts));'));
+  // 位置の指定：割合 [u, v] を最初の画面に写す（画面の大きさが違っても同じ所）。担当はシードで混ぜる
+  const pos = [[0.5, 0.5], [0.2, 0.3], [0.9, 0.8]];
+  const pc = F.coopOrigins(3, VX, VY, OX, OY, W, H, 7, pos);
+  const want = pos.map(q => [VX - OX + q[0] * W, VY - OY + q[1] * H].join(',')).sort();
+  assert.equal(JSON.stringify(pc.map(q => q.join(',')).sort()), JSON.stringify(want));
+  const pc2 = F.coopOrigins(3, VX * 2, VY * 2, OX * 2, OY * 2, W * 2, H * 2, 7, pos);   // 2倍の画面でも同じ割合の所
+  assert.equal(JSON.stringify(pc2.map(q => [q[0] / 2, q[1] / 2].join(',')).sort()), JSON.stringify(want));
+  assert.equal(F.coopOrigins(3, VX, VY, OX, OY, W, H, 7, [[0.5, 0.5]]).length, 3, '数が合わない位置は使わない');
+  // 起点1つでも位置を動かせば、その点から近い順に育つ（動かしていなければ今までの並び）
+  const one = F.coopOrders(tiles, F.coopOrigins(1, VX, VY, OX, OY, W, H, 7, [[0.8, 0.2]]))[0];
+  const q1 = [VX - OX + 0.8 * W, VY - OY + 0.2 * H];
+  assert.ok(Math.hypot(tiles[one[0]].cx - q1[0], tiles[one[0]].cy - q1[1]) < 20);
+}
+/* ---- 起点の位置：サーバーは数と範囲を確かめて回に持つ（続きから・保存・シートの16列目） ---- */
+{
+  ctx.Session = teacherSession;
+  const P = [[0.25, 0.5], [0.75, 0.5]];
+  assert.ok(ctx.coopStart({ cls: '3-1', minutes: 5, mode: 'child', org: 2, orgPts: P }).ok);
+  assert.equal(JSON.stringify(ctx.coopLive_().orgPts), JSON.stringify(P));
+  assert.equal(JSON.stringify(ctx.coopState(0).orgPts), JSON.stringify(P));
+  assert.equal(sheets.coop.values[sheets.coop.values.length - 1][15], JSON.stringify(P), 'coop シートの16列目');
+  const keep = store.coop_live; delete store.coop_live;
+  assert.equal(JSON.stringify(ctx.coopLive_().orgPts), JSON.stringify(P), 'キャッシュが消えてもシートから戻る');
+  store.coop_live = keep;
+  ctx.coopStop();
+  const sv = ctx.coopSave('位置テスト'); assert.ok(sv.ok);
+  assert.equal(JSON.stringify(ctx.coopLoad(sv.id).payload.orgPts), JSON.stringify(P), '保存データにも入る');
+  assert.ok(ctx.coopStart({ cont: 'live', minutes: 3, orgPts: null }).ok);
+  assert.equal(JSON.stringify(ctx.coopLive_().orgPts), JSON.stringify(P), '続きからは前の回の位置');
+  ctx.coopStop();
+  ctx.coopStart({ reset: true }); assert.equal(JSON.stringify(ctx.coopLive_().orgPts), JSON.stringify(P), 'リセットも同じ位置'); ctx.coopStop();
+  assert.equal(ctx.coopOrgPts_([[0.5, 0.5]], 2), null, '数が合わなければ使わない');
+  assert.equal(JSON.stringify(ctx.coopOrgPts_([[9, -9], [0.12345, 0.5]], 2)), '[[2.8,-1.6],[0.123,0.5]]', '範囲で切り、3桁に丸める');
+  assert.equal(ctx.coopOrgPts_([[0.5, 'x'], [0.1, 0.1]], 2), null);
+  assert.ok(ctx.coopStart({ cls: '3-1', minutes: 5, mode: 'child', org: 2, orgPts: null }).ok);
+  assert.equal(ctx.coopLive_().orgPts, null, '画面が null を送れば既定の格子'); ctx.coopStop();
+  const tui = read('common/teacher.html');
+  assert.ok(tui.includes("coopUseSession({ id: 'save', cls: p.cls, pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn, org: p.org || 1, orgPts: p.orgPts || null,"), '保存データの再生にも起点を渡す');
+  // 見本：起点の印をつまんで動かすと位置を持ち、開始で送る。起点の数が変わっても残せる分は残す
+  assert.ok(tui.includes('<div id="coopOrgMarks"') && tui.includes("box.addEventListener('pointerdown'"));
+  assert.ok(tui.includes('opts.orgPts = coopOrgCustomFit_(opts.org);'));
+  assert.ok(tui.includes('orgPts: coopOrgCustomFit_(coopOrgVal())'));
+  assert.ok(tui.includes('CP.orgCustom = s.orgPts ? s.orgPts.map('), '映している回の位置を既定にする');
+  // 画面の点 → 割合 は、割合 → 画面 の逆になっている
+  const fx = (u, OX, W, S) => CP0(u, OX, W, S);
+  function CP0(u, OX, W, S){ const x = OX + (u * W - OX) * S; return (OX + (x - OX) / S) / W; }
+  [[0.3, 100, 800, 0.37], [2.1, 112, 784, 0.52], [-0.2, 50, 400, 1]].forEach(a => assert.ok(Math.abs(fx(...a) - a[0]) < 1e-9));
+  assert.ok(tui.includes('var x = CP.OX + (q[0] * CP.W - CP.OX) * S, y = CP.OY + (q[1] * CP.H - CP.OY) * S;'));
+  assert.ok(tui.includes('var u = (CP.OX + (d.x - CP.OX) / S) / CP.W, v = (CP.OY + (d.y - CP.OY) / S) / CP.H;'));
+}
+
+/* ---- 以前の「組分け」シートは、名前と見出しを「グループ分け」に付け替えて使う（中身はそのまま） ---- */
+{
+  ctx.Session = teacherSession;
+  const gNew = sheets['グループ分け']; delete sheets['グループ分け'];
+  const old = new Sheet('組分け', ['クラス', '組数', '番号', '氏名', '組', 'email']);
+  old.values.push(['3-1', 2, 1, '児童1', 'B', 'k01@kyoiku.edu.nishi.or.jp'], ['3-1', 2, 2, '児童2', 'A', 'k02@kyoiku.edu.nishi.or.jp']);
+  sheets['組分け'] = old;
+  const pl = ctx.coopPlan('3-1', 2);
+  assert.equal(pl.gi[0], 1); assert.equal(pl.gi[1], 0);
+  assert.ok(!sheets['組分け'] && sheets['グループ分け'] === old, '名前を付け替える');
+  assert.equal(JSON.stringify(old.values[0]), JSON.stringify(['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email']), '見出しも新しい呼び方に');
+  delete sheets['グループ分け']; if (gNew) sheets['グループ分け'] = gNew;
+  // 画面の呼び方も「グループ」にそろえる（クラスの「1組」は別）
+  const tui = read('common/teacher.html'), ui = read('common/index.html');
+  ['グループ数', 'グループを編集…', "'グループ' + COOP_LETTERS[g]", "('グループ' + 'ABCDEFGHIJ'[grpOf(i)] + ' ')"].forEach(k => assert.ok(tui.includes(k), k));
+  ['組数', '組を編集', '組分け', "'組<small>'", "+ '組 ')"].forEach(k => assert.ok(!tui.includes(k), k));
+  assert.ok(ui.includes("'じぶんの グループを 目立たせる'") && ui.includes("'あなたのグループの色'") && !ui.includes('くみを') && !ui.includes('あなたの組'));
+  // タブは「公開モード｜協力プレイ｜全般設定｜分析」の順
+  const tabs = [...tui.slice(tui.indexOf('<nav class="tabs"'), tui.indexOf('</nav>')).matchAll(/role="tab"[^>]*>([^<]+)</g)].map(m => m[1]);
+  assert.equal(JSON.stringify(tabs), JSON.stringify(['公開モード', '協力プレイ', '全般設定', '分析']));
+  // 書体：教師画面は BIZ UDPゴシック（読めなければ端末の日本語ゴシック）。時計と正答数は字幅のそろった BIZ UDゴシック
+  assert.ok(tui.includes('family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700'));
+  assert.ok(tui.includes('font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif'));
 }
 
 console.log('coop.test.cjs: all assertions passed.');

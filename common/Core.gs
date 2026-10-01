@@ -38,7 +38,7 @@ var BASE_DEFAULTS = {
   window_days: 30,
 
   // 協力プレイの見返し（児童画面の「前回の協力プレイ」）に「じぶん ○もん」を
-  // 出すか。既定は出さない（「みんなで ○もん」だけ。教師画面の協力モードタブで切り替え）。
+  // 出すか。既定は出さない（「みんなで ○もん」だけ。教師画面の協力プレイタブで切り替え）。
   coop_mine: 0
 };
 
@@ -1270,7 +1270,7 @@ function coopLive_() {
 function coopFromSheet_() {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 15).getValues()[0]);
+  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 16).getValues()[0]);
 }
 /** coop シートの1行からセッションを組み立てる（児童の並びは今の名簿、合計は coop_log） */
 function coopFromRow_(r) {
@@ -1287,6 +1287,7 @@ function coopFromRow_(r) {
             start: start, end: end, status: String(r[11] || 'done') === 'run' ? 'run' : 'done', total: 0,
             kids: map, order: order, names: arr(r[7]), nos: arr(r[8]), gi: arr(r[6]),
             skip: coopSkip_(cls), org: Number(r[14]) || 1 };
+  try { s.orgPts = coopOrgPts_(JSON.parse(String(r[15] || 'null')), s.org); } catch (e) { s.orgPts = null; }
   try { var pr = JSON.parse(String(r[13] || 'null')); if (pr && pr.ev) s.prior = pr; } catch (e) {}
   s.total = coopEvents_(s).reduce(function (a, e) { return a + (Number(e[2]) || 0); }, 0);
   return s;
@@ -1353,7 +1354,7 @@ function coopEvents_(s) {
 /** 教師画面へ返す形（個人情報は名札に必要な氏名と番号まで。mail は出さない） */
 function coopPub_(s, since) {
   var ev = coopEvents_(s), n = ev.length;
-  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1,
+  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null,
            start: s.start, end: s.end, status: s.status, total: s.total,
            names: s.names, nos: s.nos, gi: s.gi,
            // 画面の案内に使う：1回の制限秒（残りがこれを切ると、これから始める回は数えない）・送り直しの締め切り・氏名のない児童の数
@@ -1382,31 +1383,40 @@ function coopPub_(s, since) {
  * - 以前の版はスクリプトプロパティ（coop_plan_<クラス>_<組数>）に持っていた。シートに行が無い時だけそちらを読み、
  *   次に保存した時にシートへ移して消す
  */
-var COOP_GROUP_SHEET = '組分け';
-var COOP_GROUP_HEAD = ['クラス', '組数', '番号', '氏名', '組', 'email'];
+var COOP_GROUP_SHEET = 'グループ分け';
+var COOP_GROUP_SHEET_OLD = '組分け';   // 以前の名前。見つけたら新しい名前に付け替える（中身と並びは同じ）
+var COOP_GROUP_HEAD = ['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email'];
 var COOP_GROUP_LETTERS = 'ABCDEFGHIJ';
 
 function coopPlanKey_(cls, gn) { return 'coop_plan_' + cls + '_' + gn; }
 function coopClsNorm_(v) {
   return String(v == null ? '' : v).replace(/\s/g, '').replace(/年/, '-').replace(/組$/, '');
 }
-/** シートの「組」の欄 → 0〜gn-1。読めなければ -1 */
+/** シートの「グループ」の欄 → 0〜gn-1。読めなければ -1（「A」「グループA」「Aグループ」「A組」「1」を読む） */
 function coopGrpParse_(v, gn) {
-  var t = String(v == null ? '' : v).trim().replace(/組$/, ''), n = -1;
+  var t = String(v == null ? '' : v).trim().replace(/^グループ/, '').replace(/(組|グループ)$/, '').trim(), n = -1;
   if (/^[A-Ja-j]$/.test(t)) n = t.toUpperCase().charCodeAt(0) - 65;
   else if (/^\d+$/.test(t)) n = Number(t) - 1;
   return (n >= 0 && n < gn) ? n : -1;
 }
 function coopGroupSheet_(create) {
   var ss = ss_(), sh = ss.getSheetByName(COOP_GROUP_SHEET);
+  if (!sh) {
+    // 以前の「組分け」シート：名前と見出しを新しい呼び方に付け替えて使う（列の並びは同じなので中身はそのまま）
+    var old = ss.getSheetByName(COOP_GROUP_SHEET_OLD);
+    if (old) {
+      sh = old;
+      try { old.setName(COOP_GROUP_SHEET); old.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]); } catch (e) {}
+    }
+  }
   if (!sh && create) {
     sh = ss.insertSheet(COOP_GROUP_SHEET);
     sh.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]).setFontWeight('bold');
     sh.setFrozenRows(1);
     try {
-      sh.getRange(1, 1).setNote('協力モードの組分け（教師画面の「グループを編集」と同じもの）。\n' +
-        '「組」の欄を A〜J で書きかえると、次に開始した時その組で始まります。\n' +
-        'クラス×組数ごとの行の塊です。行が無いクラスは、教師画面で一度「保存」すると作られます。');
+      sh.getRange(1, 1).setNote('協力モードのグループ分け（教師画面の「グループを編集…」と同じもの）。\n' +
+        '「グループ」の欄を A〜J で書きかえると、次に開始した時そのグループで始まります。\n' +
+        'クラス×グループ数ごとの行の塊です。行が無いクラスは、教師画面で一度「保存」すると作られます。');
     } catch (e) {}
   }
   return sh;
@@ -1636,6 +1646,22 @@ function coopMinOf_(m) { return Math.max(1, Math.min(30, Math.round(Number(m) ||
  * 起点の数を児童数にすると、児童ごとの島の大きさがその子の正答数になる（モニターでも見返しでも見える）
  */
 function coopOrgOf_(v, max) { return Math.max(1, Math.min(Math.max(1, max), Math.round(Number(v) || 1))); }
+/*
+ * 起点の位置（教師が見本の上で動かしたもの）。[[u, v], ...]：最初の画面（縮尺1）の左上を (0, 0)、右下を (1, 1) とした割合。
+ * 画面の大きさ（箱・全画面・児童の画面）が違っても同じ所に来る。範囲は最小の縮尺の画面の中（u −0.3〜2.8、v −1.6〜1.45）。
+ * 数が起点の数と合わなければ使わない（既定の格子に戻る）。どの起点を誰が担当するかは位置を決めてもシードで混ぜる
+ */
+function coopOrgPts_(v, org) {
+  if (!Array.isArray(v) || v.length !== org || org > 60) return null;
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    var p = v[i];
+    if (!Array.isArray(p) || !isFinite(Number(p[0])) || !isFinite(Number(p[1]))) return null;
+    out.push([Math.round(Math.max(-0.3, Math.min(2.8, Number(p[0]))) * 1000) / 1000,
+              Math.round(Math.max(-1.6, Math.min(1.45, Number(p[1]))) * 1000) / 1000]);
+  }
+  return out;
+}
 
 /*
  * 続きから（prior）。引き継ぐ前の回の正答を、1本の時間軸に並べ直して新しいセッションに持たせる。
@@ -1673,7 +1699,7 @@ function coopContBase_(cont, prev) {
     n: Math.max(1, n - (src.skip || 0)), lim: Number(src.lim) || Number(config_().limit_sec) || 60,
     pace: Number(src.pace) || FLOOR_PRIOR_.perMin, total: tot }]);
   return { cls: String(src.cls), pat: String(src.pat), seed: Number(src.seed) || 1,
-           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1,
+           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1, orgPts: src.orgPts || null,
            keys: keys, prior: { dur: pin.dur + dur, ev: all, segs: segs } };
 }
 /** 引き継いだ正答の児童 index を、新しいセッションの名簿の並びへ付け替える */
@@ -1718,6 +1744,8 @@ function coopStart_(o, pace) {
   var seed = base ? base.seed : Math.floor(Math.random() * 2147483647);
   // 起点の数：続きからは前の回のまま（変えると引き継いだ部分の形が変わる）。名簿・組数が減っていれば上限で切る
   var org = coopOrgOf_(base ? base.org : ((o && o.org) || old.org || 1), mode === 'group' ? gn : kids.length);
+  // 起点の位置：続きからは前の回のまま。画面が送ってきた時はそれ（null＝既定の格子）、送らない時（リセット・古い画面）は前の回のまま
+  var orgPts = coopOrgPts_(base ? base.orgPts : (o && 'orgPts' in o ? o.orgPts : old.orgPts), org);
   var kidsMap = {}, order = [], gi = [];
   // 組は「開始前に作った予定」を最優先にする。無ければ前回と同じ顔ぶれなら前の編成、それも無ければ番号順の等分
   var plan = mode === 'group' ? coopPlanGet_(cls, gn, kids) : null;
@@ -1738,10 +1766,10 @@ function coopStart_(o, pace) {
             kids: kidsMap, order: order,
             names: kids.map(function (k) { return k.name; }),
             nos: kids.map(function (k) { return k.no; }),
-            gi: gi, skip: coopSkip_(cls), prior: prior, org: org,
+            gi: gi, skip: coopSkip_(cls), prior: prior, org: org, orgPts: orgPts,
             pace: Number(pace) || old.pace || FLOOR_PRIOR_.perMin };   // 画面が「1正答の枚数」を自動で決めるのに使う
   sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
-    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior), org]);
+    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior), org, orgPts ? JSON.stringify(orgPts) : '']);
   cache_().put('coop_ev_' + id, '[]', TTL.session);
   cache_().put('coop_fl_' + id, '0', TTL.session);
   if (prev) {
@@ -1814,7 +1842,7 @@ function coopSetGroups(gi) {
     var s = coopLive_();
     if (!s) return { ok: false, msg: '協力プレイはありません。' };
     if (!Array.isArray(gi) || gi.length !== s.names.length) {
-      return { ok: false, msg: '組の数が名簿と合いません。' };
+      return { ok: false, msg: 'グループの数が名簿と合いません。' };
     }
     s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
     coopPutLive_(s);
@@ -1832,7 +1860,7 @@ function coopSave(name) {
   if (!s) return { ok: false, msg: '保存する協力プレイがありません。' };
   coopFlush_(s, false);
   // pace・lim・skip は再生で「1正答の枚数」を開始時と同じに自動計算するため（無い古い保存は既定値で計算する）
-  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1,
+  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null,
                   start: s.start, end: s.end, total: s.total,
                   pace: s.pace || FLOOR_PRIOR_.perMin, minutes: s.minutes, lim: Number(config_().limit_sec) || 60, skip: s.skip || 0,
                   names: s.names, nos: s.nos, gi: s.gi, ev: coopEvents_(s),
@@ -1938,7 +1966,7 @@ function coopReview() {
   var ev = ((s.prior && s.prior.ev) || []).map(function (e) { return out(e, 0); })
     .concat(coopEvents_(s).map(function (e) { return out(e, pri); }));
   var total = ev.reduce(function (a, e) { return a + e[2]; }, 0);
-  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, n: n, me: me,
+  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, n: n, me: me,
            mine: toBool_(config_().coop_mine),   // 教師の設定で「じぶん」の数を出さないこともできる（出すだけ。他の児童の数は出ない）
            g: group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[me]) || 0)) : null,
            ev: ev, total: total, pri: pri, segs: (s.prior && s.prior.segs) || [],
@@ -1949,7 +1977,7 @@ function coopReview() {
 function coopLastDone_(ck) {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 15).getValues(), now = Date.now();
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 16).getValues(), now = Date.now();
   for (var i = v.length - 1; i >= 0; i--) {
     if (String(v[i][1]) !== ck) continue;
     var end = v[i][10] instanceof Date ? v[i][10].getTime() : new Date(v[i][10]).getTime();
@@ -3037,7 +3065,7 @@ function ensureSheets_() {
   defs[SHEETS.WCHILD] = [];
   defs[SHEETS.WCLASS] = [];
   defs[SHEETS.COOP] = ['id', 'class', 'pattern', 'seed', 'mode', 'gn', 'groups',
-                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins'];
+                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins', 'origin_pos'];
   defs[SHEETS.COOPLOG] = ['session', 't', 'email', 'correct', 'mode'];
   defs[SHEETS.COOPSAVE] = ['save_id', 'name', 'saved', 'session', 'payload'];
 
