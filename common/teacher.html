@@ -11,8 +11,23 @@ body{background:var(--paper);color:var(--ink);
   font-variant-numeric:tabular-nums;padding:1rem 1.2rem;line-height:1.55}
 .wrap{max-width:1180px;margin:0 auto}
 /* 見出し行：名前と行き先を1段に。本文に高さを残す */
-.head{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;margin-bottom:.2rem}
-.head .golinks{margin:0 0 0 auto}
+/* 見出しの1段：タブの下線を段全体に引く。写しの名前は残りの幅で切り、全文は押すと出る */
+.topbar{display:flex;align-items:flex-end;gap:.9rem;border-bottom:2px solid var(--line);margin-bottom:.8rem;min-height:2.6rem}
+.topbar h1{font-size:1.05rem;margin:0 0 .45rem;white-space:nowrap;max-width:15rem;min-width:4em;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
+.topbar .tabs{border-bottom:none;margin:0;flex:none}
+.topbar .sub{flex:1;min-width:6rem;margin:0 0 .5rem;white-space:nowrap}
+.topbar .golinks{margin:0 0 .35rem;flex:none;flex-wrap:nowrap}
+.topbar .golinks a{padding:.3rem .7rem;font-size:.8rem}
+.topbar .cautions{margin:0 0 .5rem;flex:none}
+.pop{position:relative}
+.pop > summary{cursor:pointer;white-space:nowrap;list-style:none}
+.pop > summary::-webkit-details-marker{display:none}
+.popp{position:absolute;right:0;top:calc(100% + .3rem);z-index:30;background:#fff;border:1.5px solid var(--ink);border-radius:10px;
+  padding:.6rem .8rem;box-shadow:0 6px 24px rgba(16,23,40,.18);width:max-content;max-width:min(520px,90vw);white-space:normal;
+  font-size:.78rem;color:var(--ink);word-break:break-all;line-height:1.6}
+.sub .pop{display:inline-block;max-width:100%}
+.sub .pop > summary{overflow:hidden;text-overflow:ellipsis}
+.sub .popp{left:0;right:auto}
 /* 2列：画面の横幅を使い、縦に積まない */
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1.1rem;align-items:start}
 .cols > .box{margin-bottom:0}
@@ -26,7 +41,7 @@ body{background:var(--paper);color:var(--ink);
 .cautions{font-size:.76rem;color:var(--mute);margin:.2rem 0 .6rem}
 .cautions summary{cursor:pointer}
 /* 設定タブ：項目の数は単元ごとに違う（長さは8項目）。ページは送らず、箱の中だけを送る。保存ボタンは箱の下端に残す */
-#pageSet .cols > .box{max-height:calc(100vh - 13rem);overflow:auto}
+#pageSet .cols > .box{max-height:calc(100vh - 7.5rem);overflow:auto}   /* 見出しの1段（約4.5rem）＋余白 */
 #pageSet .cols > .box > .bar:last-child{position:sticky;bottom:-1rem;background:#fff;margin:0 -1.1rem -1rem;padding:.7rem 1.1rem;border-top:1px solid var(--line)}
 details.help{font-size:.84rem;margin-top:1rem}
 details.help summary{cursor:pointer;font-weight:700;color:var(--mute)}
@@ -295,20 +310,21 @@ details.more[open] summary{border-color:var(--ink)}
 </head>
 <body>
 <div class="wrap">
-  <div class="head">
+  <!-- 常に出ている見出しは1段にまとめる：題名｜タブ｜写しの名前・注意（押すと詳しく）｜行き先。
+       縦の場所を下の作業欄（協力モードのステージ・操作欄など）に回すため -->
+  <div class="topbar">
     <h1 id="h1">設定・分析</h1>
+    <nav class="tabs" role="tablist">
+      <button class="tab on" id="tabMode" role="tab" aria-current="page">公開モード</button>
+      <button class="tab" id="tabSet" role="tab">設定</button>
+      <button class="tab" id="tabAna" role="tab">分析</button>
+      <button class="tab" id="tabCoop" role="tab">協力モード</button>
+    </nav>
+    <div class="sub" id="sub"></div>
+    <details id="cautions" class="cautions pop" style="display:none"><summary></summary><div class="popp" id="cautionList"></div></details>
     <div class="golinks" id="golinks"></div>
   </div>
-  <div class="sub" id="sub"></div>
-  <div id="verWarn" class="note" style="display:none;color:#C0392B;font-weight:700"></div>
-  <details id="cautions" class="cautions" style="display:none"><summary></summary><div id="cautionList"></div></details>
-
-  <nav class="tabs" role="tablist">
-    <button class="tab on" id="tabMode" role="tab" aria-current="page">公開モード</button>
-    <button class="tab" id="tabSet" role="tab">設定</button>
-    <button class="tab" id="tabAna" role="tab">分析</button>
-    <button class="tab" id="tabCoop" role="tab">協力モード</button>
-  </nav>
+  <div id="verWarn" class="note" style="display:none;color:#C0392B;font-weight:700;margin:-.4rem 0 .6rem"></div>
 
   <div id="pageMode">
   <div class="box" id="clsBox">
@@ -642,11 +658,12 @@ function showWhere(w){
     (w.url      ? '<a href="' + esc(w.url) + '">児童の画面</a>' : '') +
     (w.sheetUrl ? '<a href="' + esc(w.sheetUrl) + '">スプレッドシート</a>' : '');
   // 1行に収める。ID と配布 URL は折りたたみに（写しの取り違えを確かめる時だけ開く）
+  // 見出しの段に収める：写しの名前だけ出し、押すと ID と配布 URL（写しの取り違えを確かめる時だけ開く）
   document.getElementById('sub').innerHTML =
-    '設定している写し：<b>' + esc(w.file) + '</b>' +
-    ((w.id || w.url) ? ' <details style="display:inline"><summary style="display:inline;cursor:pointer">ID と URL</summary>' +
+    '<details class="pop"><summary title="設定している写し：' + esc(w.file) + '">写し：<b>' + esc(w.file) + '</b> ▾</summary>' +
+    '<div class="popp">設定している写し：<b>' + esc(w.file) + '</b>' +
       (w.id  ? '<br>スプレッドシート ID: <code>' + esc(w.id) + '</code>' : '') +
-      (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '') + '</details>' : '');
+      (w.url ? '<br>児童に配る URL: <code>' + esc(w.url) + '</code>' : '') + '</div></details>';
 }
 
 function setStat(id, text, bad){
@@ -678,8 +695,9 @@ function showWarn(msgs){
   el.style.display = bad.length ? '' : 'none';
   var ce = document.getElementById('cautions');
   ce.style.display = ok.length ? '' : 'none';
-  ce.querySelector('summary').textContent = 'Unit.gs の注意 ' + ok.length + '件（動作に支障はありません）';
-  document.getElementById('cautionList').innerHTML = ok.map(function(m){ return esc(m.replace(/^Unit\.gs: 注意：/, '')); }).join('<br>');
+  ce.querySelector('summary').textContent = '注意 ' + ok.length + '件 ▾';
+  ce.querySelector('summary').title = 'Unit.gs の注意（動作に支障はありません）';
+  document.getElementById('cautionList').innerHTML = 'Unit.gs の注意（動作に支障はありません）<br>' + ok.map(function(m){ return esc(m.replace(/^Unit\.gs: 注意：/, '')); }).join('<br>');
 }
 
 google.script.run.withSuccessHandler(function(r){
@@ -695,6 +713,7 @@ google.script.run.withSuccessHandler(function(r){
   showWarn(warns);
 
   document.getElementById('h1').textContent = u.teacherTitle || u.title || '設定・分析';
+  document.getElementById('h1').title = document.getElementById('h1').textContent;   // 見出しの段では幅で切るので、全文は指を置くと出す
   // どの写しを操作しているかを出す。版を入れ替えた直後、古い写しと新しい写しは
   // 見た目が同じで、取り違えても画面には何も出ない（児童側が空になるだけ）
   showWhere(r.where);
@@ -1944,7 +1963,7 @@ function coopOrgSet(v){
   var el = document.getElementById('coopOrg'), mx = coopOrgMax();
   if(!el.disabled) el.value = Math.max(1, Math.min(mx, Math.round(v) || 1));   // 映している回の値（進行中）は書きかえない
   el.max = mx;
-  document.getElementById('coopOrgMax').textContent = '／最大' + mx;
+  document.getElementById('coopOrgMax').textContent = '／' + mx; document.getElementById('coopOrgMax').title = '最大 ' + mx;
 }
 /* 協力の「詳細」：summary の上に開く（上に入らなければ下）。画面の左右からはみ出さない */
 document.getElementById('coopMore').addEventListener('toggle', function(){
@@ -1955,6 +1974,10 @@ document.getElementById('coopMore').addEventListener('toggle', function(){
   pn.style.top = (r.top - h - 6 >= 8 ? r.top - h - 6 : Math.min(r.bottom + 6, innerHeight - h - 8)) + 'px';
 });
 addEventListener('resize', function(){ var m = document.getElementById('coopMore'); if(m) m.open = false; });
+/* 見出しの段の小窓（写し・注意）は外を押したら閉じる */
+document.addEventListener('click', function(e){
+  [].forEach.call(document.querySelectorAll('.topbar details.pop[open]'), function(d){ if(!d.contains(e.target)) d.open = false; });
+});
 /* 「詳細」は外を押したら閉じる */
 document.addEventListener('click', function(e){
   var m = document.getElementById('coopMore');
