@@ -269,12 +269,12 @@ details.more[open] summary{border-color:var(--ink)}
 /* 操作欄の下の案内（状態・理由）は、出ても箱の高さが変わらないよう1行ずつ場所を取っておく（ステージの大きさを決め直さずに済む） */
 #coopStat{min-height:1.45rem;font-size:.78rem;line-height:1.5}
 #coopGuide{min-height:1.25rem}
-/* カウントダウン：5→1→スタート。図形の上に大きく重ねる */
+/* カウントダウン：よーい…→3→2→1→スタート。図形の上に大きく重ねる */
 #coopCount{position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;
   background:rgba(247,247,244,.6);font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;
   font-size:clamp(4rem,42vmin,26rem);line-height:1;text-shadow:0 2px 0 #fff;pointer-events:none}
 #coopCount.on{display:flex}
-#coopCount.go{font-size:clamp(2.4rem,20vmin,12rem)}
+#coopCount.go,#coopCount.word{font-size:clamp(2.4rem,20vmin,12rem)}
 /* 失敗：開始ボタンを隠さず、その上に理由を出す（すぐ押し直せるように） */
 #coopCount.err{background:none;align-items:flex-start;padding:30vmin 8vmin 0;text-align:center;
   font-size:clamp(.9rem,3vmin,1.6rem);color:var(--alert)}
@@ -441,7 +441,7 @@ details.more[open] summary{border-color:var(--ink)}
             <button id="coopRateAuto" class="ghost" type="button" style="display:none;padding:.25rem .6rem">自動にもどす</button></div>
           <p class="note" style="margin:.5rem 0 0;line-height:1.7">
             クラス全員の<b>本番の正答</b>で図形がいっしょに育ちます（れんしゅうは数えません）。
-            「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと 5 から数えてスタート、時間が来たら自動で打ち切りです。
+            「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと「よーい、3、2、1」でスタート、時間が来たら自動で打ち切りです。
             終わった図形を映している間は、画面の「続きから」で同じ図形を育て続けられます。</p>
         </div>
       </details></span>
@@ -2013,7 +2013,9 @@ document.getElementById('coopPlanReload').onclick = function(){ if(planCanDiscar
     planLoad();
   });
 });
-/* ---- 開始：サーバーが「今から5秒後」を始まりに決め、画面はその時刻に合わせて 5→1→スタート を出す ----
+/* ---- 開始：サーバーが「今から4秒後」を始まりに決め、画面はその時刻に合わせて よーい…→3→2→1→スタート を出す ----
+ * 押してから応答が届くまで（GAS の往復、1〜3秒でばらつく）は長さが決まらないので、数字ではなく「よーい…」を出す。
+ * 以前は送信中から「5」を出していたため、5 だけが往復の分長く見えた。数字は応答の後、1秒ずつそろって進む。
  * 数えている間の表示は、送信中（CP.begin）とセッションの start だけから決める。ページを開き直しても同じ表示に戻る */
 function coopBegin(reset, cont){
   if(PLAN.open) planClose();
@@ -2049,11 +2051,12 @@ function coopBegin(reset, cont){
 }
 function coopCountShow(){
   var el = document.getElementById('coopCount'), s = CP.sess, txt = '', cls = '';
-  if(CP.begin) txt = '5';                                   // 送信中：押した瞬間から 5 を出す
+  if(CP.begin){ txt = 'よーい…'; cls = 'word'; }           // 送信中：長さが決まらない間は数字を出さない
   else if(CP.beginErr && Date.now() < CP.beginErrUntil){ txt = CP.beginErr; cls = 'err'; }
   else if(s && s.status === 'run' && !CP.loaded && s.id !== 'save'){
     var rem = s.start - (Date.now() + CP.off);
-    if(rem > 0) txt = String(Math.min(5, Math.ceil(rem / 1000)));
+    if(rem > 3000){ txt = 'よーい…'; cls = 'word'; }
+    else if(rem > 0) txt = String(Math.ceil(rem / 1000));
     else if(rem > -1200){ txt = 'スタート！'; cls = 'go'; }
   }
   if(el.textContent !== txt) el.textContent = txt;
@@ -2072,7 +2075,7 @@ function coopGoShow(){                        // 開始ボタン：進行中・�
 document.getElementById('coopCont').onclick = function(){
   if(CP.begin) return;
   var cont = CP.loaded ? ('save:' + CP.saveId) : 'live';
-  if(!confirm('いまの図形の続きから、' + coopMinVal() + '分の協力プレイを始めますか？（5 から数えて始めます）')) return;
+  if(!confirm('いまの図形の続きから、' + coopMinVal() + '分の協力プレイを始めますか？（「よーい、3、2、1」で始めます）')) return;
   coopBegin(false, cont);
 };
 setInterval(coopCountShow, 100);
@@ -2092,7 +2095,7 @@ document.getElementById('coopStop').onclick = function(){
 };
 document.getElementById('coopReset').onclick = function(){
   if(CP.begin) return;
-  if(!confirm('図形を消して、同じ設定ではじめからやり直しますか？（5 から数えて始めます）')) return;
+  if(!confirm('図形を消して、同じ設定ではじめからやり直しますか？（「よーい、3、2、1」で始めます）')) return;
   coopBegin(true);
 };
 function coopRelayout(){ coopGen(); coopRecompute(CP.evI); }

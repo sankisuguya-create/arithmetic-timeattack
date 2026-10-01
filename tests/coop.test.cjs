@@ -328,18 +328,24 @@ assert.equal(rowsD(), 40);
   delete sheets.summary; Object.keys(store).filter(k => /^sumidx_/.test(k)).forEach(k => delete store[k]);
 }
 
-/* ---- 開始のカウントダウン：始まりをサーバーが5秒後に置く（教師画面はこの start に合わせて 5→1→スタート を出す） ---- */
+/* ---- 開始のカウントダウン：始まりをサーバーが4秒後に置く（教師画面はこの start に合わせて よーい…→3→2→1→スタート を出す） ---- */
 const t0 = Date.now();
 const stE = ctx.coopReset({ countdown: true });
 assert.ok(stE.ok && typeof stE.now === 'number', JSON.stringify(stE));    // 画面が時計のずれを差し引けるように now を返す
 const sE = stE.session;
-assert.ok(sE.start - t0 >= 5000 && sE.start - t0 < 6000, String(sE.start - t0));
+assert.ok(sE.start - t0 >= 4000 && sE.start - t0 < 5000, String(sE.start - t0));
 assert.equal(sE.end - sE.start, 600000);                               // 制限時間はスタートから数える
 assert.ok(sheets.coop.values.find(r => r[0] === sE.id)[9].getTime() === sE.start);
 assert.ok(JSON.parse(store.coop_prev).end < sE.start);                  // 前の協力はリセットを押した時点で終わる
 ctx.coopNote_(c1, 1, 7, { t: Date.now() - 58000, lim: 60 });            // カウントダウン中に遊び終えた回：新しい方には数えない
 assert.equal(ctx.coopState(0).total, 0);
 assert.equal(ctx.coopForChild_(c1, 60).counts, true);                   // カウントダウン中に始めた本番は数える
+{ // 画面：送信中と残り3秒より前は「よーい…」（長さが往復でばらつく間に数字を出さない）。数字は3から
+  const tq = read('common/teacher.html');
+  assert.ok(tq.includes("if(CP.begin){ txt = 'よーい…'; cls = 'word'; }"));
+  assert.ok(/if\(rem > 3000\)\{ txt = 'よーい…'; cls = 'word'; \}\n\s*else if\(rem > 0\) txt = String\(Math\.ceil\(rem \/ 1000\)\);/.test(tq));
+  assert.ok(!/txt = '5'/.test(tq));
+}
 const t1 = Date.now(), stF = ctx.coopReset();                           // countdown なし（古い画面から）は今すぐ始まる
 assert.ok(stF.session.start - t1 < 1000);
 
