@@ -32,10 +32,12 @@ Sheet.prototype.getRange = function (r, c, nr, nc) {
       for (let i = 0; i < nr; i++) out.push((self.values[r - 1 + i] || []).slice(c - 1, c - 1 + nc));
       return out;
     },
-    setFontWeight() { return this; }, setNote() { return this; }, setNumberFormat() { return this; }
+    setFontWeight() { return this; }, setNote() { return this; }, setNumberFormat() { return this; },
+    clearContent() { for (let i = 0; i < nr; i++) { const row = self.values[r - 1 + i]; if (row) for (let j = 0; j < nc; j++) row[c - 1 + j] = ''; } return this; }
   };
 };
 Sheet.prototype.clear = function () { this.values = []; };
+Sheet.prototype.getSheetId = function () { return 123; };
 Sheet.prototype.setFrozenRows = function () {};
 Sheet.prototype.setTabColor = function () {};
 Sheet.prototype.insertColumnAfter = function () {};
@@ -396,6 +398,37 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   // 画面：開始前の欄はステージと別。組は文字で示す
   assert.ok(tui.includes('id="coopPlan"') && tui.includes('.coopSavePlan(PLAN.cls, PLAN.gn, PLAN.gi.slice())'));
   assert.ok(tui.indexOf('id="coopPlan"') < tui.indexOf('<div id="coopStage"'));
+  // 正本は単元の「組分け」シート。保存するとクラス×組数の塊が書かれる
+  ctx.coopSavePlan('3-1', 3, [2, 2, 1, 1, 0, 0, 2, 1]);
+  const gs = sheets['組分け'];
+  assert.ok(gs, '組分けシートができる');
+  assert.equal(J(gs.values[0]), J(['クラス', '組数', '番号', '氏名', '組', 'email']));
+  const live = gs.values.slice(1).filter(r => r[0] === '3-1' && r[1] === 3);
+  assert.equal(live.length, 8);
+  assert.equal(J(live.map(r => r[4])), J(['C', 'C', 'B', 'B', 'A', 'A', 'C', 'B']));
+  assert.equal(live[0][3], '児童1');
+  assert.ok(ctx.coopPlan('3-1', 3).sheetUrl.includes('#gid=123'));
+  // 教師がシートを直接直す：組は「A組」「1」も読み、クラスは「3年1組」も読む。メールが空なら番号で照らす
+  live[0][4] = 'A組'; live[1][4] = '2'; live[2][0] = '3年1組'; live[3][5] = ''; live[3][4] = 'a';
+  assert.equal(J(ctx.coopPlan('3-1', 3).gi), '[0,1,1,0,0,0,2,1]');
+  // 読めない値の行は等分の位置に戻す
+  live[7][4] = 'Z';
+  assert.equal(ctx.coopPlan('3-1', 3).gi[7], 2);
+  // 他の組数の塊は別に残る
+  ctx.coopSavePlan('3-1', 4, [3, 3, 2, 2, 1, 1, 0, 0]);
+  assert.equal(gs.values.slice(1).filter(r => r[0] && Number(r[1]) === 4).length, 8);
+  assert.equal(ctx.coopPlan('3-1', 3).gi[0], 0);
+  // 以前の版（スクリプトプロパティ）の予定は、シートに塊が無い時だけ読み、保存するとシートへ移して消す
+  props['coop_plan_3-1_5'] = JSON.stringify({ order: ['k01@kyoiku.edu.nishi.or.jp', 'k02@kyoiku.edu.nishi.or.jp'], gi: [4, 4] });
+  const legacy = ctx.coopPlan('3-1', 5);
+  assert.ok(legacy.saved); assert.equal(legacy.gi[0], 4); assert.equal(legacy.gi[1], 4);
+  ctx.coopSavePlan('3-1', 5, Array.from(legacy.gi));
+  assert.ok(!('coop_plan_3-1_5' in props));
+  assert.equal(gs.values.slice(1).filter(r => Number(r[1]) === 5).length, 8);
+  // 画面：保存ボタンを押すまで書かない（チップを動かしただけでは保存しない）
+  assert.ok(tui.includes('id="coopPlanSave"') && /function planMove\(i, g\)\{[\s\S]*?planSetDirty\(true\)/.test(tui));
+  assert.ok(!/planMove[\s\S]{0,300}coopSavePlan/.test(tui.match(/function planMove\(i, g\)\{[\s\S]*?\n\}/)[0]));
+  assert.ok(tui.includes("addEventListener('pointerdown'") && tui.includes('#coopPlan .pk{touch-action:none'));
   // クラスは大きなボタン。隠したプルダウンが正本で、選んだクラスは端末ごとに覚える
   assert.ok(tui.includes('id="coopClsPick"') && /<select id="coopCls" style="display:none"/.test(tui));
   assert.ok(tui.includes("localStorage.setItem('coopCls', sel.value)") && tui.includes("localStorage.getItem('coopCls')"));

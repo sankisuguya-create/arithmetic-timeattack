@@ -1358,24 +1358,107 @@ function coopPub_(s, since) {
  * その間に届いた直前の回の送り直しをこちらに数える（開始を押した瞬間に前の回の取りこぼしが出ないように）
  */
 /*
- * 組の予定（開始前に教師が作っておく組分け）。クラス×組数ごとにスクリプトプロパティへ置く。
- * 児童の並びが名簿の変更でずれても組がずれないよう、メールで持つ。名簿にない児童は捨て、新しい児童は番号順の等分の位置に入る。
- * 組数ごとに分けて持つので、組数を一時的に変えて戻しても、作った組は消えない。
+ * 組の予定（開始前に教師が作っておく組分け）。単元のスプレッドシートの「組分け」シートが正本。
+ * 教師はシートを直接直してもよいし、教師画面で並べ替えて「保存」してもよい（どちらも同じシートに書く）。
+ *
+ *   クラス | 組数 | 番号 | 氏名 | 組 | email
+ *   3-1    | 6    | 1    | 山田 | A  | xxx@...
+ *
+ * - 組は A〜J（「A組」「1」も読む）。クラスは「3-1」（「3年1組」も読む）
+ * - 児童はメールで照らす（名簿の並びが変わってもずれない）。メールが空なら番号で照らす。
+ *   シートに無い児童（転入など）は番号順の等分の位置に入る
+ * - 組数ごとに別の行の塊として持つので、組数を一時的に変えて戻しても、作った組は消えない
+ * - 以前の版はスクリプトプロパティ（coop_plan_<クラス>_<組数>）に持っていた。シートに行が無い時だけそちらを読み、
+ *   次に保存した時にシートへ移して消す
  */
+var COOP_GROUP_SHEET = '組分け';
+var COOP_GROUP_HEAD = ['クラス', '組数', '番号', '氏名', '組', 'email'];
+var COOP_GROUP_LETTERS = 'ABCDEFGHIJ';
+
 function coopPlanKey_(cls, gn) { return 'coop_plan_' + cls + '_' + gn; }
+function coopClsNorm_(v) {
+  return String(v == null ? '' : v).replace(/\s/g, '').replace(/年/, '-').replace(/組$/, '');
+}
+/** シートの「組」の欄 → 0〜gn-1。読めなければ -1 */
+function coopGrpParse_(v, gn) {
+  var t = String(v == null ? '' : v).trim().replace(/組$/, ''), n = -1;
+  if (/^[A-Ja-j]$/.test(t)) n = t.toUpperCase().charCodeAt(0) - 65;
+  else if (/^\d+$/.test(t)) n = Number(t) - 1;
+  return (n >= 0 && n < gn) ? n : -1;
+}
+function coopGroupSheet_(create) {
+  var ss = ss_(), sh = ss.getSheetByName(COOP_GROUP_SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(COOP_GROUP_SHEET);
+    sh.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    try {
+      sh.getRange(1, 1).setNote('協力モードの組分け（教師画面の「グループを編集」と同じもの）。\n' +
+        '「組」の欄を A〜J で書きかえると、次に開始した時その組で始まります。\n' +
+        'クラス×組数ごとの行の塊です。行が無いクラスは、教師画面で一度「保存」すると作られます。');
+    } catch (e) {}
+  }
+  return sh;
+}
+function coopGroupRows_() {
+  var sh = coopGroupSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, COOP_GROUP_HEAD.length).getValues();
+}
+function coopPlanDefault_(gn, kids) {
+  return kids.map(function (k, i) { return Math.min(gn - 1, Math.floor(i * gn / kids.length)); });
+}
+/** 予定があれば児童の並び（kids）に合わせた組番号の配列。無ければ null */
 function coopPlanGet_(cls, gn, kids) {
-  var p = null;
-  try { p = JSON.parse(PropertiesService.getScriptProperties().getProperty(coopPlanKey_(cls, gn)) || 'null'); } catch (e) {}
-  if (!p || !p.order || !p.gi) return null;
-  var by = {};
-  p.order.forEach(function (m, i) { by[m] = Number(p.gi[i]); });
+  var byMail = {}, byNo = {}, found = false;
+  coopGroupRows_().forEach(function (r) {
+    if (coopClsNorm_(r[0]) !== cls || Number(r[1]) !== gn) return;
+    found = true;
+    var g = coopGrpParse_(r[4], gn);
+    if (g < 0) return;
+    var m = String(r[5] || '').trim().toLowerCase();
+    if (m) byMail[m] = g;
+    else if (r[2] !== '' && r[2] != null) byNo[Number(r[2])] = g;
+  });
+  if (!found) {
+    // 以前の版の置き場（スクリプトプロパティ）
+    var p = null;
+    try { p = JSON.parse(PropertiesService.getScriptProperties().getProperty(coopPlanKey_(cls, gn)) || 'null'); } catch (e) {}
+    if (!p || !p.order || !p.gi) return null;
+    p.order.forEach(function (m, i) { var g = Number(p.gi[i]); if (g >= 0 && g < gn && g === Math.floor(g)) byMail[m] = g; });
+  }
+  var def = coopPlanDefault_(gn, kids);
   return kids.map(function (k, i) {
-    var g = by[k.mail];
-    return (g >= 0 && g < gn && g === Math.floor(g)) ? g : Math.min(gn - 1, Math.floor(i * gn / kids.length));
+    if (byMail.hasOwnProperty(k.mail)) return byMail[k.mail];
+    if (byNo.hasOwnProperty(k.no)) return byNo[k.no];
+    return def[i];
   });
 }
+/** クラス×組数の行の塊を書き直す。gi が null なら塊を消す（番号順の等分に戻す） */
 function coopPlanPut_(cls, gn, order, gi) {
-  PropertiesService.getScriptProperties().setProperty(coopPlanKey_(cls, gn), JSON.stringify({ order: order, gi: gi }));
+  var sh = coopGroupSheet_(true), kids = coopKids_(cls), byMail = {};
+  kids.forEach(function (k) { byMail[k.mail] = k; });
+  var old = coopGroupRows_();
+  var rows = old.filter(function (r) { return !(coopClsNorm_(r[0]) === cls && Number(r[1]) === gn); });
+  if (gi) {
+    order.forEach(function (m, i) {
+      var k = byMail[m] || {};
+      rows.push([cls, gn, k.no || '', k.name || '', COOP_GROUP_LETTERS[gi[i]] || 'A', m]);
+    });
+  }
+  rows.sort(function (a, b) {
+    var ca = coopClsNorm_(a[0]), cb = coopClsNorm_(b[0]);
+    return (ca < cb ? -1 : ca > cb ? 1 : 0) || Number(a[1]) - Number(b[1]) || Number(a[2]) - Number(b[2]);
+  });
+  if (old.length) sh.getRange(2, 1, old.length, COOP_GROUP_HEAD.length).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, COOP_GROUP_HEAD.length).setValues(rows);
+  try { PropertiesService.getScriptProperties().deleteProperty(coopPlanKey_(cls, gn)); } catch (e) {}
+}
+function coopGroupUrl_() {
+  try {
+    var sh = coopGroupSheet_(true);
+    return ss_().getUrl() + '#gid=' + sh.getSheetId();
+  } catch (e) { return ''; }
 }
 function coopGnOf_(gn) { return Math.max(2, Math.min(COOP_GN_MAX, Number(gn) || 6)); }
 
@@ -1385,18 +1468,18 @@ function coopPlan(cls, gn) {
   cls = String(cls || ''); gn = coopGnOf_(gn);
   var kids = coopKids_(cls);
   if (!kids.length) return { ok: false, msg: 'そのクラスの児童が名簿にありません。' };
-  var gi = coopPlanGet_(cls, gn, kids) ||
-    kids.map(function (k, i) { return Math.min(gn - 1, Math.floor(i * gn / kids.length)); });
-  return { ok: true, cls: cls, gn: gn, gi: gi,
+  var plan = coopPlanGet_(cls, gn, kids);
+  return { ok: true, cls: cls, gn: gn, gi: plan || coopPlanDefault_(gn, kids), saved: !!plan,
+           sheetUrl: coopGroupUrl_(),   // 「シートで編集」の行き先（シートが無ければここで作る。教師の操作の中なので書いてよい）
            names: kids.map(function (k) { return k.name; }), nos: kids.map(function (k) { return k.no; }) };
 }
 
-/** 開始前の組分けを保存する。gi は coopPlan が返した児童の並びに合わせる。reset なら予定を消して番号順の等分に戻す */
+/** 開始前の組分けを「組分け」シートへ保存する。gi は coopPlan が返した児童の並びに合わせる。reset なら塊を消して番号順の等分に戻す */
 function coopSavePlan(cls, gn, gi, reset) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   cls = String(cls || ''); gn = coopGnOf_(gn);
   var kids = coopKids_(cls);
-  if (reset) { PropertiesService.getScriptProperties().deleteProperty(coopPlanKey_(cls, gn)); return coopPlan(cls, gn); }
+  if (reset) { coopPlanPut_(cls, gn, null, null); return coopPlan(cls, gn); }
   if (!Array.isArray(gi) || gi.length !== kids.length) {
     return { ok: false, msg: '名簿が変わりました。画面を開き直してください。' };
   }
