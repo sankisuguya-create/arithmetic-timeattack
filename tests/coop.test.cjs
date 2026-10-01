@@ -691,6 +691,18 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes('#coopStat:empty,#coopGuide:empty{display:none}'));
   // 設定は見出し｜操作の2列。クラスは3列の格子（6クラスまで2段）。全クラス同じ学年なら「1組」だけ
   assert.ok(tui.includes('.coopBox .cform{display:grid;grid-template-columns:6.4rem minmax(0,1fr);'));
+  // 設定の見本：設定を変えると右に描き直す。見本の間は終わった回で上書きせず、開始の扱いは「まだ始めていない」
+  assert.ok(tui.includes("if(CP.polling || CP.loaded || CP.prev === 'user') return;"));
+  assert.ok(tui.includes("var b = document.getElementById('coopStart'), s = CP.prev ? null : CP.sess;"));
+  assert.ok(/function coopUseSession\(s, evAll\)\{\n  coopPrevOff_\(\);/.test(tui), '本物の回を映すと見本をやめる');
+  ['coopCls', 'coopGn', 'coopMode', 'coopOrg'].forEach(id => assert.ok(tui.includes("'" + id + "'"), id));
+  // 見本の正答は決まった乱数（毎回同じ形）。量は自動の枚数の見込みと同じ前提（参加 CPART）
+  assert.ok(tui.includes('var r = coopRng(20240)') && tui.includes('if(r() > CPART) continue;'));
+  // 輪郭は closePath() で閉じない（多数を1本の Path2D にまとめると二乗で遅くなる）
+  const poly = src => src.slice(src.indexOf('function coopPoly(P, t)'), src.indexOf('\n}', src.indexOf('function coopPoly(P, t)')));
+  assert.ok(!poly(tui).includes('closePath'));
+  const rvp = ui0 => ui0.slice(ui0.indexOf('  function poly(P, t){'), ui0.indexOf('} }', ui0.indexOf('  function poly(P, t){')));
+  assert.ok(!rvp(read('common/index.html')).includes('closePath'));
   assert.ok(tui.includes('.coopBox .clsPick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));'));
   assert.ok(tui.includes("if(one) name = name.replace(/^\\d+年/, '');"));
   // 常に出ている見出しは1段（題名・タブ・写し・注意・行き先）。タブは見出しの段の中

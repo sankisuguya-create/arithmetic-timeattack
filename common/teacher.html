@@ -185,6 +185,14 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
   background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;
   color:var(--ink);padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
 #coopStage.nonames #coopRoster{display:none}
+/* 設定の見本：名札・再生・正答数は出さず、「見本」の札を出す（実際の回と取り違えないように） */
+#coopPrevTag{display:none;background:#101728;color:#fff;border-radius:9px;padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem);font-weight:700}
+#coopStage.preview #coopPrevTag{display:inline-block}
+#coopStage.preview #coopRoster,#coopStage.preview #coopReplay,#coopStage.preview #coopNames,
+#coopStage.preview #coopHud .tag:last-child{display:none}
+#coopPrevBack{background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;color:var(--ink);
+  padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
+#coopPrevBack[hidden]{display:none}
 #coopReplay{display:none;align-items:center;gap:.9vmin;
   background:rgba(255,255,255,.92);border:1.5px solid var(--line);border-radius:12px;
   padding:.5vmin 1.3vmin;box-shadow:0 1px 6px rgba(16,23,40,.14)}
@@ -519,6 +527,8 @@ details.more[open] summary{border-color:var(--ink)}
     <canvas id="coopGrow"></canvas>
     <div id="coopTL">
     <button id="coopClose" class="ghost" type="button">× もどる</button>
+    <span id="coopPrevTag">見本（正答はつくりもの）</span>
+    <button id="coopPrevBack" type="button" hidden>終わった回にもどる</button>
     <button id="coopNames" type="button">名前をかくす <span class="ptag">この端末だけ</span></button>
     <div id="coopReplay">
       <button id="coopRplay" type="button">▶</button>
@@ -607,8 +617,8 @@ function fpProg(tc){
   return { line: Math.min(u, N), thick: Math.max(0, Math.min(u - N, K)), thin: Math.max(0, Math.min(u - N - K, FP.thin.length)) };
 }
 function fpPoly(P, t){
-  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.closePath();
-  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.closePath(); }
+  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
+  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); }
 }
 function fpDraw(tc){
   if(!FP.on) return;
@@ -1527,9 +1537,11 @@ function coopRateUpdate(){
   document.getElementById('coopRateTag').style.display = CP.RATE_MANUAL ? 'none' : '';
   document.getElementById('coopRateAuto').style.display = CP.RATE_MANUAL ? '' : 'none';
 }
+/* 輪郭は closePath() で閉じない：多くの図形を1本の Path2D にまとめると、closePath() の回数に対して時間が二乗で伸びる
+ * （Chromium で4万枚 7.5秒、始点へ lineTo で戻すと 13ms）。始点の次の点まで重ねて引き、線の角も閉じた時と同じにする */
 function coopPoly(P, t){ var p = t.p, i;
-  P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.closePath();
-  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.closePath(); }
+  P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
+  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); }
 }
 function coopCtx(id){ return document.getElementById(id).getContext('2d'); }
 function coopXform(ctx, s){ ctx.setTransform(CP.DPR * s, 0, 0, CP.DPR * s, CP.DPR * (CP.OX - CP.VX * s), CP.DPR * (CP.OY - CP.VY * s)); ctx.lineJoin = 'round'; }
@@ -1691,6 +1703,7 @@ function coopRoster(){
 
 /* ---- セッションの反映（サーバーの応答・セーブデータ共通） ---- */
 function coopUseSession(s, evAll){
+  coopPrevOff_();
   // 続きからの回：前の回までの正答を先頭に置き、この回の正答は前の回までの長さだけ後ろへずらして1本の時間軸にする
   CP.PRI = (s.prior && s.prior.dur) || 0;
   var shifted = (evAll || []).map(function(e){ return [e[0] + CP.PRI, e[1], e[2], e[3]]; });
@@ -1772,7 +1785,7 @@ function coopMerge(r, giVer){          // 進行中セッションの差分を�
 
 /* ---- ポーリング（きょうりょくタブを開いている間だけ3秒ごと。確定した児童の提出が差分で届く） ---- */
 function coopPoll(){
-  if(CP.polling || CP.loaded) return;
+  if(CP.polling || CP.loaded || CP.prev === 'user') return;   // 設定の見本を見ている間は、終わった回で上書きしない
   var pg = document.getElementById('pageCoop');
   if(pg && pg.style.display === 'none') return;  // 見ていないタブの分は取らない
   CP.polling = true;
@@ -1780,7 +1793,7 @@ function coopPoll(){
   google.script.run.withSuccessHandler(function(r){
     CP.polling = false;
     if(!r || !r.ok || CP.loaded) return;   // 応答を待つ間に保存データの再生へ切り替えたら捨てる
-    if(r.status === 'none'){ CP.sess = null; return; }
+    if(r.status === 'none'){ if(!CP.prev) CP.sess = null; return; }   // 回が無い：初めの見本はそのまま
     // サーバーの列が手元より短い（キャッシュが消えて、シートに書く前の分を失った）ときも全件取り直す。
     // 差分のまま続けると、以後の児童の提出を取りこぼし続ける
     var shrunk = CP.sess && CP.sess.id === r.id && typeof r.evN === 'number' &&
@@ -1816,6 +1829,7 @@ function coopTabShow_(){
  */
 function coopGuideText(){
   var s = CP.sess;
+  if(CP.prev) return { note: '', guide: '右は見本です（正答はつくりもの。色は開始のたびに変わります）。設定を変えると描き直します。' };
   if(!s || CP.loaded || s.id === 'save') return { note: '', guide: '' };
   var now = Date.now() + CP.off, lim = (s.lim || 60) * 1000, slack = s.slack || 10000;
   var remain = s.end - now, late = (s.lateUntil || s.end + 600000) - now;
@@ -1853,7 +1867,7 @@ function coopGuide(){
 /* ---- 画面時計：残り時間はサーバー時刻のずれを差し引いて数える ---- */
 setInterval(function(){
   coopGuide(); coopGoShow();
-  if(!CP.sess){
+  if(!CP.sess || CP.prev){
     document.getElementById('coopClock').textContent = coopFmt(Number(document.getElementById('coopMin').value || 10) * 60000);
     return;
   }
@@ -1884,14 +1898,68 @@ function coopInitUnit(u){
     [2,3,4,5,6,7,8,9,10].map(function(n){ return '<option' + (n === 6 ? ' selected' : '') + '>' + n + '</option>'; }).join('');
   coopPreview();
 }
-/* 開始前の下見：選んでいる図形の下地だけを映し、真ん中に「開始」を出す（全画面にしてから開始できるように） */
-function coopPreview(){
-  if(CP.sess) return;
-  document.getElementById('coopStage').style.display = '';   // 先に出さないと幅が取れずタイルが作れない
+/* ---- 設定の見本（プレビュー） ----
+ * 左の設定（図形・色づかい・組数・育ち始める場所・クラスの人数・1正答の枚数）で、協力プレイが終わった時の形を右に描く。
+ * 正答はつくりもの（決まった乱数で、児童ごとの速さと参加にばらつきを付ける）。量は「1正答の枚数（自動）」の見込みと同じ式で作るので、
+ * 自動のままなら実際の回と同じく完成の85%前後まで育つ。色は開始のたびに変わるので、見本の色は決まった仮の色。
+ * CP.prev：'auto'＝回が何も無い時の初めの見本（サーバーに回があれば問い合わせで差し替わる）、
+ *          'user'＝教師が設定を変えて出した見本（終わった回で上書きしない。「終わった回にもどる」で戻る） */
+function coopPrevSession_(){
+  var cls = document.getElementById('coopCls'), o = cls.selectedOptions[0];
+  var n = Math.max(1, Math.min(60, Number(o && o.getAttribute('data-n')) || 30));
+  var mode = document.getElementById('coopMode').value === 'group' ? 'group' : 'child';
+  var gn = Number(document.getElementById('coopGn').value) || 6, minutes = coopMinVal(), lim = 60, pace = 20;
+  var names = [], nos = [], gi = [], i;
+  for(i = 0; i < n; i++){ names.push(''); nos.push(i + 1); gi.push(Math.min(gn - 1, Math.floor(i * gn / n))); }
+  var s = { id: 'preview', cls: cls.value, pat: document.getElementById('coopPat').value, seed: 1, mode: mode, gn: gn,
+            org: coopOrgVal(), start: 0, end: minutes * 60000, status: 'done', total: 0, names: names, nos: nos, gi: gi,
+            pace: pace, minutes: minutes, lim: lim, skip: 0, prior: null };
+  // つくりものの正答：児童ごとの速さ 0.4〜1.6倍、1回ごとのゆれ、参加 9割（自動の枚数の見込みと同じ前提）
+  var r = coopRng(20240), plays = Math.max(1, Math.round(minutes * 60 / (lim + CGAP))), ev = [], sp = [];
+  for(i = 0; i < n; i++) sp.push(0.4 + 1.2 * r());
+  for(var k = 0; k < plays; k++){
+    for(i = 0; i < n; i++){
+      if(r() > CPART) continue;
+      var c = Math.max(0, Math.round(pace * lim / 60 * sp[i] * (0.75 + 0.5 * r())));
+      if(c) ev.push([Math.round((k * (lim + CGAP) + lim + r() * CGAP) * 1000), i, c, 1]);
+    }
+  }
+  ev.sort(function(a, b){ return a[0] - b[0]; });
+  s.total = ev.reduce(function(a, e){ return a + e[2]; }, 0);
+  return { s: s, ev: ev };
+}
+function coopPrevOff_(){
+  CP.prev = false;
+  document.getElementById('coopStage').classList.remove('preview');
+  document.getElementById('coopPrevBack').hidden = true;
+}
+function coopPreview(user){
+  var real = CP.sess && !CP.prev;
+  if(real && CP.sess.status === 'run' && !CP.loaded) return;   // 進行中は設定を選べない（見本も出さない）
+  if(CP.begin) return;
+  if(!user && real) return;                                     // 終わった回を映している間は、勝手に見本へ替えない
+  var back = !!(user && (real || (CP.prev && !document.getElementById('coopPrevBack').hidden)));
+  var P = coopPrevSession_(), s = P.s;
+  CP.prev = user ? 'user' : 'auto'; CP.loaded = false; CP.saveId = '';
+  CP.sess = s; CP.ev = P.ev; CP.PRI = 0; CP.SEGR = [];
+  CP.names = s.names; CP.nos = s.nos; CP.gi = s.gi; CP.MODE = s.mode; CP.GN = s.gn;
+  CP.COLORS = coopPalette(s.names.length, s.seed); CP.FAMS = CP.COLORS.map(coopFam);
+  CP.GCOLORS = coopPalette(s.gn, s.seed * 31 + 11); CP.GFAMS = CP.GCOLORS.map(coopFam);
+  CP.sel = -1; CP.EDIT = false; CP.playing = false;
+  var st = document.getElementById('coopStage');
+  st.style.display = ''; st.classList.add('preview');
+  document.getElementById('coopPrevBack').hidden = !back;
+  document.getElementById('coopReplay').classList.remove('on');
+  ['coopStop', 'coopReset', 'coopSave'].forEach(function(id){ document.getElementById(id).disabled = true; });
   coopFit_();
-  CP.names = []; CP.nos = []; CP.gi = []; CP.ev = []; CP.evI = 0; CP.PRI = 0; CP.SEGR = [];
-  coopRoster(); coopRelayout(); coopGoShow();
-  document.getElementById('coopScore').textContent = 0;
+  coopGen(); coopRoster(); coopRecompute(CP.ev.length);
+  CP.simT = 0; coopShowT(); coopGoShow(); coopGuide();
+}
+/* 設定を変えたら見本を描き直す。−／＋の連打で何度も組み直さないよう、少し待ってから1回だけ */
+var coopPrevTimer = 0;
+function coopPreviewSoon(){
+  clearTimeout(coopPrevTimer);
+  coopPrevTimer = setTimeout(function(){ coopPreview(true); }, 250);
 }
 function coopInitClasses(classes){
   var sel = document.getElementById('coopCls');
@@ -1904,6 +1972,7 @@ function coopInitClasses(classes){
   try { saved = localStorage.getItem('coopCls'); } catch(e){}
   if(saved && [].some.call(sel.options, function(o){ return o.value === saved; })) sel.value = saved;
   coopClsRender();
+  if(CP.prev === 'auto') coopPreview();       // 初めの見本を、選んだクラスの人数で描き直す
 }
 /* 隠したプルダウン（#coopCls）が正本。ボタンはその写しで、押すと値を入れて change を起こす（他の処理はプルダウンを見たまま） */
 function coopClsRender(){
@@ -1932,7 +2001,15 @@ document.getElementById('coopClsPick').onclick = function(e){
 };
 
 /* ---- 操作 ---- */
-document.getElementById('coopPat').onchange = coopPreview;   // 開始前だけ下見を描き直す（進行中は選べない）
+document.getElementById('coopPat').onchange = coopPreviewSoon;   // 設定の見本を描き直す（進行中は選べない）
+['coopCls', 'coopGn', 'coopMode', 'coopOrg'].forEach(function(id){
+  document.getElementById(id).addEventListener('change', coopPreviewSoon);
+});
+['coopOrgDn', 'coopOrgUp'].forEach(function(id){ document.getElementById(id).addEventListener('click', coopPreviewSoon); });
+document.getElementById('coopPrevBack').onclick = function(){
+  // 終わった回（または進行中の回）を映し直す：見本をやめ、サーバーに今の回を全件で聞き直す
+  coopPrevOff_(); CP.sess = null; coopPoll();
+};
 /* 時間：1分刻み（1〜30分）。数を打っても、−／＋で1分ずつ動かしてもよい。最後に選んだ時間は端末ごとに覚える */
 function coopMinVal(){
   var v = Math.round(Number(document.getElementById('coopMin').value));
@@ -2235,7 +2312,7 @@ function coopCountShow(){
   el.className = txt ? 'on' + (cls ? ' ' + cls : '') : '';
 }
 function coopGoShow(){                        // 開始ボタン：進行中・数えている間は出さない
-  var b = document.getElementById('coopStart'), s = CP.sess;
+  var b = document.getElementById('coopStart'), s = CP.prev ? null : CP.sess;   // 見本は「まだ始めていない」扱い
   var busy = CP.begin || (s && s.status === 'run' && !CP.loaded);
   b.classList.toggle('off', !!busy);
   b.classList.toggle('small', !busy && !!s);   // 終わった図形・保存データを映している間は、時計の下に小さく

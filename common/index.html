@@ -884,8 +884,9 @@ function coopRvDraw(){
   var fams = pal.map(coopFam_);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
   ctx.setTransform(DPR * S, 0, 0, DPR * S, DPR * (OX - VX * S), DPR * (OY - VY * S)); ctx.lineJoin = 'round';
-  function poly(P, t){ var p = t.p, j; P.moveTo(p[0][0], p[0][1]); for(j = 1; j < p.length; j++) P.lineTo(p[j][0], p[j][1]); P.closePath();
-    if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(j = 1; j < h.length; j++) P.lineTo(h[j][0], h[j][1]); P.closePath(); } }
+  // 輪郭は closePath() で閉じない（多数を1本の Path2D にまとめると時間が二乗で伸びる。teacher.html の coopPoly と同じ）
+  function poly(P, t){ var p = t.p, j; P.moveTo(p[0][0], p[0][1]); for(j = 1; j < p.length; j++) P.lineTo(p[j][0], p[j][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
+    if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(j = 1; j < h.length; j++) P.lineTo(h[j][0], h[j][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); } }
   var base = new Path2D(), bk = {};
   for(i = 0; i < tiles.length; i++){
     var t = tiles[i]; if(!inV(t, vr)) continue;
@@ -1974,9 +1975,9 @@ function floorProg_(min){
 /* ---- 描画。濃さを40段階に丸め、同じ色・同じ濃さの菱形を1本のパスに集めて1回で塗る ---- */
 var FLOOR_Q = 40, FLOOR_LINE = '16,23,40', FLOOR_A = { line: 0.18, thick: 0.30, thin: 0.26 };
 function floorPoly_(P, t){
-  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.closePath();
+  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
   // 穴（逆回り）があれば同じパスに足す。塗りは非ゼロ規則なので穴が抜ける（丸い渦格子の中心の輪など）
-  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.closePath(); }
+  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); }
 }
 function floorQ_(a){ return Math.max(1, Math.round(a * FLOOR_Q)); }
 function floorBucket_(){
