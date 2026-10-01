@@ -212,7 +212,7 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .clsPick button:disabled:not(.on){opacity:.4}
 /* 協力モードは左右2列：左に操作欄（上から使う順）、右に図形のステージ。
    上下に積むと操作欄の高さのぶんステージが縮み、横長の画面（1366×768）で図形が小さくなるため。狭い画面では上下に戻す */
-#pageCoop{display:grid;grid-template-columns:minmax(300px,350px) minmax(0,1fr);gap:1rem;align-items:start}
+#pageCoop{display:grid;grid-template-columns:minmax(340px,380px) minmax(0,1fr);gap:1rem;align-items:start}
 #pageCoop > .coopBox{grid-column:1;grid-row:1;margin-bottom:0;overflow-y:auto;overscroll-behavior:contain}
 /* 欄の中を送る時に切れないよう、協力の「詳細」は画面に固定して開く（位置は開いた時に summary から決める） */
 #coopMore .morePanel{position:fixed;bottom:auto}
@@ -224,13 +224,18 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .coopBox{padding:.85rem 1rem}
 .coopBox .crow{display:flex;flex-direction:column;gap:.35rem;align-items:stretch;padding:.42rem 0;border-top:1px solid var(--line)}
 .coopBox .crow:first-child{border-top:none;padding-top:0}
-.coopBox .crow .clsPick{margin:0;gap:.35rem}
-.coopBox .clsPick button{padding:.3rem .7rem;font-size:.9rem}
+/* 設定の2列：見出しの列は「育ち始める場所」が1行に入る幅でそろえる */
+.coopBox .cform{display:grid;grid-template-columns:6.4rem minmax(0,1fr);gap:.5rem .6rem;align-items:center}
+.coopBox .frow{display:contents}
+.coopBox .cform .ctl{white-space:nowrap}
+/* クラスは3列の格子：6クラスまで2段で、ボタンの幅がそろう。全クラスが同じ学年なら「1組」だけ出す（学年は見出しへ） */
+.coopBox .clsPick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.35rem;margin:0}
+.coopBox .clsPick button{padding:.32rem .3rem;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.coopBox .clsPick button small{margin-left:.2rem}
 .coopBox .grp{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
-.coopBox .grp > .ctl:first-child{width:4.2em;flex:none}
 .coopBox .ctl,.morePanel .ctl{font-size:.8rem;font-weight:700;color:var(--mute)}
 .coopBox .step{padding:.2rem .65rem;font-size:1rem;line-height:1.2}
-.coopBox .minIn{width:4.2rem;padding:.25rem .3rem;text-align:center;font-weight:800}
+.coopBox .minIn{width:3.6rem;padding:.25rem .3rem;text-align:center;font-weight:800}
 .coopBox .unit{font-size:.88rem;font-weight:700}
 .coopBox .act button{padding:.38rem .7rem;font-size:.9rem}
 .coopBox .act #coopFull{width:100%;padding:.55rem 1rem;font-size:1rem}
@@ -431,24 +436,26 @@ details.more[open] summary{border-color:var(--ink)}
        ④保存した回の再生。めったに触らない図形と「1正答の枚数」と説明は、いちばん下の「図形と表示の設定」の中にしまう。
        画面の高さが足りない時は、ページではなくこの欄の中を送る（右のステージは動かない） -->
   <div class="box coopBox">
-    <div class="crow"><div class="clsPick" id="coopClsPick"><span class="lab2">クラス</span></div></div>
-    <select id="coopCls" style="display:none" aria-hidden="true"></select>
-    <div class="crow">
-      <span class="grp"><span class="ctl">時間</span>
-        <button id="coopMinDn" class="ghost step" type="button" aria-label="1分へらす">−</button>
+    <!-- 設定は「見出し｜操作」の2列にそろえる。クラスは3列の格子（6クラスまで2段）、数の欄は36人でも同じ幅 -->
+    <div class="crow cform">
+      <div class="frow"><span class="ctl" id="coopClsLab">クラス</span><div class="clsPick" id="coopClsPick"></div></div>
+      <select id="coopCls" style="display:none" aria-hidden="true"></select>
+      <div class="frow"><span class="ctl">時間</span>
+        <span class="grp"><button id="coopMinDn" class="ghost step" type="button" aria-label="1分へらす">−</button>
         <input id="coopMin" type="number" min="1" max="30" step="1" value="10" class="minIn" aria-label="分">
-        <span class="unit">分</span>
-        <button id="coopMinUp" class="ghost step" type="button" aria-label="1分ふやす">＋</button></span>
-      <span class="grp"><span class="ctl">色づかい</span>
-        <span class="seg" id="coopModeSeg"><button type="button" data-v="child">児童ごと</button><button type="button" data-v="group">グループ</button></span>
-        <select id="coopMode" style="display:none" aria-hidden="true"><option value="child">児童ごと</option><option value="group">グループ</option></select></span>
-      <span class="grp" id="coopGnRow" style="display:none"><span class="ctl">組数</span> <select id="coopGn"></select>
-        <button id="coopPlanBtn" class="ghost" type="button">組を編集…</button></span>
-      <span class="grp"><span class="ctl" style="width:auto;white-space:nowrap">育ち始める場所</span>
-        <button id="coopOrgDn" class="ghost step" type="button" aria-label="育ち始める場所を1つへらす">−</button>
+        <button id="coopMinUp" class="ghost step" type="button" aria-label="1分ふやす">＋</button>
+        <span class="unit">分</span></span></div>
+      <div class="frow"><span class="ctl">色づかい</span>
+        <span class="grp"><span class="seg" id="coopModeSeg"><button type="button" data-v="child">児童ごと</button><button type="button" data-v="group">グループ</button></span>
+        <select id="coopMode" style="display:none" aria-hidden="true"><option value="child">児童ごと</option><option value="group">グループ</option></select></span></div>
+      <div class="frow" id="coopGnRow" style="display:none"><span class="ctl">組数</span>
+        <span class="grp"><select id="coopGn"></select>
+        <button id="coopPlanBtn" class="ghost" type="button">組を編集…</button></span></div>
+      <div class="frow"><span class="ctl">育ち始める場所</span>
+        <span class="grp"><button id="coopOrgDn" class="ghost step" type="button" aria-label="育ち始める場所を1つへらす">−</button>
         <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="育ち始める場所の数">
         <button id="coopOrgUp" class="ghost step" type="button" aria-label="育ち始める場所を1つふやす">＋</button>
-        <span class="unit" id="coopOrgMax"></span></span>
+        <span class="unit" id="coopOrgMax"></span></span></div>
     </div>
     <div class="crow act">
       <button id="coopFull">全画面でうつす</button>
@@ -1902,10 +1909,15 @@ function coopInitClasses(classes){
 function coopClsRender(){
   coopModeRender();
   var sel = document.getElementById('coopCls');
-  document.getElementById('coopClsPick').innerHTML = '<span class="lab2">クラス</span>' +
+  // 全クラスが同じ学年なら、ボタンは「1組」だけにして学年は見出しに出す（6クラスでも3列に収める）
+  var gr = [].map.call(sel.options, function(o){ return (o.textContent.match(/^(\d+)年/) || [])[1] || ''; });
+  var one = gr.length && gr.every(function(g){ return g && g === gr[0]; });
+  document.getElementById('coopClsLab').textContent = one ? 'クラス（' + gr[0] + '年）' : 'クラス';
+  document.getElementById('coopClsPick').innerHTML =
     [].map.call(sel.options, function(o){
       var name = o.textContent.replace(/（.*$/, '');
-      return '<button type="button" data-cls="' + esc(o.value) + '"' + (o.value === sel.value ? ' class="on"' : '') +
+      if(one) name = name.replace(/^\d+年/, '');
+      return '<button type="button" title="' + esc(o.textContent) + '" data-cls="' + esc(o.value) + '"' + (o.value === sel.value ? ' class="on"' : '') +
         (sel.disabled ? ' disabled' : '') + '>' + esc(name) + '<small>' + esc(o.getAttribute('data-n') || '') + '人</small></button>';
     }).join('');
 }

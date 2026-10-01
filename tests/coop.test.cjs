@@ -682,13 +682,17 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
 /* ---- 教師画面：協力モードは左に操作欄、右にステージ（狭い画面では上下） ---- */
 {
   const tui = read('common/teacher.html');
-  assert.ok(tui.includes('#pageCoop{display:grid;grid-template-columns:minmax(300px,350px) minmax(0,1fr);'));
+  assert.ok(tui.includes('#pageCoop{display:grid;grid-template-columns:minmax(340px,380px) minmax(0,1fr);'));
   assert.ok(tui.includes('#pageCoop > #coopStage{grid-column:2;grid-row:1;'));
   const pc = tui.slice(tui.indexOf('<div id="pageCoop"'), tui.indexOf('</div><!-- /pageCoop -->'));
   assert.ok(pc.indexOf('class="box coopBox"') < pc.indexOf('<div id="coopStage"'));
   assert.ok(/var full = st\.offsetWidth;/.test(tui), 'ステージの幅は右の列の幅から');
   // 状態・案内は左の欄の中：高さを取り置かず、空なら詰める（1366×768 で欄の中を送らずに収めるため）
   assert.ok(tui.includes('#coopStat:empty,#coopGuide:empty{display:none}'));
+  // 設定は見出し｜操作の2列。クラスは3列の格子（6クラスまで2段）。全クラス同じ学年なら「1組」だけ
+  assert.ok(tui.includes('.coopBox .cform{display:grid;grid-template-columns:6.4rem minmax(0,1fr);'));
+  assert.ok(tui.includes('.coopBox .clsPick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));'));
+  assert.ok(tui.includes("if(one) name = name.replace(/^\\d+年/, '');"));
   // 常に出ている見出しは1段（題名・タブ・写し・注意・行き先）。タブは見出しの段の中
   const top = tui.slice(tui.indexOf('<div class="topbar">'), tui.indexOf('<div id="verWarn"'));
   ['id="h1"', 'class="tabs"', 'id="tabCoop"', 'id="sub"', 'id="cautions"', 'id="golinks"'].forEach(k => assert.ok(top.includes(k), k));
