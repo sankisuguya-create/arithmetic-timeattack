@@ -693,7 +693,14 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes('.coopBox .cform{display:grid;grid-template-columns:5.8rem minmax(0,1fr);'));
   // 欄の名前は「起点」。起点の行の右端に、見本の印の表示⇄非表示（押すたびに文字も切り替わる）
   assert.ok(tui.includes('<span class="ctl">起点</span>') && !tui.includes('育ち始める場所'));
-  assert.ok(tui.includes("this.textContent = hide ? '表示' : '非表示';"));
+  assert.ok(tui.includes("this.textContent = hide ? '非表示' : '表示';"));   // 文字は今の状態、表示中は選んでいる札の塗り
+  // ボタンの役割ごとの見た目：実行＝立体のキー、映し方＝青の塗り、小さく変える＝灰色の丸、選ぶ＝平らな札
+  ['id="coopStartL" class="bkey go"', 'id="coopStop" class="bkey stop"', 'id="coopReset" class="bkey"', 'id="coopSave" class="bkey"',
+   'id="coopFull" class="bview"', 'id="coopLoad" class="bview sm"', 'id="coopOrgShow" class="pick on"'].forEach(k => assert.ok(tui.includes(k), k));
+  assert.ok(tui.includes('.bkey{') && tui.includes('box-shadow:0 3px 0 #101728') && tui.includes('.coopBox .step{width:2rem;height:2rem;'));
+  // 左の「開始」はステージの開始と同じ。進行中・数えている間は押せない
+  assert.ok(tui.includes("document.getElementById('coopStartL').onclick = function(){ document.getElementById('coopStart').onclick(); };"));
+  assert.ok(tui.includes("document.getElementById('coopStartL').disabled = !!busy;"));
   assert.ok(tui.includes('#coopStage.preview:not(.nomarks) #coopOrgMarks{display:block}'));
   // 設定の見本：設定を変えると右に描き直す。見本の間は終わった回で上書きせず、開始の扱いは「まだ始めていない」
   assert.ok(tui.includes("if(CP.polling || CP.loaded || CP.prev === 'user') return;"));

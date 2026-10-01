@@ -259,16 +259,38 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .coopBox .clsPick button small{margin-left:.2rem}
 .coopBox .grp{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
 .coopBox .ctl,.morePanel .ctl{font-size:.8rem;font-weight:700;color:var(--mute)}
-.coopBox .step{padding:.2rem .65rem;font-size:1rem;line-height:1.2}
 .coopBox .minIn{width:3.6rem;padding:.25rem .3rem;text-align:center;font-weight:800}
 .coopBox .unit{font-size:.88rem;font-weight:700}
-.coopBox .act button{padding:.38rem .7rem;font-size:.9rem}
-.coopBox .act #coopFull{width:100%;padding:.55rem 1rem;font-size:1rem}
+/* ---- ボタンの役割（協力モードの操作欄） ----
+ * 選ぶ（クラス・色づかい・起点の印の表示）：平らな札。選んでいる物だけ濃紺の塗り、ほかは白地に薄い枠
+ * 大きな操作を実行する（開始・終了・リセット・保存）：立体のキー（下に厚み、押すと沈む）＋記号。開始は濃紺、終了は朱、ほかは白
+ * 小さく変える（−＋）：灰色の丸。枠も影もない、いちばん軽い見た目
+ * 映し方を大きく変える（全画面でうつす・再生）：青の塗り＋記号。平らで角丸
+ * 色は濃紺・朱・青の3つ（色覚シミュレーションで判定済み）。色が見分けにくくても、形（平ら／立体／丸）と記号で区別できる */
+.coopBox .ic{display:inline-block;margin-right:.35em;font-size:.9em;line-height:1}
+.bkey{font-weight:800;font-size:.92rem;padding:.42rem .7rem;border-radius:10px;background:#fff;color:var(--ink);
+  border:2px solid #101728;box-shadow:0 3px 0 #101728;transform:translateY(0);transition:transform .05s,box-shadow .05s}
+.bkey:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 #101728}
+.bkey.go{background:#101728;color:#fff}
+.bkey.stop{background:#C0330A;color:#fff;border-color:#7A2006;box-shadow:0 3px 0 #7A2006}
+.bkey.stop:active:not(:disabled){box-shadow:0 1px 0 #7A2006}
+.bkey:disabled{opacity:.35;box-shadow:0 1px 0 #101728}
+.coopBox .keys{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem;margin-bottom:3px}
+.coopBox .grp:has(> #coopSave){flex-wrap:nowrap}
+.bview{font-weight:800;background:#0F5EA8;color:#fff;border:none;border-radius:12px;padding:.6rem 1rem;font-size:1rem}
+.bview:hover:not(:disabled){background:#0B4C8A}
+.bview.sm{padding:.4rem .8rem;font-size:.9rem;border-radius:10px}
+.coopBox .act #coopFull{width:100%}
+.coopBox .step{width:2rem;height:2rem;padding:0;border:none;border-radius:50%;background:#E6E8EB;color:#101728;font-size:1.05rem;font-weight:800;line-height:1}
+.coopBox .step:hover:not(:disabled){background:#D5D9DE}
 .coopBox select{width:auto}
 .coopBox #coopSaves{flex:1;min-width:0}
 .coopBox #coopPlanBtn{padding:.35rem .9rem}
 /* 起点の印の表示⇄非表示（見本の上）。行の右端に寄せる */
-.coopBox #coopOrgShow{margin-left:auto;padding:.3rem .3rem;font-size:.82rem;min-width:4.2em;flex:none}   /* 文字が変わっても幅を変えない */
+.coopBox #coopOrgShow{margin-left:auto;min-width:4.2em;flex:none}   /* 文字が変わっても幅を変えない */
+/* 選ぶ札（クラス・色づかいと同じ見た目）：選んでいる時だけ濃紺の塗り */
+.pick{font:inherit;font-weight:800;font-size:.82rem;padding:.3rem .3rem;border-radius:8px;background:#fff;color:var(--mute);border:2px solid var(--line)}
+.pick.on{background:#101728;color:#fff;border-color:#101728}
 .coopBox .grp:has(> #coopOrgShow){flex-wrap:nowrap;gap:.3rem}
 .seg{display:inline-flex;border:2px solid var(--ink);border-radius:10px;overflow:hidden}
 .seg button{font:inherit;font-weight:800;font-size:.88rem;padding:.35rem .9rem;border:none;border-radius:0;background:#fff;color:var(--ink)}
@@ -484,20 +506,23 @@ details.more[open] summary{border-color:var(--ink)}
         <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="起点の数">
         <button id="coopOrgUp" class="ghost step" type="button" aria-label="起点を1つふやす">＋</button>
         <span class="unit" id="coopOrgMax"></span>
-        <button id="coopOrgShow" class="ghost" type="button" aria-pressed="true" title="見本の上の起点の印をかくす・出す">非表示</button></span></div>
+        <button id="coopOrgShow" class="pick on" type="button" aria-pressed="true" title="見本の上の起点の印を出す・かくす（押すたびに切り替え）">表示</button></span></div>
     </div>
+    <!-- ボタンは役割で見た目を分ける（色だけでなく形と記号でも）：
+         選ぶ＝平らな札（選んでいる物は濃紺の塗り）／大きな操作を実行する＝立体のキー（▶ ■ ↺ ⤓）／
+         小さく変える＝灰色の丸（−＋）／映し方を大きく変える＝青の塗り（⛶ ▷） -->
     <div class="crow act">
-      <button id="coopFull">全画面でうつす</button>
-      <span class="grp"><button id="coopStop" class="ghost" disabled>終了</button>
-        <button id="coopReset" class="ghost" disabled>リセット</button>
-        <span style="flex:1"></span>
-        <button id="coopSave" class="ghost">この回を保存…</button></span>
+      <button id="coopFull" class="bview" type="button"><span class="ic" aria-hidden="true">⛶</span>全画面でうつす</button>
+      <span class="keys"><button id="coopStartL" class="bkey go" type="button"><span class="ic" aria-hidden="true">▶</span>開始</button>
+        <button id="coopStop" class="bkey stop" disabled><span class="ic" aria-hidden="true">■</span>終了</button>
+        <button id="coopReset" class="bkey" disabled><span class="ic" aria-hidden="true">↺</span>リセット</button></span>
       <div class="stat" id="coopStat"></div>
       <div class="note" id="coopGuide" style="margin:0"></div>
     </div>
     <div class="crow act">
-      <span class="grp"><select id="coopSaves" aria-label="保存データ"></select>
-        <button id="coopLoad" class="ghost">再生</button></span>
+      <span class="grp"><button id="coopSave" class="bkey" type="button" title="映している回を名前を付けて保存する"><span class="ic" aria-hidden="true">⤓</span>保存…</button>
+        <select id="coopSaves" aria-label="保存データ"></select>
+        <button id="coopLoad" class="bview sm" type="button" title="選んだ保存データを映す"><span class="ic" aria-hidden="true">▷</span>再生</button></span>
     </div>
     <div class="crow">
       <span class="grp"><details class="more" id="coopMore"><summary>図形と表示の設定</summary>
@@ -2050,11 +2075,12 @@ function coopOrgMarks(){
   box.addEventListener('pointercancel', drop);
 })();
 document.getElementById('coopOrgReset').onclick = function(){ CP.orgCustom = null; coopPreview(true); };
-/* 起点の印の表示⇄非表示。押すたびに切り替え、ボタンの文字は次に押した時の動き（表示中は「非表示」） */
+/* 起点の印の表示⇄非表示。押すたびに切り替え、文字は今の状態（表示中は濃紺の塗りで「表示」） */
 document.getElementById('coopOrgShow').onclick = function(){
   var st = document.getElementById('coopStage'), hide = !st.classList.contains('nomarks');
   st.classList.toggle('nomarks', hide);
-  this.textContent = hide ? '表示' : '非表示';
+  this.textContent = hide ? '非表示' : '表示';                       // 今の状態を出す（選んでいる札と同じ見た目の切り替え）
+  this.classList.toggle('on', !hide);
   this.setAttribute('aria-pressed', hide ? 'false' : 'true');
 };
 var coopPrevTimer = 0;
@@ -2420,6 +2446,7 @@ function coopGoShow(){                        // 開始ボタン：進行中・�
   b.classList.toggle('small', !busy && (!!s || !!CP.prev));   // 終わった図形・保存データ・見本の間は、時計の下に小さく（見本では起点の印を隠さない）
   // 終わった図形を映している時は「新しく開始」と「続きから」の2つを出す（どちらで始めるかを取り違えないよう名前を分ける）
   b.textContent = (!busy && s) ? '新しく開始' : '開始';
+  document.getElementById('coopStartL').disabled = !!busy;     // 進行中・数えている間は押せない
   var canCont = !busy && !!s && s.status !== 'run' && (!CP.loaded || !!CP.saveId);
   document.getElementById('coopCont').classList.toggle('off', !canCont);
 }
@@ -2434,6 +2461,8 @@ document.getElementById('coopStart').onclick = function(){
   if(CP.begin) return;
   coopBegin(false);
 };
+// 左の操作欄の「開始」：ステージの開始（終わった回を映している時は「新しく開始」）と同じ
+document.getElementById('coopStartL').onclick = function(){ document.getElementById('coopStart').onclick(); };
 document.getElementById('coopStop').onclick = function(){
   var btn = this; btn.disabled = true; setStat('coopStat', '終了しています…');
   google.script.run.withSuccessHandler(function(r){
