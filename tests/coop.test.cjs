@@ -708,6 +708,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes('#coopStage.preview:not(.nomarks) #coopOrgMarks{display:block}'));
   // 設定の見本：設定を変えると右に描き直す。見本の間は終わった回で上書きせず、開始の扱いは「まだ始めていない」
   assert.ok(tui.includes("if(CP.polling || CP.loaded || CP.prev === 'user') return;"));
+  // 見本は協力プレイのタブを開くまで描かない（大きさ0のステージで描こうとして、設定の読み込みごと止まっていた）
+  assert.ok(/function coopPreview\(user\)\{\n[^\n]*\n  if\(document\.getElementById\('pageCoop'\)\.style\.display === 'none'\) return;/.test(tui));
+  assert.ok(tui.includes('if(!CP.ORD) return;'));
   assert.ok(tui.includes("var b = document.getElementById('coopStart'), s = CP.prev ? null : CP.sess;"));
   assert.ok(/function coopUseSession\(s, evAll\)\{\n  coopPrevOff_\(\);/.test(tui), '本物の回を映すと見本をやめる');
   ['coopCls', 'coopGn', 'coopMode', 'coopOrg'].forEach(id => assert.ok(tui.includes("'" + id + "'"), id));
@@ -868,6 +871,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   ['グループ数', 'グループを編集…', "'グループ' + COOP_LETTERS[g]", "('グループ' + 'ABCDEFGHIJ'[grpOf(i)] + ' ')"].forEach(k => assert.ok(tui.includes(k), k));
   ['組数', '組を編集', '組分け', "'組<small>'", "+ '組 ')"].forEach(k => assert.ok(!tui.includes(k), k));
   assert.ok(ui.includes("'じぶんの グループを 目立たせる'") && ui.includes("'あなたのグループの色'") && !ui.includes('くみを') && !ui.includes('あなたの組'));
+  // タブは「公開モード｜協力プレイ｜全般設定｜分析」の順
+  const tabs = [...tui.slice(tui.indexOf('<nav class="tabs"'), tui.indexOf('</nav>')).matchAll(/role="tab"[^>]*>([^<]+)</g)].map(m => m[1]);
+  assert.equal(JSON.stringify(tabs), JSON.stringify(['公開モード', '協力プレイ', '全般設定', '分析']));
   // 書体：教師画面は BIZ UDPゴシック（読めなければ端末の日本語ゴシック）。時計と正答数は字幅のそろった BIZ UDゴシック
   assert.ok(tui.includes('family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700'));
   assert.ok(tui.includes('font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif'));
