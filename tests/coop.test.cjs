@@ -554,6 +554,13 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(!txt.includes('@') && !txt.includes('児童') && !('names' in v) && !('nos' in v) && !('gi' in v), '名前・番号・メール・組の一覧を入れない');
   assert.equal(v.ev.filter(e => e[1] === 1).length, 1, '自分の分は自分の index のまま');
   assert.equal(v.ev.find(e => e[1] === 1)[2], 11);
+  assert.equal(v.mine, false, '既定は「じぶん」の数を出さない');
+  // 教師画面の設定で「じぶん」を出せる（config シートの coop_mine。図形の元になる正答の列は変わらない）
+  ctx.Session = teacherSession; ctx.saveConfig({ coop_mine: 1 }); asKid('k02@kyoiku.edu.nishi.or.jp');
+  const v1 = ctx.coopReview();
+  assert.equal(v1.mine, true); assert.equal(v1.me, 1); assert.equal(v1.ev.length, v.ev.length);
+  ctx.Session = teacherSession; ctx.saveConfig({ coop_mine: 0 }); asKid('k02@kyoiku.edu.nishi.or.jp');
+  assert.equal(ctx.coopReview().mine, false);
   // 色はモニターと同じ：他の児童の index も名簿の並びのまま、呼ぶたびに変わらない
   assert.equal(JSON.stringify(v.ev.map(e => [e[1], e[2]])), '[[0,10],[1,11],[2,12],[4,13]]');
   for (let t = 0; t < 5; t++) assert.equal(JSON.stringify(ctx.coopReview().ev), JSON.stringify(v.ev));
@@ -608,6 +615,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.equal(myTot(v), 11);
   assert.equal(myTot({ me: 2, ev: [[1, 2, 5], [2, 0, 9], [3, 2, 4]] }), 9);
   assert.ok(ui2.includes("'<small>じぶん</small>' + coopRvMyTotal(d) + ' もん"));
+  assert.ok(ui2.includes('d.mine === false'), 'mine が偽なら「じぶん」を出さない（古い Core は出す）');
+  assert.ok(tui.includes('id="coopRvMine"') && tui.includes('saveConfig({ coop_mine'), '教師画面に切り替え欄（変えたらすぐ保存）');
+  assert.ok(tui.includes('Number(c.coop_mine) === 1'), '既定は出さない（1 の時だけ出す）');
   // 教師画面：一気に組み直す時も引いた後で数え直す
   assert.ok(/if\(instant\)\{ CP\.S = ns; CP\.RENDER_S = ns; coopRecount\(\); return; \}/.test(tui));
 }
