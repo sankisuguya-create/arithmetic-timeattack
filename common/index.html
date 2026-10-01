@@ -466,7 +466,7 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   <div id="countdown"></div>
 </section>
 
-<!-- 終わった協力プレイの見返し。できるのは自分（自分の組）の色を目立たせることだけ（他の人の色は選べない） -->
+<!-- 終わった協力プレイの見返し。できるのは自分（自分のグループ）の色を目立たせることだけ（他の人の色は選べない） -->
 <div id="coopRv" hidden>
   <canvas id="coopRvCv" aria-label="きょうりょくの もよう"></canvas>
   <div class="bar">
@@ -915,7 +915,7 @@ $('coopRvClose').addEventListener('click', coopRvClose);
 function coopRvMineLabel(){
   var d = RV.d || {};
   $('coopRvMineT').textContent = RV.hi ? 'もとに もどす'
-    : (d.mode === 'group' ? 'じぶんの くみを 目立たせる' : 'じぶんの いろを 目立たせる');
+    : (d.mode === 'group' ? 'じぶんの グループを 目立たせる' : 'じぶんの いろを 目立たせる');
   $('coopRvMine').classList.toggle('on', RV.hi);
 }
 $('coopRvMine').addEventListener('click', function(){
@@ -956,7 +956,7 @@ function coopBadge_(practice){
   el.classList.toggle('off', off);
   $('coopA').textContent = off ? '数えません' : '協力プレイ中';   // 右の表示（padding-left 160px）に重ならない長さ
   $('coopB').textContent = off ? '協力の 時間ぎれ'
-                         : COOP.mode === 'group' ? 'あなたの組の色' : 'あなたの色';
+                         : COOP.mode === 'group' ? 'あなたのグループの色' : 'あなたの色';
   var col = coopMyColor_();
   $('coopDot').style.background = 'rgb(' + col + ')';
   coopEmblem_(col, COOP.pat);

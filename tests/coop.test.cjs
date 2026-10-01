@@ -38,6 +38,7 @@ Sheet.prototype.getRange = function (r, c, nr, nc) {
 };
 Sheet.prototype.clear = function () { this.values = []; };
 Sheet.prototype.getSheetId = function () { return 123; };
+Sheet.prototype.setName = function (n) { delete sheets[this.name]; this.name = n; sheets[n] = this; return this; };
 Sheet.prototype.setFrozenRows = function () {};
 Sheet.prototype.setTabColor = function () {};
 Sheet.prototype.insertColumnAfter = function () {};
@@ -416,19 +417,22 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes('if(live) run.coopSetGroups(gi); else run.coopSavePlan(PLAN.cls, PLAN.gn, gi);'));
   assert.ok(!tui.includes('id="coopGedit"'), '名札のタップで組を変える古いボタンは無い（ポップアップに一本化）');
   assert.ok(tui.indexOf('id="coopPlan"') < tui.indexOf('<div id="coopStage"'));
-  // 正本は単元の「組分け」シート。保存するとクラス×組数の塊が書かれる
+  // 正本は単元の「グループ分け」シート。保存するとクラス×グループ数の塊が書かれる
   ctx.coopSavePlan('3-1', 3, [2, 2, 1, 1, 0, 0, 2, 1]);
-  const gs = sheets['組分け'];
-  assert.ok(gs, '組分けシートができる');
-  assert.equal(J(gs.values[0]), J(['クラス', '組数', '番号', '氏名', '組', 'email']));
+  const gs = sheets['グループ分け'];
+  assert.ok(gs, 'グループ分けシートができる');
+  assert.equal(J(gs.values[0]), J(['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email']));
   const live = gs.values.slice(1).filter(r => r[0] === '3-1' && r[1] === 3);
   assert.equal(live.length, 8);
   assert.equal(J(live.map(r => r[4])), J(['C', 'C', 'B', 'B', 'A', 'A', 'C', 'B']));
   assert.equal(live[0][3], '児童1');
   assert.ok(ctx.coopPlan('3-1', 3).sheetUrl.includes('#gid=123'));
-  // 教師がシートを直接直す：組は「A組」「1」も読み、クラスは「3年1組」も読む。メールが空なら番号で照らす
+  // 教師がシートを直接直す：グループは「A組」「1」「グループC」「Bグループ」も読み、クラスは「3年1組」も読む。メールが空なら番号で照らす
   live[0][4] = 'A組'; live[1][4] = '2'; live[2][0] = '3年1組'; live[3][5] = ''; live[3][4] = 'a';
   assert.equal(J(ctx.coopPlan('3-1', 3).gi), '[0,1,1,0,0,0,2,1]');
+  live[4][4] = 'グループC'; live[5][4] = 'Bグループ';
+  assert.equal(J(ctx.coopPlan('3-1', 3).gi.slice(4, 6)), '[2,1]');
+  live[4][4] = 'A'; live[5][4] = 'A';
   // 読めない値の行は等分の位置に戻す
   live[7][4] = 'Z';
   assert.equal(ctx.coopPlan('3-1', 3).gi[7], 2);
@@ -845,6 +849,28 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   [[0.3, 100, 800, 0.37], [2.1, 112, 784, 0.52], [-0.2, 50, 400, 1]].forEach(a => assert.ok(Math.abs(fx(...a) - a[0]) < 1e-9));
   assert.ok(tui.includes('var x = CP.OX + (q[0] * CP.W - CP.OX) * S, y = CP.OY + (q[1] * CP.H - CP.OY) * S;'));
   assert.ok(tui.includes('var u = (CP.OX + (d.x - CP.OX) / S) / CP.W, v = (CP.OY + (d.y - CP.OY) / S) / CP.H;'));
+}
+
+/* ---- 以前の「組分け」シートは、名前と見出しを「グループ分け」に付け替えて使う（中身はそのまま） ---- */
+{
+  ctx.Session = teacherSession;
+  const gNew = sheets['グループ分け']; delete sheets['グループ分け'];
+  const old = new Sheet('組分け', ['クラス', '組数', '番号', '氏名', '組', 'email']);
+  old.values.push(['3-1', 2, 1, '児童1', 'B', 'k01@kyoiku.edu.nishi.or.jp'], ['3-1', 2, 2, '児童2', 'A', 'k02@kyoiku.edu.nishi.or.jp']);
+  sheets['組分け'] = old;
+  const pl = ctx.coopPlan('3-1', 2);
+  assert.equal(pl.gi[0], 1); assert.equal(pl.gi[1], 0);
+  assert.ok(!sheets['組分け'] && sheets['グループ分け'] === old, '名前を付け替える');
+  assert.equal(JSON.stringify(old.values[0]), JSON.stringify(['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email']), '見出しも新しい呼び方に');
+  delete sheets['グループ分け']; if (gNew) sheets['グループ分け'] = gNew;
+  // 画面の呼び方も「グループ」にそろえる（クラスの「1組」は別）
+  const tui = read('common/teacher.html'), ui = read('common/index.html');
+  ['グループ数', 'グループを編集…', "'グループ' + COOP_LETTERS[g]", "('グループ' + 'ABCDEFGHIJ'[grpOf(i)] + ' ')"].forEach(k => assert.ok(tui.includes(k), k));
+  ['組数', '組を編集', '組分け', "'組<small>'", "+ '組 ')"].forEach(k => assert.ok(!tui.includes(k), k));
+  assert.ok(ui.includes("'じぶんの グループを 目立たせる'") && ui.includes("'あなたのグループの色'") && !ui.includes('くみを') && !ui.includes('あなたの組'));
+  // 書体：教師画面は BIZ UDPゴシック（読めなければ端末の日本語ゴシック）。時計と正答数は字幅のそろった BIZ UDゴシック
+  assert.ok(tui.includes('family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700'));
+  assert.ok(tui.includes('font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif'));
 }
 
 console.log('coop.test.cjs: all assertions passed.');

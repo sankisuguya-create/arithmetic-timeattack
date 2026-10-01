@@ -1383,31 +1383,40 @@ function coopPub_(s, since) {
  * - 以前の版はスクリプトプロパティ（coop_plan_<クラス>_<組数>）に持っていた。シートに行が無い時だけそちらを読み、
  *   次に保存した時にシートへ移して消す
  */
-var COOP_GROUP_SHEET = '組分け';
-var COOP_GROUP_HEAD = ['クラス', '組数', '番号', '氏名', '組', 'email'];
+var COOP_GROUP_SHEET = 'グループ分け';
+var COOP_GROUP_SHEET_OLD = '組分け';   // 以前の名前。見つけたら新しい名前に付け替える（中身と並びは同じ）
+var COOP_GROUP_HEAD = ['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email'];
 var COOP_GROUP_LETTERS = 'ABCDEFGHIJ';
 
 function coopPlanKey_(cls, gn) { return 'coop_plan_' + cls + '_' + gn; }
 function coopClsNorm_(v) {
   return String(v == null ? '' : v).replace(/\s/g, '').replace(/年/, '-').replace(/組$/, '');
 }
-/** シートの「組」の欄 → 0〜gn-1。読めなければ -1 */
+/** シートの「グループ」の欄 → 0〜gn-1。読めなければ -1（「A」「グループA」「Aグループ」「A組」「1」を読む） */
 function coopGrpParse_(v, gn) {
-  var t = String(v == null ? '' : v).trim().replace(/組$/, ''), n = -1;
+  var t = String(v == null ? '' : v).trim().replace(/^グループ/, '').replace(/(組|グループ)$/, '').trim(), n = -1;
   if (/^[A-Ja-j]$/.test(t)) n = t.toUpperCase().charCodeAt(0) - 65;
   else if (/^\d+$/.test(t)) n = Number(t) - 1;
   return (n >= 0 && n < gn) ? n : -1;
 }
 function coopGroupSheet_(create) {
   var ss = ss_(), sh = ss.getSheetByName(COOP_GROUP_SHEET);
+  if (!sh) {
+    // 以前の「組分け」シート：名前と見出しを新しい呼び方に付け替えて使う（列の並びは同じなので中身はそのまま）
+    var old = ss.getSheetByName(COOP_GROUP_SHEET_OLD);
+    if (old) {
+      sh = old;
+      try { old.setName(COOP_GROUP_SHEET); old.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]); } catch (e) {}
+    }
+  }
   if (!sh && create) {
     sh = ss.insertSheet(COOP_GROUP_SHEET);
     sh.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]).setFontWeight('bold');
     sh.setFrozenRows(1);
     try {
-      sh.getRange(1, 1).setNote('協力モードの組分け（教師画面の「グループを編集」と同じもの）。\n' +
-        '「組」の欄を A〜J で書きかえると、次に開始した時その組で始まります。\n' +
-        'クラス×組数ごとの行の塊です。行が無いクラスは、教師画面で一度「保存」すると作られます。');
+      sh.getRange(1, 1).setNote('協力モードのグループ分け（教師画面の「グループを編集…」と同じもの）。\n' +
+        '「グループ」の欄を A〜J で書きかえると、次に開始した時そのグループで始まります。\n' +
+        'クラス×グループ数ごとの行の塊です。行が無いクラスは、教師画面で一度「保存」すると作られます。');
     } catch (e) {}
   }
   return sh;
@@ -1833,7 +1842,7 @@ function coopSetGroups(gi) {
     var s = coopLive_();
     if (!s) return { ok: false, msg: '協力プレイはありません。' };
     if (!Array.isArray(gi) || gi.length !== s.names.length) {
-      return { ok: false, msg: '組の数が名簿と合いません。' };
+      return { ok: false, msg: 'グループの数が名簿と合いません。' };
     }
     s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
     coopPutLive_(s);
