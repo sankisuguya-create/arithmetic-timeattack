@@ -784,7 +784,56 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(!/coopRoster\(\); coopRepaint\(\);\n\s*dirty\.textContent = '保存しました。児童/.test(tui));
   // 児童の見返しも同じ手続き（グループは各正答の組番号が担当）
   assert.ok(ui.includes("var m = Math.round(e[2] * rateAt(e[0])), o = grp ? (e[3] || 0) : e[1];"));
-  assert.ok(ui.includes('RV.ord = coopOrders(RV.tiles, coopOrigins(d.org || 1, VX, VY, OX, OY, W, H, d.seed || 1));'));
+  assert.ok(ui.includes('RV.ord = coopOrders(RV.tiles, coopOrigins(d.org || 1, VX, VY, OX, OY, W, H, d.seed || 1, d.orgPts));'));
+  // 位置の指定：割合 [u, v] を最初の画面に写す（画面の大きさが違っても同じ所）。担当はシードで混ぜる
+  const pos = [[0.5, 0.5], [0.2, 0.3], [0.9, 0.8]];
+  const pc = F.coopOrigins(3, VX, VY, OX, OY, W, H, 7, pos);
+  const want = pos.map(q => [VX - OX + q[0] * W, VY - OY + q[1] * H].join(',')).sort();
+  assert.equal(JSON.stringify(pc.map(q => q.join(',')).sort()), JSON.stringify(want));
+  const pc2 = F.coopOrigins(3, VX * 2, VY * 2, OX * 2, OY * 2, W * 2, H * 2, 7, pos);   // 2倍の画面でも同じ割合の所
+  assert.equal(JSON.stringify(pc2.map(q => [q[0] / 2, q[1] / 2].join(',')).sort()), JSON.stringify(want));
+  assert.equal(F.coopOrigins(3, VX, VY, OX, OY, W, H, 7, [[0.5, 0.5]]).length, 3, '数が合わない位置は使わない');
+  // 起点1つでも位置を動かせば、その点から近い順に育つ（動かしていなければ今までの並び）
+  const one = F.coopOrders(tiles, F.coopOrigins(1, VX, VY, OX, OY, W, H, 7, [[0.8, 0.2]]))[0];
+  const q1 = [VX - OX + 0.8 * W, VY - OY + 0.2 * H];
+  assert.ok(Math.hypot(tiles[one[0]].cx - q1[0], tiles[one[0]].cy - q1[1]) < 20);
+}
+/* ---- 起点の位置：サーバーは数と範囲を確かめて回に持つ（続きから・保存・シートの16列目） ---- */
+{
+  ctx.Session = teacherSession;
+  const P = [[0.25, 0.5], [0.75, 0.5]];
+  assert.ok(ctx.coopStart({ cls: '3-1', minutes: 5, mode: 'child', org: 2, orgPts: P }).ok);
+  assert.equal(JSON.stringify(ctx.coopLive_().orgPts), JSON.stringify(P));
+  assert.equal(JSON.stringify(ctx.coopState(0).orgPts), JSON.stringify(P));
+  assert.equal(sheets.coop.values[sheets.coop.values.length - 1][15], JSON.stringify(P), 'coop シートの16列目');
+  const keep = store.coop_live; delete store.coop_live;
+  assert.equal(JSON.stringify(ctx.coopLive_().orgPts), JSON.stringify(P), 'キャッシュが消えてもシートから戻る');
+  store.coop_live = keep;
+  ctx.coopStop();
+  const sv = ctx.coopSave('位置テスト'); assert.ok(sv.ok);
+  assert.equal(JSON.stringify(ctx.coopLoad(sv.id).payload.orgPts), JSON.stringify(P), '保存データにも入る');
+  assert.ok(ctx.coopStart({ cont: 'live', minutes: 3, orgPts: null }).ok);
+  assert.equal(JSON.stringify(ctx.coopLive_().orgPts), JSON.stringify(P), '続きからは前の回の位置');
+  ctx.coopStop();
+  ctx.coopStart({ reset: true }); assert.equal(JSON.stringify(ctx.coopLive_().orgPts), JSON.stringify(P), 'リセットも同じ位置'); ctx.coopStop();
+  assert.equal(ctx.coopOrgPts_([[0.5, 0.5]], 2), null, '数が合わなければ使わない');
+  assert.equal(JSON.stringify(ctx.coopOrgPts_([[9, -9], [0.12345, 0.5]], 2)), '[[2.8,-1.6],[0.123,0.5]]', '範囲で切り、3桁に丸める');
+  assert.equal(ctx.coopOrgPts_([[0.5, 'x'], [0.1, 0.1]], 2), null);
+  assert.ok(ctx.coopStart({ cls: '3-1', minutes: 5, mode: 'child', org: 2, orgPts: null }).ok);
+  assert.equal(ctx.coopLive_().orgPts, null, '画面が null を送れば既定の格子'); ctx.coopStop();
+  const tui = read('common/teacher.html');
+  assert.ok(tui.includes("coopUseSession({ id: 'save', cls: p.cls, pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn, org: p.org || 1, orgPts: p.orgPts || null,"), '保存データの再生にも起点を渡す');
+  // 見本：起点の印をつまんで動かすと位置を持ち、開始で送る。起点の数が変わっても残せる分は残す
+  assert.ok(tui.includes('<div id="coopOrgMarks"') && tui.includes("box.addEventListener('pointerdown'"));
+  assert.ok(tui.includes('opts.orgPts = coopOrgCustomFit_(opts.org);'));
+  assert.ok(tui.includes('orgPts: coopOrgCustomFit_(coopOrgVal())'));
+  assert.ok(tui.includes('CP.orgCustom = s.orgPts ? s.orgPts.map('), '映している回の位置を既定にする');
+  // 画面の点 → 割合 は、割合 → 画面 の逆になっている
+  const fx = (u, OX, W, S) => CP0(u, OX, W, S);
+  function CP0(u, OX, W, S){ const x = OX + (u * W - OX) * S; return (OX + (x - OX) / S) / W; }
+  [[0.3, 100, 800, 0.37], [2.1, 112, 784, 0.52], [-0.2, 50, 400, 1]].forEach(a => assert.ok(Math.abs(fx(...a) - a[0]) < 1e-9));
+  assert.ok(tui.includes('var x = CP.OX + (q[0] * CP.W - CP.OX) * S, y = CP.OY + (q[1] * CP.H - CP.OY) * S;'));
+  assert.ok(tui.includes('var u = (CP.OX + (d.x - CP.OX) / S) / CP.W, v = (CP.OY + (d.y - CP.OY) / S) / CP.H;'));
 }
 
 console.log('coop.test.cjs: all assertions passed.');

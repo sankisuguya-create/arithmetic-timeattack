@@ -193,6 +193,19 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 #coopPrevBack{background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;color:var(--ink);
   padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
 #coopPrevBack[hidden]{display:none}
+/* 見本の起点の印：つまんで動かす（タッチでも動くよう pointer イベント。印の上では画面を送らない） */
+#coopOrgMarks{position:absolute;inset:0;z-index:3;pointer-events:none;display:none}
+/* 開始の直後に映る範囲（縮尺1の画面）。見本は終わった時の縮尺なので、どこから映り始めるかを点線で示す */
+#coopOrgMarks .ov{position:absolute;border:2px dashed rgba(16,23,40,.55);border-radius:4px;pointer-events:none}
+#coopOrgMarks .ov span{position:absolute;left:4px;top:2px;font-size:.72rem;font-weight:700;color:#101728;background:rgba(255,255,255,.85);border-radius:4px;padding:0 .3em}
+#coopStage.preview #coopOrgMarks{display:block}
+#coopOrgMarks .om{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;padding:0;pointer-events:auto;
+  touch-action:none;cursor:grab;background:rgba(255,255,255,.88);border:3px solid #101728;box-shadow:0 2px 8px rgba(16,23,40,.35)}
+#coopOrgMarks .om::after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:#101728}
+#coopOrgMarks .om.drag{cursor:grabbing;background:#fff;transform:scale(1.15)}
+#coopOrgReset{background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;color:var(--ink);
+  padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
+#coopOrgReset[hidden],#coopStage:not(.preview) #coopOrgReset{display:none}
 #coopReplay{display:none;align-items:center;gap:.9vmin;
   background:rgba(255,255,255,.92);border:1.5px solid var(--line);border-radius:12px;
   padding:.5vmin 1.3vmin;box-shadow:0 1px 6px rgba(16,23,40,.14)}
@@ -529,10 +542,12 @@ details.more[open] summary{border-color:var(--ink)}
   <div id="coopStage" style="display:none">
     <canvas id="coopFloor"></canvas>
     <canvas id="coopGrow"></canvas>
+    <div id="coopOrgMarks" aria-label="起点の位置（つまんで動かす）"></div>
     <div id="coopTL">
     <button id="coopClose" class="ghost" type="button">× もどる</button>
     <span id="coopPrevTag">見本</span>
     <button id="coopPrevBack" type="button" hidden>終わった回にもどる</button>
+    <button id="coopOrgReset" type="button" hidden>起点の位置をもとにもどす</button>
     <button id="coopNames" type="button">名前をかくす <span class="ptag">この端末だけ</span></button>
     </div>
     <!-- 再生の操作：箱の中ではステージの下端に横いっぱい（つまみを長く）。全画面では左上の並び（#coopTL）へ移す（coopReplayPlace） -->
@@ -1437,7 +1452,7 @@ function coopGen(){
   }).sort(function(a, b){ return a.d - b.d; });
   // 起点：映している回の数（開始前の下見は1つ）。起点ごとに近い順の並びを作り、貼る位置はそこから取る
   CP.ORG = (CP.sess && CP.sess.org) || 1;
-  CP.ORD = coopOrders(CP.tiles, coopOrigins(CP.ORG, CP.VX, CP.VY, CP.OX, CP.OY, CP.W, CP.H, (CP.sess && CP.sess.seed) || 1));
+  CP.ORD = coopOrders(CP.tiles, coopOrigins(CP.ORG, CP.VX, CP.VY, CP.OX, CP.OY, CP.W, CP.H, (CP.sess && CP.sess.seed) || 1, CP.sess && CP.sess.orgPts));
   CP.A = coopAlloc(CP.ORD); CP.placed = new Int32Array(CP.tiles.length); CP.cursor = 0;
   ['coopFloor', 'coopGrow'].forEach(function(id){
     var cv = document.getElementById(id); cv.width = CP.W * CP.DPR; cv.height = CP.H * CP.DPR;
@@ -1446,26 +1461,32 @@ function coopGen(){
 }
 /* ---- 起点（teacher.html と index.html に同じものを置く。tests/coop.test.cjs が照合する） ----
  * 起点ごとに担当が決まり、児童 i（グループなら組 g）の正答は起点 (i mod 起点の数) から近い順に、空いているタイルへ貼る。
- * 起点が1つなら育ち始める点（vx, vy）だけで、今までと同じ形になる。2つ以上なら最初の画面（縮尺1）の中に格子状に散らし、
- * どの起点がどこに来るかはシードで混ぜる（番号の若い児童がいつも左上、にならないように） */
-function coopOrigins(k, vx, vy, ox, oy, w, h, seed){
-  if(k <= 1) return [[vx, vy]];
-  var x0 = vx - ox + w * 0.1, y0 = vy - oy + h * 0.12, ww = w * 0.8, hh = h * 0.76;
-  var cols = Math.max(1, Math.min(k, Math.round(Math.sqrt(k * ww / hh)))), rows = Math.ceil(k / cols), pts = [], r, c;
+ * 位置は最初の画面（縮尺1）の左上を (0, 0)、右下を (1, 1) とした割合 [u, v] で持つ（画面の大きさが違っても同じ所に来る）。
+ * 既定の位置（coopOriginsN）：起点1つなら育ち始める点（vx, vy）だけで今までと同じ形、2つ以上なら最初の画面の中に格子状。
+ * 教師が見本の上で動かした位置（pos）があればそれを使う。どの起点を誰が担当するかはシードで混ぜる（番号の若い児童がいつも同じ所、にならないように） */
+function coopOriginsN(k, ox, oy, w, h){
+  if(k <= 1) return [[ox / w, oy / h]];
+  var cols = Math.max(1, Math.min(k, Math.round(Math.sqrt(k * 0.8 * w / (0.76 * h))))), rows = Math.ceil(k / cols), pts = [], r, c;
   for(r = 0; r < rows; r++){
     var inRow = Math.min(cols, k - r * cols);
-    for(c = 0; c < inRow; c++) pts.push([x0 + ww * (c + 0.5 + (cols - inRow) / 2) / cols, y0 + hh * (r + 0.5) / rows]);
+    for(c = 0; c < inRow; c++) pts.push([0.1 + 0.8 * (c + 0.5 + (cols - inRow) / 2) / cols, 0.12 + 0.76 * (r + 0.5) / rows]);
   }
-  var sd = (seed * 131 + 7) >>> 0, i, j, t;
+  return pts;
+}
+function coopOrigins(k, vx, vy, ox, oy, w, h, seed, pos){
+  var custom = pos && pos.length === k, i, j, t;
+  if(k <= 1 && !custom){ var a = [vx, vy]; a.anchor = true; return [a]; }   // 育ち始める点そのもの（並びを作り直さない）
+  var pts = (custom ? pos : coopOriginsN(k, ox, oy, w, h)).map(function(q){ return [vx - ox + q[0] * w, vy - oy + q[1] * h]; });
+  var sd = (seed * 131 + 7) >>> 0;
   for(i = pts.length - 1; i > 0; i--){ sd = (sd * 1103515245 + 12345) >>> 0; j = (sd >>> 8) % (i + 1); t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
   return pts;
 }
-/* 起点ごとのタイルの並び。tiles はすでに育ち始める点から近い順なので、起点1つならそのまま使う。
+/* 起点ごとのタイルの並び。tiles はすでに育ち始める点から近い順なので、起点が育ち始める点1つならそのまま使う。
  * 起点が複数なら、まず自分の領域（いちばん近い起点が自分のタイル）を近い順に、埋まったら外のタイルを近い順に使う。
  * 近い順だけにすると、正答の多い隣の島が先に起点のまわりを埋め、正答の少ない子の島が他の島の縁に細く押し出された */
 function coopOrders(tiles, pts){
   var n = tiles.length, i, k;
-  if(pts.length <= 1){ var id = new Int32Array(n); for(i = 0; i < n; i++) id[i] = i; return [id]; }
+  if(pts.length === 1 && pts[0].anchor){ var id = new Int32Array(n); for(i = 0; i < n; i++) id[i] = i; return [id]; }
   var own = new Int32Array(n);
   for(i = 0; i < n; i++){
     var best = 0, bd = Infinity;
@@ -1561,6 +1582,7 @@ function coopDrawBase(){
   ctx.strokeStyle = 'rgba(' + CGHOST + ',0.12)'; ctx.lineWidth = .8 / CP.RENDER_S; ctx.stroke(P);
 }
 function coopRepaint(){
+  coopOrgMarks();
   var ctx = coopCtx('coopGrow');
   ctx.setTransform(CP.DPR, 0, 0, CP.DPR, 0, 0); ctx.clearRect(0, 0, CP.W, CP.H);
   coopDrawBase();
@@ -1709,6 +1731,7 @@ function coopRoster(){
 /* ---- セッションの反映（サーバーの応答・セーブデータ共通） ---- */
 function coopUseSession(s, evAll){
   coopPrevOff_();
+  CP.orgCustom = s.orgPts ? s.orgPts.map(function(q){ return q.slice(); }) : null;   // 映している回の起点の位置を、次の見本・開始の既定にする
   // 続きからの回：前の回までの正答を先頭に置き、この回の正答は前の回までの長さだけ後ろへずらして1本の時間軸にする
   CP.PRI = (s.prior && s.prior.dur) || 0;
   var shifted = (evAll || []).map(function(e){ return [e[0] + CP.PRI, e[1], e[2], e[3]]; });
@@ -1917,7 +1940,7 @@ function coopPrevSession_(){
   var names = [], nos = [], gi = [], i;
   for(i = 0; i < n; i++){ names.push(''); nos.push(i + 1); gi.push(Math.min(gn - 1, Math.floor(i * gn / n))); }
   var s = { id: 'preview', cls: cls.value, pat: document.getElementById('coopPat').value, seed: 1, mode: mode, gn: gn,
-            org: coopOrgVal(), start: 0, end: minutes * 60000, status: 'done', total: 0, names: names, nos: nos, gi: gi,
+            org: coopOrgVal(), orgPts: coopOrgCustomFit_(coopOrgVal()), start: 0, end: minutes * 60000, status: 'done', total: 0, names: names, nos: nos, gi: gi,
             pace: pace, minutes: minutes, lim: lim, skip: 0, prior: null };
   // つくりものの正答：全員が毎回同じ数だけ正答する単純な見込み（どの起点も均等に育つ）。
   // 1回の数は自動の枚数の見込み（1回の正答 × 参加 CPART）と同じなので、自動のままなら完成の85%前後まで育つ
@@ -1958,6 +1981,71 @@ function coopPreview(user){
   CP.simT = coopDur(); CP.endSeen = true; coopShowT(); coopGoShow(); coopGuide();   // 終わった時の形を出し、つまみは右端
 }
 /* 設定を変えたら見本を描き直す。−／＋の連打で何度も組み直さないよう、少し待ってから1回だけ */
+/* ---- 見本の起点の印：つまんで動かすと、その位置で見本を描き直し、開始の時にサーバーへ送る ----
+ * CP.orgCustom：教師が動かした位置（割合 [u, v] の並び。null＝既定の格子）。起点の数が変わったら、
+ * 残せる分は残し、足りない分は新しい数の既定の位置で埋める */
+function coopOrgCustomFit_(k){
+  var c = CP.orgCustom;
+  if(!c || !c.length) return null;
+  if(c.length !== k){
+    // 足す分は、新しい数の既定の位置のうち、今ある起点から最も離れた所から順に取る（重ねない）
+    var d = coopOriginsN(k, CP.OX || 1, CP.OY || 1, CP.W || 1, CP.H || 1);
+    c = c.slice(0, k);
+    while(c.length < k){
+      var best = 0, bd = -1;
+      d.forEach(function(q, i){
+        var m = Infinity; c.forEach(function(p){ m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1])); });
+        if(m > bd){ bd = m; best = i; }
+      });
+      c.push([Math.round(d[best][0] * 1000) / 1000, Math.round(d[best][1] * 1000) / 1000]); d.splice(best, 1);
+    }
+    CP.orgCustom = c;
+  }
+  return c.map(function(q){ return q.slice(); });
+}
+function coopOrgList_(){
+  var k = CP.ORG || 1;
+  return coopOrgCustomFit_(k) || coopOriginsN(k, CP.OX, CP.OY, CP.W, CP.H).map(function(q){ return [Math.round(q[0] * 1000) / 1000, Math.round(q[1] * 1000) / 1000]; });
+}
+function coopOrgMarks(){
+  var box = document.getElementById('coopOrgMarks');
+  if(!CP.prev || !CP.W){ if(box.innerHTML) box.innerHTML = ''; return; }
+  var S = CP.RENDER_S || 1;
+  var ov = S < 0.999 ? '<div class="ov" style="left:' + (CP.OX * (1 - S)).toFixed(1) + 'px;top:' + (CP.OY * (1 - S)).toFixed(1) +
+    'px;width:' + (CP.W * S).toFixed(1) + 'px;height:' + (CP.H * S).toFixed(1) + 'px"><span>はじめに映る範囲</span></div>' : '';
+  box.innerHTML = ov + coopOrgList_().map(function(q, j){
+    var x = CP.OX + (q[0] * CP.W - CP.OX) * S, y = CP.OY + (q[1] * CP.H - CP.OY) * S;   // 割合 → 最初の画面 → 今の縮尺の画面
+    return '<button type="button" class="om" data-j="' + j + '" style="left:' + x.toFixed(1) + 'px;top:' + y.toFixed(1) + 'px" aria-label="起点 ' + (j + 1) + '"></button>';
+  }).join('');
+  document.getElementById('coopOrgReset').hidden = !CP.orgCustom;
+}
+(function(){
+  var box = document.getElementById('coopOrgMarks'), drag = null;
+  box.addEventListener('pointerdown', function(e){
+    var b = e.target.closest('.om'); if(!b || !CP.prev) return;
+    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('drag');
+    drag = { b: b, j: Number(b.dataset.j), r: box.getBoundingClientRect() };
+  });
+  box.addEventListener('pointermove', function(e){
+    if(!drag) return;
+    var x = Math.max(6, Math.min(drag.r.width - 6, e.clientX - drag.r.left)), y = Math.max(6, Math.min(drag.r.height - 6, e.clientY - drag.r.top));
+    drag.b.style.left = x + 'px'; drag.b.style.top = y + 'px'; drag.x = x; drag.y = y;
+  });
+  function drop(){
+    if(!drag) return;
+    var d = drag; drag = null; d.b.classList.remove('drag');
+    if(d.x === undefined) return;                                   // 押しただけ
+    var S = CP.RENDER_S || 1;
+    var u = (CP.OX + (d.x - CP.OX) / S) / CP.W, v = (CP.OY + (d.y - CP.OY) / S) / CP.H;   // 今の縮尺の画面 → 最初の画面の割合
+    var L = coopOrgList_();
+    L[d.j] = [Math.round(Math.max(-0.3, Math.min(2.8, u)) * 1000) / 1000, Math.round(Math.max(-1.6, Math.min(1.45, v)) * 1000) / 1000];
+    CP.orgCustom = L;
+    coopPreview(true);
+  }
+  box.addEventListener('pointerup', drop);
+  box.addEventListener('pointercancel', drop);
+})();
+document.getElementById('coopOrgReset').onclick = function(){ CP.orgCustom = null; coopPreview(true); };
 var coopPrevTimer = 0;
 function coopPreviewSoon(){
   clearTimeout(coopPrevTimer);
@@ -2280,6 +2368,7 @@ function coopBegin(reset, cont){
     opts.mode = document.getElementById('coopMode').value;
     opts.gn = Number(document.getElementById('coopGn').value);
     opts.org = coopOrgVal();
+    opts.orgPts = coopOrgCustomFit_(opts.org);   // 見本で動かした起点の位置（動かしていなければ null＝既定の格子）
   }
   CP.begin = true; CP.beginErr = ''; coopCountShow(); coopGoShow();
   setStat('coopStat', '開始しています…');
@@ -2317,7 +2406,7 @@ function coopGoShow(){                        // 開始ボタン：進行中・�
   var b = document.getElementById('coopStart'), s = CP.prev ? null : CP.sess;   // 見本は「まだ始めていない」扱い
   var busy = CP.begin || (s && s.status === 'run' && !CP.loaded);
   b.classList.toggle('off', !!busy);
-  b.classList.toggle('small', !busy && !!s);   // 終わった図形・保存データを映している間は、時計の下に小さく
+  b.classList.toggle('small', !busy && (!!s || !!CP.prev));   // 終わった図形・保存データ・見本の間は、時計の下に小さく（見本では起点の印を隠さない）
   // 終わった図形を映している時は「新しく開始」と「続きから」の2つを出す（どちらで始めるかを取り違えないよう名前を分ける）
   b.textContent = (!busy && s) ? '新しく開始' : '開始';
   var canCont = !busy && !!s && s.status !== 'run' && (!CP.loaded || !!CP.saveId);
@@ -2472,7 +2561,7 @@ document.getElementById('coopLoad').onclick = function(){
     if(!r || !r.ok){ setStat('coopStat', (r && r.msg) || '読み込めませんでした', true); return; }
     setStat('coopStat', '「' + r.name + '」を再生中');
     var p = r.payload;
-    coopUseSession({ id: 'save', cls: p.cls, pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn,
+    coopUseSession({ id: 'save', cls: p.cls, pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn, org: p.org || 1, orgPts: p.orgPts || null,
       start: p.start, end: p.end, status: 'done', total: p.total,
       names: p.names, nos: p.nos, gi: p.gi, pace: p.pace, minutes: p.minutes, lim: p.lim, skip: p.skip,
       prior: p.prior || null }, p.ev || []);

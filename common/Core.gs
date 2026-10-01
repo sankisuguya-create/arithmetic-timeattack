@@ -1270,7 +1270,7 @@ function coopLive_() {
 function coopFromSheet_() {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 15).getValues()[0]);
+  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 16).getValues()[0]);
 }
 /** coop シートの1行からセッションを組み立てる（児童の並びは今の名簿、合計は coop_log） */
 function coopFromRow_(r) {
@@ -1287,6 +1287,7 @@ function coopFromRow_(r) {
             start: start, end: end, status: String(r[11] || 'done') === 'run' ? 'run' : 'done', total: 0,
             kids: map, order: order, names: arr(r[7]), nos: arr(r[8]), gi: arr(r[6]),
             skip: coopSkip_(cls), org: Number(r[14]) || 1 };
+  try { s.orgPts = coopOrgPts_(JSON.parse(String(r[15] || 'null')), s.org); } catch (e) { s.orgPts = null; }
   try { var pr = JSON.parse(String(r[13] || 'null')); if (pr && pr.ev) s.prior = pr; } catch (e) {}
   s.total = coopEvents_(s).reduce(function (a, e) { return a + (Number(e[2]) || 0); }, 0);
   return s;
@@ -1353,7 +1354,7 @@ function coopEvents_(s) {
 /** 教師画面へ返す形（個人情報は名札に必要な氏名と番号まで。mail は出さない） */
 function coopPub_(s, since) {
   var ev = coopEvents_(s), n = ev.length;
-  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1,
+  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null,
            start: s.start, end: s.end, status: s.status, total: s.total,
            names: s.names, nos: s.nos, gi: s.gi,
            // 画面の案内に使う：1回の制限秒（残りがこれを切ると、これから始める回は数えない）・送り直しの締め切り・氏名のない児童の数
@@ -1636,6 +1637,22 @@ function coopMinOf_(m) { return Math.max(1, Math.min(30, Math.round(Number(m) ||
  * 起点の数を児童数にすると、児童ごとの島の大きさがその子の正答数になる（モニターでも見返しでも見える）
  */
 function coopOrgOf_(v, max) { return Math.max(1, Math.min(Math.max(1, max), Math.round(Number(v) || 1))); }
+/*
+ * 起点の位置（教師が見本の上で動かしたもの）。[[u, v], ...]：最初の画面（縮尺1）の左上を (0, 0)、右下を (1, 1) とした割合。
+ * 画面の大きさ（箱・全画面・児童の画面）が違っても同じ所に来る。範囲は最小の縮尺の画面の中（u −0.3〜2.8、v −1.6〜1.45）。
+ * 数が起点の数と合わなければ使わない（既定の格子に戻る）。どの起点を誰が担当するかは位置を決めてもシードで混ぜる
+ */
+function coopOrgPts_(v, org) {
+  if (!Array.isArray(v) || v.length !== org || org > 60) return null;
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    var p = v[i];
+    if (!Array.isArray(p) || !isFinite(Number(p[0])) || !isFinite(Number(p[1]))) return null;
+    out.push([Math.round(Math.max(-0.3, Math.min(2.8, Number(p[0]))) * 1000) / 1000,
+              Math.round(Math.max(-1.6, Math.min(1.45, Number(p[1]))) * 1000) / 1000]);
+  }
+  return out;
+}
 
 /*
  * 続きから（prior）。引き継ぐ前の回の正答を、1本の時間軸に並べ直して新しいセッションに持たせる。
@@ -1673,7 +1690,7 @@ function coopContBase_(cont, prev) {
     n: Math.max(1, n - (src.skip || 0)), lim: Number(src.lim) || Number(config_().limit_sec) || 60,
     pace: Number(src.pace) || FLOOR_PRIOR_.perMin, total: tot }]);
   return { cls: String(src.cls), pat: String(src.pat), seed: Number(src.seed) || 1,
-           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1,
+           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1, orgPts: src.orgPts || null,
            keys: keys, prior: { dur: pin.dur + dur, ev: all, segs: segs } };
 }
 /** 引き継いだ正答の児童 index を、新しいセッションの名簿の並びへ付け替える */
@@ -1718,6 +1735,8 @@ function coopStart_(o, pace) {
   var seed = base ? base.seed : Math.floor(Math.random() * 2147483647);
   // 起点の数：続きからは前の回のまま（変えると引き継いだ部分の形が変わる）。名簿・組数が減っていれば上限で切る
   var org = coopOrgOf_(base ? base.org : ((o && o.org) || old.org || 1), mode === 'group' ? gn : kids.length);
+  // 起点の位置：続きからは前の回のまま。画面が送ってきた時はそれ（null＝既定の格子）、送らない時（リセット・古い画面）は前の回のまま
+  var orgPts = coopOrgPts_(base ? base.orgPts : (o && 'orgPts' in o ? o.orgPts : old.orgPts), org);
   var kidsMap = {}, order = [], gi = [];
   // 組は「開始前に作った予定」を最優先にする。無ければ前回と同じ顔ぶれなら前の編成、それも無ければ番号順の等分
   var plan = mode === 'group' ? coopPlanGet_(cls, gn, kids) : null;
@@ -1738,10 +1757,10 @@ function coopStart_(o, pace) {
             kids: kidsMap, order: order,
             names: kids.map(function (k) { return k.name; }),
             nos: kids.map(function (k) { return k.no; }),
-            gi: gi, skip: coopSkip_(cls), prior: prior, org: org,
+            gi: gi, skip: coopSkip_(cls), prior: prior, org: org, orgPts: orgPts,
             pace: Number(pace) || old.pace || FLOOR_PRIOR_.perMin };   // 画面が「1正答の枚数」を自動で決めるのに使う
   sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
-    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior), org]);
+    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior), org, orgPts ? JSON.stringify(orgPts) : '']);
   cache_().put('coop_ev_' + id, '[]', TTL.session);
   cache_().put('coop_fl_' + id, '0', TTL.session);
   if (prev) {
@@ -1832,7 +1851,7 @@ function coopSave(name) {
   if (!s) return { ok: false, msg: '保存する協力プレイがありません。' };
   coopFlush_(s, false);
   // pace・lim・skip は再生で「1正答の枚数」を開始時と同じに自動計算するため（無い古い保存は既定値で計算する）
-  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1,
+  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null,
                   start: s.start, end: s.end, total: s.total,
                   pace: s.pace || FLOOR_PRIOR_.perMin, minutes: s.minutes, lim: Number(config_().limit_sec) || 60, skip: s.skip || 0,
                   names: s.names, nos: s.nos, gi: s.gi, ev: coopEvents_(s),
@@ -1938,7 +1957,7 @@ function coopReview() {
   var ev = ((s.prior && s.prior.ev) || []).map(function (e) { return out(e, 0); })
     .concat(coopEvents_(s).map(function (e) { return out(e, pri); }));
   var total = ev.reduce(function (a, e) { return a + e[2]; }, 0);
-  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, n: n, me: me,
+  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, n: n, me: me,
            mine: toBool_(config_().coop_mine),   // 教師の設定で「じぶん」の数を出さないこともできる（出すだけ。他の児童の数は出ない）
            g: group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[me]) || 0)) : null,
            ev: ev, total: total, pri: pri, segs: (s.prior && s.prior.segs) || [],
@@ -1949,7 +1968,7 @@ function coopReview() {
 function coopLastDone_(ck) {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 15).getValues(), now = Date.now();
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 16).getValues(), now = Date.now();
   for (var i = v.length - 1; i >= 0; i--) {
     if (String(v[i][1]) !== ck) continue;
     var end = v[i][10] instanceof Date ? v[i][10].getTime() : new Date(v[i][10]).getTime();
@@ -3037,7 +3056,7 @@ function ensureSheets_() {
   defs[SHEETS.WCHILD] = [];
   defs[SHEETS.WCLASS] = [];
   defs[SHEETS.COOP] = ['id', 'class', 'pattern', 'seed', 'mode', 'gn', 'groups',
-                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins'];
+                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins', 'origin_pos'];
   defs[SHEETS.COOPLOG] = ['session', 't', 'email', 'correct', 'mode'];
   defs[SHEETS.COOPSAVE] = ['save_id', 'name', 'saved', 'session', 'payload'];
 
