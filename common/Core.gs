@@ -39,7 +39,11 @@ var BASE_DEFAULTS = {
 
   // 協力プレイの見返し（児童画面の「前回の協力プレイ」）に「じぶん ○もん」を
   // 出すか。既定は出さない（「みんなで ○もん」だけ。教師画面の協力プレイタブで切り替え）。
-  coop_mine: 0
+  coop_mine: 0,
+
+  // モードごとの育ちの倍率（背景の床と協力プレイの図形）。"モード:倍率" をカンマでつなぐ（例 "3:2,7:1.5"）。
+  // 書かないモードは単元の UNIT.growWeights、それも無ければ1倍。0.5〜3倍に丸める（growWeights_）
+  grow_w: ''
 };
 
 var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
@@ -865,15 +869,36 @@ function bests_(mail, limitSec) {
  *
  * 注意：平均が変わると標準の分数も少し変わる（学級全体が速くなると、同じ正答の重みが少し減る）。
  */
+/*
+ * モードごとの育ちの倍率 { モード: 倍率 }。床（floorPace_）と協力プレイ（回に写して持つ gw）の両方に効く。
+ * 床は速さで自動に揃えた上に掛ける（倍率2なら、そのモードの1正答が2倍の枚数）。最も練習させたいモードを高くする使い方。
+ * 教師画面の全般設定で変える（config の grow_w）。単元が UNIT.growWeights で既定を宣言してもよい
+ */
+var GROW_W_MIN_ = 0.5, GROW_W_MAX_ = 3;
+function growWeights_() {
+  var out = {}, base = UNIT.growWeights || {};
+  modeIds_().forEach(function (m) { out[m] = Number(base[m]) || 1; });
+  var raw = '';
+  try { raw = String(config_().grow_w || ''); } catch (e) { /* 設定が読めない時は単元の既定（無ければ1倍）で続ける */ }
+  raw.split(',').forEach(function (kv) {
+    var p = kv.split(':'), m = Number(p[0]), w = Number(p[1]);
+    if (out[m] !== undefined && w > 0) out[m] = w;
+  });
+  for (var m in out) out[m] = Math.max(GROW_W_MIN_, Math.min(GROW_W_MAX_, Math.round(out[m] * 10) / 10));
+  return out;
+}
+
 var FLOOR_PRIOR_ = { perMin: 20, min: 10 };
 var FLOOR_REF_PER_MIN_ = 20;   // 「1正答あたりの育ち」の基準の速さ。index.html の FLOOR_REF と同じ値にする
 function floorPace_(idx) {
-  var st = (idx && idx['*']) || { tc: {}, sec: {} }, pr = UNIT.floorPrior || {}, out = {};
+  var st = (idx && idx['*']) || { tc: {}, sec: {} }, pr = UNIT.floorPrior || {}, out = {}, gw = growWeights_();
   modeIds_().forEach(function (m) {
     var perMin = Number(pr[m]) || FLOOR_PRIOR_.perMin;
     var tc = (Number(st.tc[m]) || 0) + perMin * FLOOR_PRIOR_.min;
     var min = (Number(st.sec[m]) || 0) / 60 + FLOOR_PRIOR_.min;
-    out[m] = Math.max(1, Math.round(tc / min * 100) / 100);
+    // 育ちの倍率で割る：1正答の「標準の分数」が倍率ぶん大きくなる（倍率2のモードは1問で2倍育つ）。
+    // 児童の画面はこの値で割って足すだけなので、倍率を知らなくてよい
+    out[m] = Math.max(0.1, Math.round(Math.max(1, tc / min) / gw[m] * 100) / 100);
   });
   return out;
 }
@@ -1091,6 +1116,7 @@ function getConfigForUI() {
            modes: UNIT.modes, types: UNIT.types,
            settings: UNIT.settings || [],
            tips: UNIT.tips || '',
+           growW: growWeights_(),   // モードごとの育ちの倍率（今の設定。単元の既定込み）
            // 床のプレビュー（教師画面）に使う。児童の画面と同じ図形・同じ2色
            floor: { pattern: UNIT.floorPattern || 'penrose', c1: gradeAccent_(), c2: floorColor_(), ref: FLOOR_REF_PER_MIN_ },
            // 協力モードの図形の選択肢。宣言できるのは画面に写した生成器と同じ id だけ
@@ -1270,7 +1296,7 @@ function coopLive_() {
 function coopFromSheet_() {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 16).getValues()[0]);
+  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 17).getValues()[0]);
 }
 /** coop シートの1行からセッションを組み立てる（児童の並びは今の名簿、合計は coop_log） */
 function coopFromRow_(r) {
@@ -1288,6 +1314,7 @@ function coopFromRow_(r) {
             kids: map, order: order, names: arr(r[7]), nos: arr(r[8]), gi: arr(r[6]),
             skip: coopSkip_(cls), org: Number(r[14]) || 1 };
   try { s.orgPts = coopOrgPts_(JSON.parse(String(r[15] || 'null')), s.org); } catch (e) { s.orgPts = null; }
+  try { s.gw = coopGw_(JSON.parse(String(r[16] || 'null'))); } catch (e) { s.gw = null; }
   try { var pr = JSON.parse(String(r[13] || 'null')); if (pr && pr.ev) s.prior = pr; } catch (e) {}
   s.total = coopEvents_(s).reduce(function (a, e) { return a + (Number(e[2]) || 0); }, 0);
   return s;
@@ -1354,7 +1381,7 @@ function coopEvents_(s) {
 /** 教師画面へ返す形（個人情報は名札に必要な氏名と番号まで。mail は出さない） */
 function coopPub_(s, since) {
   var ev = coopEvents_(s), n = ev.length;
-  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null,
+  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, gw: s.gw || null,
            start: s.start, end: s.end, status: s.status, total: s.total,
            names: s.names, nos: s.nos, gi: s.gi,
            // 画面の案内に使う：1回の制限秒（残りがこれを切ると、これから始める回は数えない）・送り直しの締め切り・氏名のない児童の数
@@ -1651,6 +1678,17 @@ function coopOrgOf_(v, max) { return Math.max(1, Math.min(Math.max(1, max), Math
  * 画面の大きさ（箱・全画面・児童の画面）が違っても同じ所に来る。範囲は最小の縮尺の画面の中（u −0.3〜2.8、v −1.6〜1.45）。
  * 数が起点の数と合わなければ使わない（既定の格子に戻る）。どの起点を誰が担当するかは位置を決めてもシードで混ぜる
  */
+/** 回に写した育ちの倍率 { モード: 倍率 } を確かめる（読めなければ null＝すべて1倍として描く） */
+function coopGw_(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  var out = {}, n = 0;
+  for (var k in v) {
+    var w = Number(v[k]);
+    if (!isFinite(w) || w <= 0) continue;
+    out[k] = Math.max(GROW_W_MIN_, Math.min(GROW_W_MAX_, w)); n++;
+  }
+  return n ? out : null;
+}
 function coopOrgPts_(v, org) {
   if (!Array.isArray(v) || v.length !== org || org > 60) return null;
   var out = [];
@@ -1699,7 +1737,7 @@ function coopContBase_(cont, prev) {
     n: Math.max(1, n - (src.skip || 0)), lim: Number(src.lim) || Number(config_().limit_sec) || 60,
     pace: Number(src.pace) || FLOOR_PRIOR_.perMin, total: tot }]);
   return { cls: String(src.cls), pat: String(src.pat), seed: Number(src.seed) || 1,
-           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1, orgPts: src.orgPts || null,
+           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1, orgPts: src.orgPts || null, gw: src.gw || null,
            keys: keys, prior: { dur: pin.dur + dur, ev: all, segs: segs } };
 }
 /** 引き継いだ正答の児童 index を、新しいセッションの名簿の並びへ付け替える */
@@ -1746,6 +1784,8 @@ function coopStart_(o, pace) {
   var org = coopOrgOf_(base ? base.org : ((o && o.org) || old.org || 1), mode === 'group' ? gn : kids.length);
   // 起点の位置：続きからは前の回のまま。画面が送ってきた時はそれ（null＝既定の格子）、送らない時（リセット・古い画面）は前の回のまま
   var orgPts = coopOrgPts_(base ? base.orgPts : (o && 'orgPts' in o ? o.orgPts : old.orgPts), org);
+  // 育ちの倍率は開始の時点の設定を回に写す（あとで設定を変えても、その回の再生・見返し・続きからの形は変わらない）。続きからは前の回のまま
+  var gw = (base && coopGw_(base.gw)) || growWeights_();
   var kidsMap = {}, order = [], gi = [];
   // 組は「開始前に作った予定」を最優先にする。無ければ前回と同じ顔ぶれなら前の編成、それも無ければ番号順の等分
   var plan = mode === 'group' ? coopPlanGet_(cls, gn, kids) : null;
@@ -1766,10 +1806,10 @@ function coopStart_(o, pace) {
             kids: kidsMap, order: order,
             names: kids.map(function (k) { return k.name; }),
             nos: kids.map(function (k) { return k.no; }),
-            gi: gi, skip: coopSkip_(cls), prior: prior, org: org, orgPts: orgPts,
+            gi: gi, skip: coopSkip_(cls), prior: prior, org: org, orgPts: orgPts, gw: gw,
             pace: Number(pace) || old.pace || FLOOR_PRIOR_.perMin };   // 画面が「1正答の枚数」を自動で決めるのに使う
   sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
-    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior), org, orgPts ? JSON.stringify(orgPts) : '']);
+    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior), org, orgPts ? JSON.stringify(orgPts) : '', JSON.stringify(gw)]);
   cache_().put('coop_ev_' + id, '[]', TTL.session);
   cache_().put('coop_fl_' + id, '0', TTL.session);
   if (prev) {
@@ -1860,7 +1900,7 @@ function coopSave(name) {
   if (!s) return { ok: false, msg: '保存する協力プレイがありません。' };
   coopFlush_(s, false);
   // pace・lim・skip は再生で「1正答の枚数」を開始時と同じに自動計算するため（無い古い保存は既定値で計算する）
-  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null,
+  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, gw: s.gw || null,
                   start: s.start, end: s.end, total: s.total,
                   pace: s.pace || FLOOR_PRIOR_.perMin, minutes: s.minutes, lim: Number(config_().limit_sec) || 60, skip: s.skip || 0,
                   names: s.names, nos: s.nos, gi: s.gi, ev: coopEvents_(s),
@@ -1958,10 +1998,13 @@ function coopReview() {
   if (me === undefined) return { ok: false, msg: 'この 協力プレイには あなたの きろくが ありません。' };
   var n = (s.names || []).length;
   var group = s.mode === 'group', pri = (s.prior && s.prior.dur) || 0;
+  // 各正答：[時刻, 児童 index, 正答数, 組番号（児童ごとの回は 0）, 育ちの倍率]。正答数は生のまま（「じぶん N もん」に使う）
+  var gw = s.gw || {}, ws = [];
+  for (var gk in gw) ws.push(Number(gw[gk]) || 1);
   function out(e, shift) {
-    var o = [Number(e[0]) + shift, Number(e[1]) || 0, Number(e[2]) || 0];
-    if (group) o.push(Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[e[1]]) || 0)));
-    return o;
+    return [Number(e[0]) + shift, Number(e[1]) || 0, Number(e[2]) || 0,
+            group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[e[1]]) || 0)) : 0,
+            Number(gw[e[3]]) || 1];
   }
   var ev = ((s.prior && s.prior.ev) || []).map(function (e) { return out(e, 0); })
     .concat(coopEvents_(s).map(function (e) { return out(e, pri); }));
@@ -1970,6 +2013,7 @@ function coopReview() {
            mine: toBool_(config_().coop_mine),   // 教師の設定で「じぶん」の数を出さないこともできる（出すだけ。他の児童の数は出ない）
            g: group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[me]) || 0)) : null,
            ev: ev, total: total, pri: pri, segs: (s.prior && s.prior.segs) || [],
+           wm: ws.length ? ws.reduce(function (a, w) { return a + w; }, 0) / ws.length : 1,   // 倍率の平均（自動の枚数の見込みに使う。教師画面と同じ）
            minutes: s.minutes, lim: Number(config_().limit_sec) || 60, pace: s.pace || FLOOR_PRIOR_.perMin, skip: s.skip || 0,
            end: s.end };
 }
@@ -1977,7 +2021,7 @@ function coopReview() {
 function coopLastDone_(ck) {
   var sh = ss_().getSheetByName(SHEETS.COOP);
   if (!sh || sh.getLastRow() < 2) return null;
-  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 16).getValues(), now = Date.now();
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 17).getValues(), now = Date.now();
   for (var i = v.length - 1; i >= 0; i--) {
     if (String(v[i][1]) !== ck) continue;
     var end = v[i][10] instanceof Date ? v[i][10].getTime() : new Date(v[i][10]).getTime();
@@ -2809,6 +2853,16 @@ function validateUnit_() {
     });
   }
 
+  // 育ちの倍率の既定：単元のモードの id に、0.5〜3 の数
+  if (UNIT.growWeights !== undefined) {
+    var gmIds = modeIds_().map(String);
+    Object.keys(UNIT.growWeights).forEach(function (m) {
+      var w = Number(UNIT.growWeights[m]);
+      if (gmIds.indexOf(String(m)) < 0) probs.push('UNIT.growWeights のモード ' + m + ' は modes にありません');
+      else if (!(w >= GROW_W_MIN_ && w <= GROW_W_MAX_)) probs.push('UNIT.growWeights のモード ' + m + ' は ' + GROW_W_MIN_ + '〜' + GROW_W_MAX_ + ' の数にしてください');
+    });
+  }
+
   // 設定キーは defaults に宣言があること（無いと config_() が拾えず保存も効かない）
   (UNIT.settings || []).forEach(function (s) {
     if (!s.key) { probs.push('UNIT.settings に key の無い項目があります'); return; }
@@ -3065,7 +3119,7 @@ function ensureSheets_() {
   defs[SHEETS.WCHILD] = [];
   defs[SHEETS.WCLASS] = [];
   defs[SHEETS.COOP] = ['id', 'class', 'pattern', 'seed', 'mode', 'gn', 'groups',
-                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins', 'origin_pos'];
+                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins', 'origin_pos', 'grow_w'];
   defs[SHEETS.COOPLOG] = ['session', 't', 'email', 'correct', 'mode'];
   defs[SHEETS.COOPSAVE] = ['save_id', 'name', 'saved', 'session', 'payload'];
 
