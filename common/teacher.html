@@ -218,6 +218,11 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 /* 設定の見本：名札・正答数は出さず、「見本」の札を出す（実際の回と取り違えないように）。再生のつまみは使える */
 #coopPrevTag{display:none;background:#101728;color:#fff;border-radius:9px;padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem);font-weight:700}
 #coopStage.preview #coopPrevTag{display:inline-block}
+/* 見本の表示⇄非表示（この端末だけ）。回が無い間だけ出す。かくした時は正答の無い見本（図形の輪郭と起点の印だけ）にする */
+#coopPrevOn{display:none;background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;color:var(--ink);
+  padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
+#coopStage.preview #coopPrevOn{display:inline-block}
+#coopStage.prevEmpty #coopPrevTag,#coopStage.prevEmpty #coopReplay,#coopStage.prevEmpty #coopHud{display:none}
 #coopStage.preview #coopRoster,#coopStage.preview #coopNames,
 #coopStage.preview #coopHud .tag:last-child{display:none}
 #coopPrevBack{background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;color:var(--ink);
@@ -362,7 +367,8 @@ details.more[open] summary{border-color:var(--ink)}
   border:1.5px solid var(--ink);background:#fff;box-shadow:0 4px 14px rgba(16,23,40,.25);transform:translate(-50%,-60%)}
 #coopPlanDirty{font-size:.8rem;font-weight:700}
 #coopPlanHint{margin:.1rem 0 .5rem}
-#coopGuide,#coopRateTag,#coopRvMineStat{margin:0}
+#coopGuide,#coopRateTag,#coopRvMineStat,#coopRvPickStat{margin:0}
+.coopBox #coopRvPick{flex:1;min-width:0;max-width:16rem}
 #coopRate{width:4.5rem}
 .morePanel p.note{margin:.5rem 0 0;line-height:1.7}
 /* 「止まっている・減った・数えられていない」に見える間だけ、理由をひらがなで出す（モニターを見る児童向け） */
@@ -573,6 +579,10 @@ details.more[open] summary{border-color:var(--ink)}
             <input id="coopRate" type="number" min="0.5" step="0.5" placeholder="自動"> 枚
             <span id="coopRateTag" class="note">自動</span>
             <button id="coopRateAuto" class="bstep sm" type="button" style="display:none">自動にもどす</button></div>
+          <div class="mrow"><span class="ctl">見返す回</span>
+            <select id="coopRvPick" aria-label="児童の「前回の協力プレイ」に出す回"></select>
+            <span class="ptag">すぐ反映</span>
+            <span id="coopRvPickStat" class="note"></span></div>
           <div class="mrow"><span class="ctl">児童の見返し</span>
             <select id="coopRvMine"><option value="0">「みんなで」だけ出す</option><option value="1">「じぶん」の正答数も出す</option></select>
             <span class="ptag">すぐ反映</span>
@@ -583,6 +593,7 @@ details.more[open] summary{border-color:var(--ink)}
             終わった図形を映している間は、画面の「続きから」で同じ図形を育て続けられます。<br>
             <b>起点</b>は図形が育ち始める点の数です。2以上にすると、児童（色づかいがグループならグループ）ごとに担当の起点が決まり、そこから育ちます。
             児童数にすると島の大きさがその子の正答数になり、モニターと児童の見返しで見えます。<br>
+            <b>見返す回</b>は、選んでいるクラスの児童が「前回の協力プレイ」で見る回です。保存データから選びます。選ばなければそのクラスの直前の回で、正答が1つも無い回（試しに開始して終えた回など）と、協力プレイをまだしていないクラスでは何も出しません。
             <b>児童の見返し</b>は、児童画面の「前回の協力プレイ」で「じぶん ○もん」を出すかどうかです（既定は出さない。変えるとすぐ保存されます）。</p>
         </div>
       </details></span>
@@ -616,6 +627,7 @@ details.more[open] summary{border-color:var(--ink)}
     <div id="coopTL">
     <button id="coopClose" class="ghost" type="button">× もどる</button>
     <span id="coopPrevTag">見本</span>
+    <button id="coopPrevOn" type="button">見本をかくす <span class="ptag">この端末だけ</span></button>
     <button id="coopPrevBack" type="button" hidden>終わった回にもどる</button>
     <button id="coopOrgReset" type="button" hidden>起点の位置をもとにもどす</button>
     <button id="coopNames" type="button">名前をかくす <span class="ptag">この端末だけ</span></button>
@@ -1966,6 +1978,7 @@ function coopTabShow_(){
  */
 function coopGuideText(){
   var s = CP.sess;
+  if(CP.prev && !CP.ev.length) return { note: '', guide: '見本をかくしています（図形の輪郭と起点だけ）。右の図の左上「見本を出す」で出せます。' };
   if(CP.prev) return { note: '', guide: '右は見本です（正答はつくりもの。色は開始のたびに変わります）。設定を変えると描き直します。' };
   if(!s || CP.loaded || s.id === 'save') return { note: '', guide: '' };
   var now = Date.now() + CP.off, lim = (s.lim || 60) * 1000, slack = s.slack || 10000;
@@ -2053,7 +2066,8 @@ function coopPrevSession_(){
             pace: pace, minutes: minutes, lim: lim, skip: 0, prior: null, gw: GROW_SAVED };
   // つくりものの正答：全員が毎回同じ数だけ正答する単純な見込み（どの起点も均等に育つ）。モードは順に回す（育ちの倍率が平均で効く）。
   // 1回の数は自動の枚数の見込み（1回の正答 × 参加 CPART）と同じなので、自動のままなら完成の85%前後まで育つ
-  var plays = Math.max(1, Math.round(minutes * 60 / (lim + CGAP))), ev = [], c = Math.max(1, Math.round(pace * lim / 60 * CPART));
+  var plays = coopPrevOn_() ? Math.max(1, Math.round(minutes * 60 / (lim + CGAP))) : 0;   // かくしている時は正答の無い見本（輪郭と起点だけ）
+  var ev = [], c = Math.max(1, Math.round(pace * lim / 60 * CPART));
   for(var k = 0; k < plays; k++){
     for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, GROW_MODES.length ? GROW_MODES[(i + k) % GROW_MODES.length] : 1]);
   }
@@ -2063,7 +2077,7 @@ function coopPrevSession_(){
 }
 function coopPrevOff_(){
   CP.prev = false;
-  $('coopStage').classList.remove('preview');
+  $('coopStage').classList.remove('preview', 'prevEmpty');
   $('coopPrevBack').hidden = true;
 }
 function coopPreview(user){
@@ -2082,9 +2096,9 @@ function coopPreview(user){
   CP.GCOLORS = coopPalette(s.gn, s.seed * 31 + 11); CP.GFAMS = CP.GCOLORS.map(coopFam);
   CP.sel = -1; CP.EDIT = false; CP.playing = false;
   var st = $('coopStage');
-  st.style.display = ''; st.classList.add('preview');
+  st.style.display = ''; st.classList.add('preview'); st.classList.toggle('prevEmpty', !P.ev.length);
   $('coopPrevBack').hidden = !back;
-  $('coopReplay').classList.add('on');      // 見本も再生のつまみで育ちを見られる
+  $('coopReplay').classList.add('on');      // 見本も再生のつまみで育ちを見られる（かくしている時は CSS で出さない）
   ['coopStop', 'coopReset', 'coopSave'].forEach(function(id){ $(id).disabled = true; });
   coopFit_();
   coopGen(); coopRoster(); coopRecompute(CP.ev.length);
@@ -2165,6 +2179,17 @@ $('coopOrgShow').onclick = function(){
   this.classList.toggle('on', !hide);
   this.setAttribute('aria-pressed', hide ? 'false' : 'true');
 };
+/* 見本の表示⇄非表示。見る人の端末ごとに覚える（既定は出す）。かくしても起点の印は残し、つまんで動かせる */
+function coopPrevOn_(){ var v = null; try { v = localStorage.getItem('coopPrevOn'); } catch(e){} return v !== '0'; }
+function coopPrevOnLabel_(){
+  $('coopPrevOn').innerHTML = (coopPrevOn_() ? '見本をかくす' : '見本を出す') + ' <span class="ptag">この端末だけ</span>';
+}
+$('coopPrevOn').onclick = function(){
+  try { localStorage.setItem('coopPrevOn', coopPrevOn_() ? '0' : '1'); } catch(e){}
+  coopPrevOnLabel_();
+  if(CP.prev) coopPreview(CP.prev === 'user');
+};
+coopPrevOnLabel_();
 var coopPrevTimer = 0;
 function coopPreviewSoon(){
   clearTimeout(coopPrevTimer);
@@ -2198,6 +2223,7 @@ function coopClsRender(){
       return '<button type="button" title="' + esc(o.textContent) + '" data-cls="' + esc(o.value) + '"' + (o.value === sel.value ? ' class="on"' : '') +
         (sel.disabled ? ' disabled' : '') + '>' + esc(name) + '<small>' + esc(o.getAttribute('data-n') || '') + '人</small></button>';
     }).join('');
+  coopRvPickRender();                         // 「見返す回」は選んでいるクラスの分を出す
 }
 $('coopClsPick').onclick = function(e){
   var b = e.target.closest('button[data-cls]'); if(!b || b.disabled) return;
@@ -2663,15 +2689,44 @@ $('coopSave').onclick = function(){
     btn.disabled = false; setStat('coopStat', '保存できませんでした: ' + e.message, true);
   }).coopSave(name);
 };
+var CP_SAVES = [], CP_RV = {};   // 保存データの一覧（id・名前・クラス）と、クラスごとの「見返す回」（{ クラス: 保存ID }）
 function coopRefreshSaves(){
   google.script.run.withSuccessHandler(function(r){
     if(!r || !r.ok) return;
-    $('coopSaves').innerHTML = (r.saves || []).map(function(s){
+    CP_SAVES = r.saves || []; CP_RV = r.rv || {};
+    $('coopSaves').innerHTML = CP_SAVES.map(function(s){
       return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
     }).join('') || '<option value="">（保存データなし）</option>';
+    coopRvPickRender();
   }).coopList();
 }
 coopRefreshSaves();
+/* 児童の「前回の協力プレイ」に出す回（クラスごと）。選んでいるクラスの保存データだけを並べる。
+   選ばなければ、そのクラスの直前の回（正答が1つも無い回は出さない）。変えたらすぐ保存する */
+var CP_RV_CLS = null;
+function coopRvPickRender(){
+  var cls = $('coopCls').value, rv = CP_RV || {}, cur = rv[cls] || '', sel = $('coopRvPick');
+  var opts = '<option value="">直前の回</option>' + (CP_SAVES || []).filter(function(s){ return s.cls === cls; }).map(function(s){
+    return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
+  }).join('');
+  sel.innerHTML = opts;
+  sel.value = cur;
+  if(sel.value !== cur) sel.value = '';     // 選んでいた保存データが一覧から消えた
+  if(CP_RV_CLS !== cls) $('coopRvPickStat').textContent = '';
+  CP_RV_CLS = cls;
+}
+$('coopRvPick').onchange = function(){
+  var el = this, st = $('coopRvPickStat'), cls = $('coopCls').value, id = el.value;
+  el.disabled = true; st.textContent = '保存中…';
+  google.script.run.withSuccessHandler(function(r){
+    el.disabled = false;
+    if(!r || !r.ok){ st.textContent = (r && r.msg) || '保存できません'; el.value = CP_RV[cls] || ''; return; }
+    CP_RV = r.rv || {}; st.textContent = '保存しました';
+  }).withFailureHandler(function(e){
+    el.disabled = false; el.value = CP_RV[cls] || ''; st.textContent = '保存できません: ' + e.message;
+  }).coopSetReview(cls, id);
+};
+
 $('coopLoad').onclick = function(){
   var id = $('coopSaves').value;
   if(!id) return;
