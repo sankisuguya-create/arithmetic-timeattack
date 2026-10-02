@@ -186,18 +186,18 @@ async function main() {
   var accMatch = coreText.match(/var GRADE_ACCENT_ = \{[^}]*\};/), alertMatch = coreText.match(/var ALERT_COLOR_ = '[^']*';/);
   // 床の第二の色の一覧（正本は Core.gs の FLOOR_GEMS_）。単元の floorColor をここから引く
   var gemsMatch = coreText.match(/var FLOOR_GEMS_ = \{[^}]*\};/);
+  var gaMatch = coreText.match(/function gradeAccent_\(\) \{[^\n]*\}/), fcMatch = coreText.match(/function floorColor_\(\) \{[\s\S]*?\n\}/);
   // 「？」の印の色（Core.gs の questionColor_ と、その元の GRADE_EXTRA_）。単元の gen が呼ぶ（円と球の図の「？」）
   var extraMatch = coreText.match(/var GRADE_EXTRA_ = \{[^}]*\};/), qcMatch = coreText.match(/function questionColor_\(\) \{[\s\S]*?\n\}/);
   if (!riMatch || !pickMatch) { fail('common/Core.gs から ri_ / pick_ を抽出できませんでした（実装が変わった可能性があります）。'); return; }
 
   var previewItemRe = /function\s+previewItem\s*\(\)\s*\{[\s\S]*?\n\}/;
-  // ".boot();" は起動シーケンスに1箇所しか出てこないので、それを目印に
-  // 直後の "}else{ ... }" だけを狙う（ファイル中には他にも "}else{" があるため）。
-  // 起動の呼び出しは boot() 直書きから bootFetch()（失敗したら取り直す）に変わった。
-  // どちらの形でも同じ else 分岐を捕まえる
-  var elseBlockRe = /(?<=(?:\.boot\(\)|bootFetch\(\));\s{0,20})\}else\{[\s\S]*?renderMenu\(\);\s*show\('start'\);\s*\}/;
-  if (!previewItemRe.test(uiText) || !elseBlockRe.test(uiText)) {
-    fail('common/index.html の想定していた箇所（previewItem / 起動時の else 分岐）が見つかりませんでした。index.html の構造が変わった可能性があります。');
+  // GAS の外で動くときの分岐（if(SRV){...}else{ BEST=... renderMenu(); show('start'); }）。
+  // 目印は else の直後の "BEST=" だけにする。if 側（bootFetch の後の協力の見張りなど）が
+  // 増えても外れないように、if 側の中身には依存しない
+  var elseBlockRe = /\}else\{\s*BEST=[\s\S]*?renderMenu\(\);\s*show\('start'\);\s*\}/;
+  if (!previewItemRe.test(uiText) || !elseBlockRe.test(uiText) || !/function applyBoot\(r, live\)/.test(uiText)) {
+    fail('common/index.html の想定していた箇所（previewItem / GAS外の else 分岐 / applyBoot）が見つかりませんでした。index.html の構造が変わった可能性があります。');
     return;
   }
 
@@ -210,33 +210,27 @@ async function main() {
     "          rows:it.rows||null, veil:(it.veil == null ? null : it.veil), fig:it.fig||null};\n" +
     "}";
 
+  // Core.gs の boot() が名簿外の試用者（guest）に返すのと同じ形を作り、実機と同じ applyBoot に通す。
+  // 画面側の反映（色・床・型の一覧・順次開放の印など）を写さないので、applyBoot が増えても追従する
   var newElseBlock =
     "}else{\n" +
-    "  MODES = {}; MODES_ALL = [];\n" +
-    "  (UNIT.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });\n" +
-    "  UNITS = UNIT.units || {};\n" +
-    "  DIGITCAP = UNIT.digitCap || {};\n" +   // 実機の boot() と同じものを同じ変数に入れる
-    "  SCALE = UNIT.scale || {};\n" +
-    "  GLYPH = UNIT.glyph || {};\n" +
-    "  SLOTCOLOR = UNIT.slotColor || {};\n" +
-    "  setPalette_(GRADE_ACCENT_[UNIT.grade], ALERT_COLOR_);\n" +
-    "  if (typeof FLOOR_GEMS_ !== 'undefined' && FLOOR_GEMS_[UNIT.floorColor]) FLOOR.c2 = FLOOR_GEMS_[UNIT.floorColor];\n" +
-    "  FLOOR.pat = UNIT.floorPattern || '';\n" +
-    "  TYPES = UNIT.types || {};\n" +
-    // 型の一覧は Core.gs と同じく gen を回して導出する
-    "  TYPES_BY_MODE = {};\n" +
-    "  MODES_ALL.forEach(function(m){ var seen={}, list=[];\n" +
+    "  var __ids = (UNIT.modes||[]).map(function(m){ return m.id; });\n" +
+    "  var __tbm = {};\n" +                // 型の一覧は Core.gs と同じく gen を回して導出する
+    "  __ids.forEach(function(m){ var seen={}, list=[];\n" +
     "    for(var i=0;i<300;i++){ var t=UNIT.gen(Math.random,m).t; if(t&&!seen[t]){seen[t]=true;list.push(t);} }\n" +
-    "    TYPES_BY_MODE[m]=list; });\n" +
-    "  CFG.open = {};\n" +            // 公開設定はサーバー側の class_config なので、全モード出す
-    "  MODES_ALL.forEach(function(m){ CFG.open[m] = true; });\n" +
-    "  CFG.settings = {};\n" +
-    "  var __defs = (UNIT.defaults||{});\n" +
-    "  for (var __k in __defs) CFG.settings[__k] = __defs[__k];\n" +
-    "  setAppTitle(UNIT.title + '（プレビュー）');\n" +
-    "  BEST={}; MEDAL={}; STARS={}; PBEST={};\n" +
-    "  MODES_ALL.forEach(function(m){ BEST[m]=0; MEDAL[m]=''; STARS[m]=0; PBEST[m]=0; });\n" +
-    "  renderMenu(); show('start');\n" +
+    "    __tbm[m]=list; });\n" +
+    "  var __set = {}, __defs = UNIT.defaults || {};\n" +   // 教師の上書きは無いので既定値
+    "  (UNIT.settings||[]).forEach(function(s){ var v=__defs[s.key]; __set[s.key] = (s.type==='text') ? v : Number(v); });\n" +
+    "  var __r = { ok:true, guest:true, name:'', grade:0, limitSec:Number(__defs.limit_sec)||60, missLimit:Number(__defs.miss_limit)||3,\n" +
+    "    unit:{ id:UNIT.id, title:UNIT.title + '（プレビュー）', modes:UNIT.modes, grade:UNIT.grade,\n" +
+    "      accent:gradeAccent_(), alert:ALERT_COLOR_, q:questionColor_(),\n" +
+    "      units:UNIT.units||{}, digitCap:UNIT.digitCap||{}, types:UNIT.types||{}, typesByMode:__tbm,\n" +
+    "      scale:UNIT.scale||{}, glyph:UNIT.glyph||{}, slotColor:UNIT.slotColor||{},\n" +
+    "      floor2:floorColor_(), floorPattern:UNIT.floorPattern||'penrose' },\n" +
+    "    settings:__set, open:{}, locked:{}, best:{}, practiceBest:{}, stars:{}, medals:{}, floor:{min:0, pace:{}} };\n" +
+    "  __ids.forEach(function(m){ __r.open[m]=true; __r.best[m]=0; __r.practiceBest[m]=0; __r.stars[m]=0; __r.medals[m]=''; });\n" +
+    "  applyBoot(__r);\n" +
+    "  show('start');\n" +
     "}";
 
   // index.html はサーバーでテンプレートとして評価され、単元の id が埋め込まれる。プレビューではその場で埋める
@@ -252,6 +246,8 @@ async function main() {
     (gemsMatch ? gemsMatch[0] : 'var FLOOR_GEMS_ = {};') + '\n' +
     (extraMatch ? extraMatch[0] : 'var GRADE_EXTRA_ = {};') + '\n' +
     (qcMatch ? qcMatch[0] : "function questionColor_(){ return '#FFFFFF'; }") + '\n' +
+    (gaMatch ? gaMatch[0] : 'function gradeAccent_(){ return GRADE_ACCENT_[UNIT.grade] || GRADE_ACCENT_[3]; }') + '\n' +
+    (fcMatch ? fcMatch[0] : "function floorColor_(){ return ''; }") + '\n' +
     pickMatch[0] + '\n' +
     unitText + '\n' +
     '<' + '/script>\n';
