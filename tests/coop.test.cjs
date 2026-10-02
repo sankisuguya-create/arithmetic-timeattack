@@ -703,15 +703,15 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
    'id="coopFull" class="bview"', 'id="coopLoad" class="bview sm"', 'id="coopOrgShow" class="pick on"'].forEach(k => assert.ok(tui.includes(k), k));
   assert.ok(tui.includes('.bkey{') && tui.includes('box-shadow:0 3px 0 #101728') && tui.includes('.coopBox .step{width:2rem;height:2rem;'));
   // 左の「開始」はステージの開始と同じ。進行中・数えている間は押せない
-  assert.ok(tui.includes("document.getElementById('coopStartL').onclick = function(){ document.getElementById('coopStart').onclick(); };"));
-  assert.ok(tui.includes("document.getElementById('coopStartL').disabled = !!busy;"));
+  assert.ok(tui.includes("$('coopStartL').onclick = function(){ $('coopStart').onclick(); };"));
+  assert.ok(tui.includes("$('coopStartL').disabled = !!busy;"));
   assert.ok(tui.includes('#coopStage.preview:not(.nomarks) #coopOrgMarks{display:block}'));
   // 設定の見本：設定を変えると右に描き直す。見本の間は終わった回で上書きせず、開始の扱いは「まだ始めていない」
   assert.ok(tui.includes("if(CP.polling || CP.loaded || CP.prev === 'user') return;"));
   // 見本は協力プレイのタブを開くまで描かない（大きさ0のステージで描こうとして、設定の読み込みごと止まっていた）
-  assert.ok(/function coopPreview\(user\)\{\n[^\n]*\n  if\(document\.getElementById\('pageCoop'\)\.style\.display === 'none'\) return;/.test(tui));
+  assert.ok(/function coopPreview\(user\)\{\n[^\n]*\n  if\(\$\('pageCoop'\)\.style\.display === 'none'\) return;/.test(tui));
   assert.ok(tui.includes('if(!CP.ORD) return;'));
-  assert.ok(tui.includes("var b = document.getElementById('coopStart'), s = CP.prev ? null : CP.sess;"));
+  assert.ok(tui.includes("var b = $('coopStart'), s = CP.prev ? null : CP.sess;"));
   assert.ok(/function coopUseSession\(s, evAll\)\{\n  coopPrevOff_\(\);/.test(tui), '本物の回を映すと見本をやめる');
   ['coopCls', 'coopGn', 'coopMode', 'coopOrg'].forEach(id => assert.ok(tui.includes("'" + id + "'"), id));
   // 見本の正答は全員が毎回同じ数（どの起点も均等に育つ）。量は自動の枚数の見込みと同じ前提（1回の正答 × 参加 CPART）
@@ -719,8 +719,8 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes("for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, 1]);"));
   // 再生のつまみ：箱の中はステージの下端、全画面は左上の並び。見本でも使える
   assert.ok(tui.includes('#coopStage > #coopReplay{position:absolute;left:1.4vmin;right:1.4vmin;bottom:1.4vmin;'));
-  assert.ok(tui.includes("var to = st.classList.contains('full') ? document.getElementById('coopTL') : st;"));
-  assert.ok(tui.includes("document.getElementById('coopReplay').classList.add('on');      // 見本も"));
+  assert.ok(tui.includes("var to = st.classList.contains('full') ? $('coopTL') : st;"));
+  assert.ok(tui.includes("$('coopReplay').classList.add('on');      // 見本も"));
   assert.ok(tui.includes('<span id="coopPrevTag">見本</span>'));
   // 輪郭は closePath() で閉じない（多数を1本の Path2D にまとめると二乗で遅くなる）
   const poly = src => src.slice(src.indexOf('function coopPoly(P, t)'), src.indexOf('\n}', src.indexOf('function coopPoly(P, t)')));
@@ -877,6 +877,23 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   // 書体：教師画面は BIZ UDPゴシック（読めなければ端末の日本語ゴシック）。時計と正答数は字幅のそろった BIZ UDゴシック
   assert.ok(tui.includes('family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700'));
   assert.ok(tui.includes('font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif'));
+}
+
+/* ---- 教師画面の整理：共通の道具・タブ・ボタンの役割（全タブ）・固定の書式はクラスへ ---- */
+{
+  const tui = read('common/teacher.html');
+  assert.ok(tui.includes('function $(id){ return document.getElementById(id); }'));
+  assert.equal((tui.match(/document\.getElementById\(/g) || []).length, 1, 'id での取得は $ に一本化');
+  assert.ok(tui.includes("var PAGES = { mode: 'pageMode', coop: 'pageCoop', set: 'pageSet', ana: 'pageAna' };"));
+  assert.ok(tui.includes('function coopLockForm_(lock){') && (tui.match(/coopLockForm_\(/g) || []).length >= 3);
+  assert.ok(tui.includes('function coopSyncForm_(s){') && (tui.match(/coopSyncForm_\(/g) || []).length >= 3);
+  // ボタンの役割は協力プレイ以外のタブにも
+  ['id="clsSave" class="bkey go"', 'id="save" class="bkey go"', 'id="agg" class="bkey"', 'class="bview sm" id="anaReload"',
+   'id="clsReload" class="bview sm"', 'id="fp1" class="bstep"', 'class="bstep sm" data-b="1"', 'id="coopPlanSave" class="bkey go"'].forEach(k => assert.ok(tui.includes(k), k));
+  assert.ok(!/class="[^"]*\bmini\b/.test(tui) && !tui.includes('button.mini'), '古い mini は使わない');
+  // 書式の固定値は style 属性に書かない（残るのは JS が出し入れする display と、位置・色が値で決まるものだけ）
+  const fixed = (tui.match(/style="[^"]*"/g) || []).filter(x => !/^style="display:none"$/.test(x) && !/\+/.test(x));
+  assert.ok(fixed.length <= 4, '固定の書式が style 属性に残っている: ' + fixed.join(' '));
 }
 
 console.log('coop.test.cjs: all assertions passed.');
