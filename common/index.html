@@ -748,7 +748,7 @@ var CRV = { CVW: 3.6, CSMIN: 0.32, CZOOM_STEP: 0.72, CCOVER: 0.9, CAIM: 0.85, CP
 var RV = { d: null, hi: false, tiles: null, W: 0, H: 0 };
 function coopRvAutoRate(p){
   var plays = p.minutes * 60 / (p.lim + CRV.CGAP);
-  var expect = Math.max(1, p.n) * CRV.CPART * plays * p.pace * p.lim / 60;
+  var expect = Math.max(1, p.n) * CRV.CPART * plays * p.pace * p.lim / 60 * (p.wm || 1);
   return Math.max(0.5, Math.round((CRV.CAIM * p.tfin - (p.used || 0)) / expect * 10) / 10);
 }
 function coopRvOpen(){
@@ -863,16 +863,16 @@ function coopRvDraw(){
   var vmin = view(CRV.CSMIN);
   var tfin = coopFinOf(tiles, ord, function(t){ return inV(t, vmin); }, CRV.CCOVER), used = 0, segr = [];
   (d.segs || []).forEach(function(g){
-    var r = coopRvAutoRate({ tfin: tfin, n: g.n, minutes: g.minutes, lim: g.lim, pace: g.pace, used: used });
+    var r = coopRvAutoRate({ tfin: tfin, n: g.n, minutes: g.minutes, lim: g.lim, pace: g.pace, used: used, wm: d.wm || 1 });
     segr.push({ end: g.end, rate: r }); used += (Number(g.total) || 0) * r;
   });
-  var rate = coopRvAutoRate({ tfin: tfin, n: (d.n || 1) - (d.skip || 0), minutes: d.minutes || 10, lim: d.lim || 60, pace: d.pace || 20, used: used });
+  var rate = coopRvAutoRate({ tfin: tfin, n: (d.n || 1) - (d.skip || 0), minutes: d.minutes || 10, lim: d.lim || 60, pace: d.pace || 20, used: used, wm: d.wm || 1 });
   function rateAt(t){ if(d.pri && t < d.pri){ for(var k = 0; k < segr.length; k++) if(t <= segr[k].end) return segr[k].rate; } return rate; }
   // 正答を順に、担当の起点（児童ごとなら index、グループなら組）から近い空きへ貼り、画面の9割が塗れたら1段ずつ引く（教師画面と同じ）
   var S = 1, vt = 0, pv = 0, vr = view(S), A = coopAlloc(ord);
   for(i = 0; i < tiles.length; i++){ tiles[i].k = -1; if(inV(tiles[i], vr)) vt++; }
   d.ev.forEach(function(e){
-    var m = Math.round(e[2] * rateAt(e[0])), o = grp ? (e[3] || 0) : e[1];
+    var m = Math.round(e[2] * (e[4] || 1) * rateAt(e[0])), o = grp ? (e[3] || 0) : e[1];   // e[4]：その正答のモードの育ちの倍率
     while(m-- > 0){
       var j = coopTake(A, o); if(j < 0) break;
       tiles[j].k = e[1]; tiles[j].g = e[3];

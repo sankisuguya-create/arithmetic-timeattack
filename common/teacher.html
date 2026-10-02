@@ -76,6 +76,14 @@ h1{font-size:1.35rem;font-weight:800;margin-bottom:.3rem}
 .row.stack{display:block}
 .row.stack label{display:block;margin-bottom:.5rem}
 details.help p{margin:.6rem 0}
+/* 育ちの倍率：モードごとに1行。長い名前は切る */
+.growBox{margin:.8rem 0 .4rem;padding-top:.7rem;border-top:1px solid var(--line)}
+.growBox > label{display:block;font-size:.94rem;font-weight:600;margin-bottom:.4rem}
+.growBox > label .note{display:block;font-size:.74rem;color:var(--mute);font-weight:400}
+#growRows{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.35rem 1rem}
+.grow1{display:flex;align-items:center;gap:.4rem;font-size:.88rem}
+.grow1 .gm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.growBox input[type=number]{width:3.8rem;padding:.35rem .5rem}
 /* 保存の型を欄・ボタンに併記する（すぐ反映／保存して反映／この端末だけ） */
 .ptag{font-size:.66rem;color:var(--mute);border:1px solid var(--line);border-radius:6px;padding:.06rem .35rem;white-space:nowrap}
 h2{font-size:.72rem;letter-spacing:.14em;color:var(--mute);font-weight:700;margin-bottom:.7rem}
@@ -457,6 +465,13 @@ details.more[open] summary{border-color:var(--ink)}
       <input id="teachers" class="wide" type="text">
     </div>
     <div id="settingRows"></div>
+    <!-- モードごとの育ちの倍率（背景の床・協力プレイの図形）。最も練習させたいモードを高くする -->
+    <div class="growBox" id="growBox">
+      <label>モードごとの育ちの倍率<span class="note">1正答で背景の床と協力プレイの図形がどれだけ育つか。0.5〜3倍。
+        練習させたいモードを高くします。床は速さで自動に揃えた上に掛けます（変えると、児童の床の大きさもこれまでの正答から描き直されます）。
+        協力プレイは、変えた後に始めた回から効きます。</span></label>
+      <div id="growRows"></div>
+    </div>
     <div class="bar">
       <button id="save" class="bkey go">設定を保存して反映</button>
       <span class="stat" id="saveStat"></span>
@@ -797,6 +812,24 @@ Object.keys(PAGES).forEach(function(k){
   $('tab' + k[0].toUpperCase() + k.slice(1)).onclick = function(){ showPage(k); };
 });
 
+/* モードごとの育ちの倍率。GROW_SAVED は保存してある値（見本と開始はこれを使う）、GROW_MODES はモードの並び */
+var GROW_SAVED = {}, GROW_MODES = [];
+function growRowsRender(modes, w){
+  GROW_MODES = modes.map(function(m){ return m.id; }); GROW_SAVED = w || {};
+  $('growRows').innerHTML = modes.map(function(m){
+    return '<div class="grow1"><span class="gm"><b>' + esc(m.id) + '</b> ' + esc(m.name) + '</span>' +
+      '<input type="number" id="gw_' + esc(m.id) + '" min="0.5" max="3" step="0.5" value="' + (Number(GROW_SAVED[m.id]) || 1) + '" aria-label="' + esc(m.name) + 'の育ちの倍率"> 倍</div>';
+  }).join('');
+}
+function growCollect(){
+  var out = {}, parts = [];
+  GROW_MODES.forEach(function(id){
+    var v = Math.max(0.5, Math.min(3, Number($('gw_' + id).value) || 1));
+    out[id] = v; parts.push(id + ':' + v);
+  });
+  return { map: out, str: parts.join(',') };
+}
+
 var BASE_KEYS = ['limit_sec','miss_limit','key_gap','teachers'];
 var KEYS = BASE_KEYS.slice();
 var SETTINGS = [];
@@ -865,6 +898,7 @@ google.script.run.withSuccessHandler(function(r){
     var el = $(k);
     if(el) el.value = c[k];
   });
+  growRowsRender(u.modes || [], u.growW || {});
   $('coopRvMine').value = Number(c.coop_mine) === 1 ? '1' : '0';   // 既定は出さない（1 の時だけ「じぶん」も出す）
   floorPreviewInit(u.floor);
   coopInitUnit(u);
@@ -883,8 +917,10 @@ $('save').onclick = function(){
     if(!el) return;
     obj[k] = textKeys[k] ? el.value : Number(el.value);
   });
+  var gw = growCollect(); obj.grow_w = gw.str;
   google.script.run.withSuccessHandler(function(){
     btn.disabled = false; setSetDirty(false);
+    GROW_SAVED = gw.map; if(CP.prev) coopPreviewSoon();   // 見本は保存した倍率で描き直す
     setStat('saveStat', '保存しました（次に開いた児童から反映）', false);
   }).withFailureHandler(function(e){
     btn.disabled = false;
@@ -1598,7 +1634,8 @@ function coopFinalTiles(){
 /* 見込みの正答 ＝ 人数 × 参加の割合 × 遊べる回数（時間 ÷（1回の秒＋間の秒））× 1回の正答（1分の正答 × 1回の分） */
 function coopAutoRateOf(p){
   var plays = p.minutes * 60 / (p.lim + CGAP);
-  var expect = Math.max(1, p.n) * CPART * plays * p.pace * p.lim / 60;
+  // wm：育ちの倍率の平均（どのモードがどれだけ遊ばれるかは分からないので、モードの倍率を平均して見込む）
+  var expect = Math.max(1, p.n) * CPART * plays * p.pace * p.lim / 60 * (p.wm || 1);
   // used：続きからの回で、前の回までに使った枚数。残りの余白で決め直す（前の回の枚数は前の回のまま）
   return Math.max(0.5, Math.round((CAIM * p.tfin - (p.used || 0)) / expect * 10) / 10);
 }
@@ -1615,14 +1652,14 @@ function coopRateUpdate(){
   CP.SEGR = [];
   var used = 0;
   ((s && s.prior && s.prior.segs) || []).forEach(function(g){
-    var r = CP.RATE_MANUAL || (CP.TFIN ? coopAutoRateOf({ tfin: CP.TFIN, n: g.n, minutes: g.minutes, lim: g.lim, pace: g.pace, used: used }) : CP.RATE);
+    var r = CP.RATE_MANUAL || (CP.TFIN ? coopAutoRateOf({ tfin: CP.TFIN, n: g.n, minutes: g.minutes, lim: g.lim, pace: g.pace, used: used, wm: coopGwMean_() }) : CP.RATE);
     CP.SEGR.push({ end: g.end, rate: r });
     used += (Number(g.total) || 0) * r;
   });
   if(CP.RATE_MANUAL){ CP.RATE = CP.RATE_MANUAL; }
   else if(s && CP.TFIN){
     CP.RATE = coopAutoRateOf({ tfin: CP.TFIN, n: (s.names || []).length - (s.skip || 0),
-      minutes: s.minutes || Math.max(1, (s.end - s.start) / 60000), lim: s.lim || 60, pace: s.pace || 20, used: used });
+      minutes: s.minutes || Math.max(1, (s.end - s.start) / 60000), lim: s.lim || 60, pace: s.pace || 20, used: used, wm: coopGwMean_() });
   }
   if(document.activeElement !== inp) inp.value = (CP.RATE_MANUAL || s) ? CP.RATE : '';   // 開始前の自動は「自動」とだけ出す
   $('coopRateTag').style.display = CP.RATE_MANUAL ? 'none' : '';
@@ -1696,8 +1733,14 @@ function coopCommitZoom(){
 }
 
 /* ---- イベントの適用（ライブ受信でもシークの再構築でも同じ手続き） ---- */
+/* 育ちの倍率：回に写した { モード: 倍率 }（無ければ1倍）。e[3] は正答のモード */
+function coopGwOf_(m){ return (CP.GW && Number(CP.GW[m])) || 1; }
+function coopGwMean_(){
+  var ws = Object.keys(CP.GW || {}).map(function(k){ return Number(CP.GW[k]) || 1; });
+  return ws.length ? ws.reduce(function(a, w){ return a + w; }, 0) / ws.length : 1;
+}
 function coopApply(e){                 // e = [t_ms, 児童index, 正答数]。CP.placed[c0..CP.cursor) が今回貼ったタイル
-  var n = Math.round(e[2] * coopRateAt(e[0])), c0 = CP.cursor, o = keyOf(e[1]), vr = coopView(CP.S);
+  var n = Math.round(e[2] * coopRateAt(e[0]) * coopGwOf_(e[3])), c0 = CP.cursor, o = keyOf(e[1]), vr = coopView(CP.S);
   while(n-- > 0){
     var j = coopTake(CP.A, o); if(j < 0) break;
     CP.tiles[j].s = e[1]; CP.placed[CP.cursor++] = j;
@@ -1803,7 +1846,7 @@ function coopUseSession(s, evAll){
   var shifted = (evAll || []).map(function(e){ return [e[0] + CP.PRI, e[1], e[2], e[3]]; });
   CP.sess = s; CP.ev = ((s.prior && s.prior.ev) || []).concat(shifted); CP.loaded = false; CP.saveId = '';
   CP.names = s.names || []; CP.nos = s.nos || []; CP.gi = s.gi || [];
-  CP.MODE = s.mode || 'child'; CP.GN = s.gn || 6;
+  CP.MODE = s.mode || 'child'; CP.GN = s.gn || 6; CP.GW = s.gw || {};
   CP.COLORS = coopPalette(CP.names.length || 1, s.seed || 1); CP.FAMS = CP.COLORS.map(coopFam);
   CP.GCOLORS = coopPalette(CP.GN, (s.seed || 1) * 31 + 11); CP.GFAMS = CP.GCOLORS.map(coopFam);
   CP.sel = -1; CP.EDIT = false; CP.off = 0;
@@ -2007,12 +2050,12 @@ function coopPrevSession_(){
   for(i = 0; i < n; i++){ names.push(''); nos.push(i + 1); gi.push(Math.min(gn - 1, Math.floor(i * gn / n))); }
   var s = { id: 'preview', cls: cls.value, pat: $('coopPat').value, seed: 1, mode: mode, gn: gn,
             org: coopOrgVal(), orgPts: coopOrgCustomFit_(coopOrgVal()), start: 0, end: minutes * 60000, status: 'done', total: 0, names: names, nos: nos, gi: gi,
-            pace: pace, minutes: minutes, lim: lim, skip: 0, prior: null };
-  // つくりものの正答：全員が毎回同じ数だけ正答する単純な見込み（どの起点も均等に育つ）。
+            pace: pace, minutes: minutes, lim: lim, skip: 0, prior: null, gw: GROW_SAVED };
+  // つくりものの正答：全員が毎回同じ数だけ正答する単純な見込み（どの起点も均等に育つ）。モードは順に回す（育ちの倍率が平均で効く）。
   // 1回の数は自動の枚数の見込み（1回の正答 × 参加 CPART）と同じなので、自動のままなら完成の85%前後まで育つ
   var plays = Math.max(1, Math.round(minutes * 60 / (lim + CGAP))), ev = [], c = Math.max(1, Math.round(pace * lim / 60 * CPART));
   for(var k = 0; k < plays; k++){
-    for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, 1]);
+    for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, GROW_MODES.length ? GROW_MODES[(i + k) % GROW_MODES.length] : 1]);
   }
   ev.sort(function(a, b){ return a[0] - b[0]; });
   s.total = ev.reduce(function(a, e){ return a + e[2]; }, 0);
@@ -2034,7 +2077,7 @@ function coopPreview(user){
   var P = coopPrevSession_(), s = P.s;
   CP.prev = user ? 'user' : 'auto'; CP.loaded = false; CP.saveId = '';
   CP.sess = s; CP.ev = P.ev; CP.PRI = 0; CP.SEGR = [];
-  CP.names = s.names; CP.nos = s.nos; CP.gi = s.gi; CP.MODE = s.mode; CP.GN = s.gn;
+  CP.names = s.names; CP.nos = s.nos; CP.gi = s.gi; CP.MODE = s.mode; CP.GN = s.gn; CP.GW = s.gw || {};
   CP.COLORS = coopPalette(s.names.length, s.seed); CP.FAMS = CP.COLORS.map(coopFam);
   CP.GCOLORS = coopPalette(s.gn, s.seed * 31 + 11); CP.GFAMS = CP.GCOLORS.map(coopFam);
   CP.sel = -1; CP.EDIT = false; CP.playing = false;
@@ -2253,7 +2296,9 @@ $('coopMode').onchange = function(){
 var PLAN = { open: false, cls: '', gn: 0, gi: [], names: [], nos: [], ver: 0, dirty: false, sel: -1, live: false };
 function planRunning(){ return !!(CP.sess && CP.sess.status === 'run'); }
 /* 映している回（保存データの再生ではない、グループの回）があるか */
-function planLiveShown(){ return !!(CP.sess && CP.sess.id !== 'save' && !CP.loaded && CP.MODE === 'group'); }
+/* 本物の回（進行中・終わった回）を映していて、それがグループの回か。保存データの再生と見本（CP.prev）は本物の回ではない。
+   見本は名前の無いつくりものなので、ここを通すと名前が出ず、保存すると本物の回のグループを書きかえにいっていた */
+function planLiveShown(){ return !!(CP.sess && !CP.prev && CP.sess.id !== 'save' && CP.sess.id !== 'preview' && !CP.loaded && CP.MODE === 'group'); }
 function planBtnShow(){
   // 進行中も出す（その回のグループを直せる）。保存データの再生中や「児童ごと」の時は出さない
   var ok = planRunning() ? planLiveShown() : $('coopMode').value === 'group';
@@ -2635,7 +2680,7 @@ $('coopLoad').onclick = function(){
     if(!r || !r.ok){ setStat('coopStat', (r && r.msg) || '読み込めませんでした', true); return; }
     setStat('coopStat', '「' + r.name + '」を再生中');
     var p = r.payload;
-    coopUseSession({ id: 'save', cls: p.cls, pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn, org: p.org || 1, orgPts: p.orgPts || null,
+    coopUseSession({ id: 'save', cls: p.cls, pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn, org: p.org || 1, orgPts: p.orgPts || null, gw: p.gw || null,
       start: p.start, end: p.end, status: 'done', total: p.total,
       names: p.names, nos: p.nos, gi: p.gi, pace: p.pace, minutes: p.minutes, lim: p.lim, skip: p.skip,
       prior: p.prior || null }, p.ev || []);

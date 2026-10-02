@@ -139,6 +139,9 @@ var UNIT = {
   floorPattern: 'penrose',
   floorColor: 'sapphire',
 
+  /** 育ちの倍率の既定（教師画面の全般設定で変えられる）。単元の仕上げの「あまりのある わり算」をいちばん練習させたいので2倍 */
+  growWeights: { 3: 2 },
+
   digitCap: {
     K:  { 'かける': 1 },
     P:  { 'かける': 1, 'つみ': 2 },
