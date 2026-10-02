@@ -1009,4 +1009,15 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(/function coopClsRender\(\)\{[\s\S]*?coopRvPickRender\(\);[\s\S]*?\n\}/.test(tui), 'クラスを替えたら欄を描き直す');
 }
 
+/* ---- 見本の表示⇄非表示（この端末だけ）：かくすと正答の無い見本（輪郭と起点の印だけ） ---- */
+{
+  const tui = read('common/teacher.html');
+  assert.ok(tui.includes('<button id="coopPrevOn" type="button">'), 'ステージ左上に切り替え');
+  assert.ok(/function coopPrevOn_\(\)\{[^\n]*localStorage\.getItem\('coopPrevOn'\)[^\n]*return v !== '0'; \}/.test(tui), '既定は出す・端末ごとに覚える');
+  assert.ok(tui.includes("var plays = coopPrevOn_() ? "), 'かくした時はつくりものの正答を作らない');
+  assert.ok(tui.includes("st.classList.toggle('prevEmpty', !P.ev.length)") && tui.includes("classList.remove('preview', 'prevEmpty')"));
+  assert.ok(tui.includes('#coopStage.preview #coopPrevOn{display:inline-block}'), '回を映している間は出さない');
+  assert.ok(tui.includes('#coopStage.prevEmpty #coopPrevTag,#coopStage.prevEmpty #coopReplay'), 'かくした時は「見本」の札と再生のつまみも出さない');
+}
+
 console.log('coop.test.cjs: all assertions passed.');
