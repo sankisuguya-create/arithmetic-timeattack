@@ -16,24 +16,56 @@ body{background:var(--paper);color:var(--ink);
   font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;line-height:1.55}
 .wrap{max-width:1180px;margin:0 auto;padding:1rem 1rem 1.2rem;height:100%;display:flex;flex-direction:column}
 
-/* 見出し行：名前・行き先・タブを1段にまとめ、本文に高さを残す */
-.head{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
-h1{font-size:1.15rem;font-weight:800}
-.where{font-size:.76rem;color:var(--mute);word-break:break-all}
-.golinks{display:flex;gap:.45rem;flex-wrap:wrap;margin-left:auto}
-.golinks a{font-size:.8rem;font-weight:700;text-decoration:none;color:var(--ink);
-  border:1.5px solid var(--line);border-radius:8px;padding:.3rem .7rem;background:#fff}
-.golinks a:hover{border-color:var(--ink)}
-.maintabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:.7rem 0 .8rem}
-.maintabs button{font:inherit;font-weight:800;font-size:.9rem;padding:.4rem 1rem;
-  border-radius:999px;cursor:pointer;border:2px solid var(--ink);background:transparent;color:var(--ink)}
-.maintabs button.on{background:var(--ink);color:#fff}
+/* ---- 見出しの1段（単元の教師画面と同じ型）：題名｜タブ｜写しの名前など｜行き先。タブの下線を段全体に引く ---- */
+.topbar{display:flex;align-items:flex-end;gap:.9rem;border-bottom:2px solid var(--line);margin-bottom:.8rem;min-height:2.6rem;flex:none}
+.topbar h1{font-size:1.05rem;font-weight:800;margin:0 0 .45rem;white-space:nowrap;flex:none}
+.topbar .tabs{display:flex;gap:.15rem;flex:none}
+.tab{font:inherit;font-weight:700;font-size:1rem;padding:.45rem 1.3rem;background:none;border:none;border-radius:9px 9px 0 0;
+  border-bottom:4px solid transparent;margin-bottom:-2px;color:var(--mute);cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:#0F5EA8;background:#D7E8F8}
+.topbar .grow{flex:1;min-width:4rem;margin:0 0 .5rem;display:flex;align-items:center;gap:.6rem;flex-wrap:nowrap;overflow:hidden}
+.topbar .golinks{display:flex;gap:.45rem;margin:0 0 .35rem;flex:none;flex-wrap:nowrap}
+.topbar .golinks a{font-size:.8rem;font-weight:700;text-decoration:none;color:var(--ink);border:1.5px solid var(--line);border-radius:8px;padding:.3rem .7rem;background:#fff}
+.topbar .golinks a:hover{border-color:var(--ink)}
+/* 狭い画面（スマートフォン）では折り返し、タブは横に送る（ページを横に送らない） */
+@media (max-width:860px){
+  .topbar{flex-wrap:wrap;align-items:center;row-gap:.3rem}
+  .topbar .tabs{order:9;flex:1 1 100%;overflow-x:auto}
+  .topbar .grow{flex-basis:100%;order:8;overflow:visible;flex-wrap:wrap}
+  .topbar .golinks{flex-wrap:wrap}
+  .tab{padding:.4rem .8rem;font-size:.92rem;white-space:nowrap}
+}
+
+/* ---- ボタンの役割（単元の教師画面と同じ。色だけでなく形と記号で区別） ----
+ * 選ぶ：平らな札（選んでいる物だけ濃紺の塗り。.chip・.pick）
+ * 大きな操作を実行する：立体のキー .bkey（保存・記録は濃紺 .go）
+ * 小さく変える：灰色の札 .bstep（追加・並べ替え・削除の下書き・終了日）
+ * 映し方を大きく変える：青の塗り .bview（集計し直す・コピー） */
+.ic{display:inline-block;margin-right:.35em;font-size:.9em;line-height:1}
+.bkey{font:inherit;font-weight:800;font-size:.9rem;padding:.42rem .8rem;border-radius:10px;background:#fff;color:var(--ink);
+  border:2px solid #101728;box-shadow:0 3px 0 #101728;cursor:pointer;transition:transform .05s,box-shadow .05s}
+.bkey:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 #101728}
+.bkey.go{background:#101728;color:#fff}
+.bkey:disabled{opacity:.35;box-shadow:0 1px 0 #101728;cursor:default}
+.bstep{font:inherit;font-weight:700;font-size:.84rem;padding:.35rem .85rem;border:none;border-radius:999px;background:#E6E8EB;color:#101728;cursor:pointer}
+.bstep:hover:not(:disabled){background:#D5D9DE}
+.bstep.sm{padding:.18rem .6rem;font-size:.76rem}
+.bview{font:inherit;font-weight:800;font-size:.86rem;padding:.38rem .85rem;border:none;border-radius:10px;background:#0F5EA8;color:#fff;cursor:pointer}
+.bview:hover:not(:disabled){background:#0B4C8A}
+.bview:disabled,.bstep:disabled{opacity:.45;cursor:default}
+.pick{font:inherit;font-weight:800;font-size:.76rem;padding:.2rem .6rem;border-radius:999px;background:#fff;color:var(--mute);border:2px solid var(--line);cursor:pointer}
+.pick.on{background:#101728;color:#fff;border-color:#101728}
+
+/* 小さな部品（固定の書式は style 属性に書かず、ここに集める） */
+.sp{flex:1}
+.col{flex:1;min-height:0;display:flex;flex-direction:column}
+.where{font-size:.76rem;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tabpage{display:none;flex:1;min-height:0}
 .tabpage.on{display:flex;flex-direction:column}
 
 /* 2列：左で選び、右で編集する。各列は画面の高さに収め、はみ出す分だけ列の中で送る */
 .split{display:grid;grid-template-columns:minmax(300px,1fr) minmax(340px,1.25fr);gap:.9rem;flex:1;min-height:0}
-.split > .box{min-height:0;display:flex;flex-direction:column}
+.split > .box{min-height:0;min-width:0;display:flex;flex-direction:column}   /* min-width:0：中の長い行で列が画面より広がらない */
 .scroll{overflow:auto;min-height:0;flex:1}
 @media (max-width:860px){ .split{grid-template-columns:1fr} .wrap{height:auto} .tabpage.on{display:block} }
 
@@ -44,8 +76,6 @@ input[type=text]{width:100%;padding:.45rem .6rem;border:1.5px solid var(--line);
 input:focus,select:focus{outline:none;border-color:var(--ink)}
 select{padding:.4rem;border:1.5px solid var(--line);border-radius:8px;font:inherit;background:var(--paper)}
 button{font:inherit;font-weight:700;padding:.5rem 1rem;border:none;border-radius:9px;background:var(--ink);color:#fff;cursor:pointer}
-button.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
-button.tiny{padding:.25rem .55rem;font-size:.8rem;border-radius:7px}
 button:disabled{opacity:.45;cursor:default}
 .bar{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.8rem}
 .stat{font-size:.8rem;color:var(--mute)}
@@ -67,7 +97,7 @@ a.openlink{font-size:.78rem;font-weight:700;color:var(--ink);border:1.5px solid 
 a.openlink:hover{border-color:var(--ink)}
 /* 未保存がある編集領域：枠を橙にして保存ボタンを目立たせる（単元の教師画面と同じ型） */
 .box.dirty{border-color:#E8A33D;box-shadow:0 0 0 3px rgba(232,163,61,.16)}
-.box.dirty #save,.box.dirty #saveTabs,.box.dirty #saveCfg{background:#E8A33D}
+.box.dirty #save,.box.dirty #saveTabs,.box.dirty #saveCfg{background:#E8A33D;color:#101728;border-color:#8A5A0E;box-shadow:0 3px 0 #8A5A0E}   /* 白文字は橙の上で読みにくいので濃紺 */
 .lrow{display:flex;align-items:center;gap:.55rem;padding:.5rem .55rem;border-radius:9px;cursor:pointer;border:1.5px solid transparent}
 .lrow:hover{background:#FAFAF7}
 .lrow.sel{background:var(--sel);border-color:var(--ink)}
@@ -76,8 +106,6 @@ a.openlink:hover{border-color:var(--ink)}
 .lrow .nm{flex:1;min-width:0;font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lrow .gr{font-size:.74rem;color:var(--mute);white-space:nowrap}
 .lrow a{font-size:.74rem;color:var(--ink);white-space:nowrap}
-button.pill{padding:.2rem .6rem;border-radius:999px;font-size:.74rem;background:#fff;color:var(--mute);border:1.5px solid var(--line)}
-button.pill.on{background:var(--mint);border-color:var(--mint);color:#052A1F}
 
 /* 編集欄 */
 .fields{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
@@ -95,20 +123,24 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
 .tabrow{display:flex;align-items:center;gap:.7rem;padding:.45rem 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .tabrow:last-child{border-bottom:none}
 .tabrow .g{width:4rem;font-weight:800;flex:0 0 auto}
+.hint{font-size:.74rem;margin:-.2rem 0 .5rem}
+#linksBox .bar{margin-top:.6rem}
+#rsum{margin-bottom:.5rem}
+.mt8{margin-top:.8rem}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="head">
+  <!-- 常に出ている見出しは1段：題名｜タブ｜写しの名前｜行き先（単元の教師画面と同じ型） -->
+  <div class="topbar">
     <h1>ハブ設定</h1>
-    <span class="where" id="where"></span>
+    <nav class="tabs" id="maintabs" role="tablist">
+      <button class="tab on" data-p="links" role="tab" aria-current="page">単元リンク</button>
+      <button class="tab" data-p="roster" role="tab">名簿</button>
+      <button class="tab" data-p="cfg" role="tab">表示と権限</button>
+    </nav>
+    <span class="grow"><span class="where" id="where"></span></span>
     <div class="golinks" id="golinks"></div>
-  </div>
-
-  <div class="maintabs" id="maintabs">
-    <button data-p="links" class="on">単元リンク</button>
-    <button data-p="roster">名簿</button>
-    <button data-p="cfg">表示と権限</button>
   </div>
 
   <!-- ============ 単元リンク ============ -->
@@ -117,13 +149,13 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
       <div class="box" id="linksBox">
         <div class="tool">
           <span class="chips" id="filt"></span>
-          <span style="flex:1"></span>
-          <button id="add" class="ghost tiny">＋ 追加</button>
+          <span class="sp"></span>
+          <button id="add" class="bstep" type="button">＋ 追加</button>
         </div>
-        <div class="stat" style="font-size:.74rem;margin:-.2rem 0 .5rem">行の「公開中／非公開」は押すと<b>すぐ反映</b>。それ以外の変更は下の「保存して反映」で確定します。</div>
+        <div class="stat hint">行の「公開中／非公開」は押すと<b>すぐ反映</b>。それ以外の変更は下の「保存して反映」で確定します。</div>
         <div class="scroll" id="list"></div>
-        <div class="bar" style="margin-top:.6rem">
-          <button id="save">保存して反映</button>
+        <div class="bar">
+          <button id="save" class="bkey go" type="button">保存して反映</button>
           <span class="dirty" id="dirty"></span>
           <span class="stat" id="stat"></span>
         </div>
@@ -145,15 +177,15 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
 
   <!-- ============ 名簿 ============ -->
   <div class="tabpage" data-pg="roster">
-    <div class="box" style="flex:1;min-height:0;display:flex;flex-direction:column">
+    <div class="box col">
       <div class="tool">
         <span class="chips" id="rgrade"></span>
         <span class="chips" id="rcls"></span>
-        <span style="flex:1"></span>
+        <span class="sp"></span>
         <a class="openlink" id="rsheet" target="_blank" rel="noopener" style="display:none">名簿シートを開く↗</a>
         <span class="chip" id="rmail">メールアドレスも表示</span>
       </div>
-      <div class="stat" id="rsum" style="margin-bottom:.5rem"></div>
+      <div class="stat" id="rsum"></div>
       <div class="scroll" id="rost"></div>
       <details class="help">
         <summary>名簿の扱い</summary>
@@ -171,7 +203,7 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
         <h2>児童が切り替えられる学年タブ</h2>
         <div class="scroll" id="tabset"></div>
         <div class="bar">
-          <button id="saveTabs">保存して反映</button>
+          <button id="saveTabs" class="bkey go" type="button">保存して反映</button>
           <span class="stat" id="tabStat"></span>
         </div>
         <details class="help">
@@ -184,12 +216,12 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
         <h2>画面のタイトルと権限</h2>
         <label>児童のホーム画面のタイトル</label>
         <input id="title" type="text" placeholder="算数タイムアタック">
-        <div style="margin-top:.8rem">
+        <div class="mt8">
           <label>この設定画面を開ける人（教師ドメインと所有者は不要。別ドメインの人だけカンマ区切り）</label>
           <input id="teachers" type="text">
         </div>
         <div class="bar">
-          <button id="saveCfg">保存して反映</button>
+          <button id="saveCfg" class="bkey go" type="button">保存して反映</button>
           <span class="stat" id="cfgStat"></span>
         </div>
         <details class="help">
@@ -203,6 +235,9 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
 </div>
 
 <script>
+/* ===== ハブ設定のスクリプト（目次） =====
+ *   共通の道具（esc・$・未保存の印・保存ボタンの型）→ タブ → 単元リンク（一覧・編集欄・公開の切り替え・保存）
+ *   → 表示と権限（学年タブ・タイトルと権限）→ 名簿 → 写しと行き先 → 読み込み */
 var COLORS = {}, LINKS = [], GRADES = [], CFG = {}, ROSTER = [];
 var FILT = 0;      // 一覧の学年絞り込み（0=すべて）
 var SEL = -1;      // 編集中のリンク（LINKS の添字）
@@ -214,27 +249,32 @@ function $(id){ return document.getElementById(id); }
 /* 未保存の印はどの編集領域でも同じ型：枠を橙にし、保存ボタンの名前に「（未保存）」を足す。
    閉じる時の確認は DIRTY／TABDIRTY／CFGDIRTY のどれかが立っていれば出す */
 var TABDIRTY = false, CFGDIRTY = false;
-function setDirty(v){
-  DIRTY = v; $('dirty').textContent = v ? '保存していない変更があります' : '';
-  $('linksBox').classList.toggle('dirty', v);
-  $('save').textContent = v ? '保存して反映（未保存）' : '保存して反映';
+function markDirty_(boxId, btnId, v){
+  $(boxId).classList.toggle('dirty', v);
+  $(btnId).textContent = v ? '保存して反映（未保存）' : '保存して反映';
 }
-function setTabsDirty(v){
-  TABDIRTY = v;
-  $('tabsetBox').classList.toggle('dirty', v);
-  $('saveTabs').textContent = v ? '保存して反映（未保存）' : '保存して反映';
-}
-function setCfgDirty(v){
-  CFGDIRTY = v;
-  $('cfgBox').classList.toggle('dirty', v);
-  $('saveCfg').textContent = v ? '保存して反映（未保存）' : '保存して反映';
+function setDirty(v){ DIRTY = v; $('dirty').textContent = v ? '保存していない変更があります' : ''; markDirty_('linksBox', 'save', v); }
+function setTabsDirty(v){ TABDIRTY = v; markDirty_('tabsetBox', 'saveTabs', v); }
+function setCfgDirty(v){ CFGDIRTY = v; markDirty_('cfgBox', 'saveCfg', v); }
+/* 保存ボタンの共通の型：押している間は押せなくし、状態の欄に「保存中…」→ 結果を出す。done(r) は成功時の後始末 */
+function saveWith_(btn, statId, call, done){
+  btn.disabled = true; $(statId).textContent = '保存中…';
+  call(google.script.run.withSuccessHandler(function(r){
+    btn.disabled = false; $(statId).textContent = done(r) || '保存しました';
+  }).withFailureHandler(function(e){
+    btn.disabled = false; $(statId).textContent = 'エラー: ' + e.message;
+  }));
 }
 
-/* ---------- ページ内タブ ---------- */
+/* ---------- タブ（単元リンク｜名簿｜表示と権限） ---------- */
 $('maintabs').addEventListener('click', function(e){
   var p = e.target && e.target.dataset ? e.target.dataset.p : undefined;
   if(!p) return;
-  document.querySelectorAll('#maintabs button').forEach(function(b){ b.classList.toggle('on', b.dataset.p === p); });
+  document.querySelectorAll('#maintabs .tab').forEach(function(b){
+    var on = b.dataset.p === p;
+    b.classList.toggle('on', on);
+    if(on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
   document.querySelectorAll('.tabpage').forEach(function(d){ d.classList.toggle('on', d.dataset.pg === p); });
 });
 
@@ -272,11 +312,11 @@ function renderList(){
     var c = COLORS[l.color] || {bg:'#ccc'};
     var tu = unitTeacherUrl(l.url);
     return '<div class="lrow'+(i===SEL?' sel':'')+(l.visible?'':' off')+'" data-row="'+i+'">'+
-      '<span class="swatch" style="background:'+c.bg+'"></span>'+
+      '<span class="swatch" style="background:'+c.bg+'"></span>'+   // 色は値で決まるので style のまま
       '<span class="nm">'+(esc(l.title)||'（名前なし）')+'</span>'+
       '<span class="gr">'+esc(gradeLabel(l))+'</span>'+
       (tu ? '<a href="'+esc(tu)+'" target="_blank" rel="noopener">教師ページ↗</a>' : '')+
-      '<button class="pill'+(l.visible?' on':'')+'" data-vis="'+i+'" title="押すとすぐ児童の画面に反映されます">'+(l.visible?'公開中':'非公開')+'</button>'+
+      '<button type="button" class="pick'+(l.visible?' on':'')+'" data-vis="'+i+'" title="押すとすぐ児童の画面に反映されます">'+(l.visible?'公開中':'非公開')+'</button>'+
       '<span class="ptag">すぐ反映</span>'+
     '</div>';
   }).join('') || '<div class="empty">リンクがありません。「＋ 追加」で作成します。</div>';
@@ -301,9 +341,9 @@ function renderEditor(){
       '<div class="full"><label>記録シート（単元のスプレッドシートの URL・任意）</label><input type="text" data-f="sheet" value="'+esc(l.sheet)+'"><div class="uwarn" data-w="sheet"></div></div>'+
       '<div class="full"><label>この単元を出す学年タブ（未選択＝全学年）</label><span class="chips">'+chips+'</span></div>'+
       '<div><label>色</label><select data-f="color">'+colorOpts+'</select></div>'+
-      '<div><label>並び順</label><button class="tiny ghost" data-mv="up">↑ 上へ</button> <button class="tiny ghost" data-mv="down">↓ 下へ</button></div>'+
+      '<div><label>並び順</label><button type="button" class="bstep sm" data-mv="up">↑ 上へ</button> <button type="button" class="bstep sm" data-mv="down">↓ 下へ</button></div>'+
     '</div>'+
-    '<div class="bar"><button class="tiny ghost" data-del="1">この単元を削除</button></div>';
+    '<div class="bar"><button type="button" class="bstep sm" data-del="1">この単元を削除</button></div>';
   urlWarn();
 }
 
@@ -394,13 +434,8 @@ $('add').onclick = function(){
 };
 
 $('save').onclick = function(){
-  var btn = this; btn.disabled = true;
-  $('stat').textContent = '保存中…';
-  google.script.run.withSuccessHandler(function(m){
-    btn.disabled = false; setDirty(false); $('stat').textContent = m + '（次に開いた児童から反映）';
-  }).withFailureHandler(function(e){
-    btn.disabled = false; $('stat').textContent = 'エラー: ' + e.message;
-  }).saveLinks(LINKS);
+  saveWith_(this, 'stat', function(run){ run.saveLinks(LINKS); },
+    function(m){ setDirty(false); return m + '（次に開いた児童から反映）'; });
 };
 window.addEventListener('beforeunload', function(e){ if(DIRTY || TABDIRTY || CFGDIRTY){ e.preventDefault(); e.returnValue = ''; } });
 
@@ -424,31 +459,22 @@ function renderTabs(){
   }).join('');
 }
 $('saveTabs').onclick = function(){
-  var btn = this; btn.disabled = true;
-  $('tabStat').textContent = '保存中…';
   var out = {};
   GRADES.forEach(function(g){ out['tabs_'+g] = Object.keys(tabsOf(g)).map(Number).sort(function(a,b){return a-b;}).join(','); });
-  google.script.run.withSuccessHandler(function(r){
-    btn.disabled = false; CFG = r; setTabsDirty(false); $('tabStat').textContent = '保存しました';
-  }).withFailureHandler(function(e){
-    btn.disabled = false; $('tabStat').textContent = 'エラー: ' + e.message;
-  }).saveHubConfig(out);
+  saveWith_(this, 'tabStat', function(run){ run.saveHubConfig(out); },
+    function(r){ CFG = r; setTabsDirty(false); });
 };
 
-/* ---------- 全体 ---------- */
+/* ---------- 画面のタイトルと権限 ---------- */
 $('title').addEventListener('input', function(){ setCfgDirty(true); });
 $('teachers').addEventListener('input', function(){ setCfgDirty(true); });
 $('saveCfg').onclick = function(){
-  var btn = this; btn.disabled = true;
-  $('cfgStat').textContent = '保存中…';
-  google.script.run.withSuccessHandler(function(){
-    btn.disabled = false; setCfgDirty(false); $('cfgStat').textContent = '保存しました';
-  }).withFailureHandler(function(e){
-    btn.disabled = false; $('cfgStat').textContent = 'エラー: ' + e.message;
-  }).saveHubConfig({ title: $('title').value, teachers: $('teachers').value });
+  var obj = { title: $('title').value, teachers: $('teachers').value };
+  saveWith_(this, 'cfgStat', function(run){ run.saveHubConfig(obj); },
+    function(){ setCfgDirty(false); });
 };
 
-/* ---------- 名簿：学年 → 組で絞り、氏名を詰めて並べる ---------- */
+/* ---------- 名簿：学年 → 学級で絞り、氏名を詰めて並べる ---------- */
 var RG = 0, RC = '', RMAIL = false;
 function renderRoster(){
   var gs = [];
@@ -513,11 +539,12 @@ google.script.run.withSuccessHandler(function(r){
   $('stat').textContent = '読み込めません: ' + e.message;
 }).getAllLinks();
 
+var GRADES_DEF = [1, 2, 3, 4, 5, 6];   // 名簿から学年が読めない時
 google.script.run.withSuccessHandler(function(g){
-  GRADES = (g && g.length) ? g : [1,2,3,4,5,6];
+  GRADES = (g && g.length) ? g : GRADES_DEF;
   renderAll();
 }).withFailureHandler(function(){
-  GRADES = [1,2,3,4,5,6]; renderAll();
+  GRADES = GRADES_DEF; renderAll();
 }).listGrades();
 
 google.script.run.withSuccessHandler(function(r){

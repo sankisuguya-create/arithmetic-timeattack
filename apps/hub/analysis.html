@@ -15,25 +15,61 @@ html,body{height:100%}
 body{background:var(--paper);color:var(--ink);
   font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;line-height:1.55}
 .wrap{max-width:1180px;margin:0 auto;padding:1rem 1rem 1.2rem;height:100%;display:flex;flex-direction:column}
-.head{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
-h1{font-size:1.15rem;font-weight:800}
-.sub{font-size:.78rem;color:var(--mute)}
+/* ---- 見出しの1段（単元の教師画面と同じ型）：題名｜タブ｜学級・集計元｜基準と読み方・今すぐ集計。タブの下線を段全体に引く ---- */
+.topbar{display:flex;align-items:flex-end;gap:.9rem;border-bottom:2px solid var(--line);margin-bottom:.8rem;min-height:2.6rem;flex:none}
+.topbar h1{font-size:1.05rem;font-weight:800;margin:0 0 .45rem;white-space:nowrap;flex:none}
+.topbar .tabs{display:flex;gap:.15rem;flex:none}
+.tab{font:inherit;font-weight:700;font-size:1rem;padding:.45rem 1.3rem;background:none;border:none;border-radius:9px 9px 0 0;
+  border-bottom:4px solid transparent;margin-bottom:-2px;color:var(--mute);cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:#0F5EA8;background:#D7E8F8}
+.topbar .grow{flex:1;min-width:4rem;margin:0 0 .5rem;display:flex;align-items:center;gap:.6rem;flex-wrap:nowrap;overflow:hidden}
+.topbar .golinks{display:flex;gap:.45rem;margin:0 0 .35rem;flex:none;flex-wrap:nowrap}
+.topbar .golinks a{font-size:.8rem;font-weight:700;text-decoration:none;color:var(--ink);border:1.5px solid var(--line);border-radius:8px;padding:.3rem .7rem;background:#fff}
+.topbar .golinks a:hover{border-color:var(--ink)}
+/* 狭い画面（スマートフォン）では折り返し、タブは横に送る（ページを横に送らない） */
+@media (max-width:860px){
+  .topbar{flex-wrap:wrap;align-items:center;row-gap:.3rem}
+  .topbar .tabs{order:9;flex:1 1 100%;overflow-x:auto}
+  .topbar .grow{flex-basis:100%;order:8;overflow:visible;flex-wrap:wrap}
+  .topbar .golinks{flex-wrap:wrap}
+  .tab{padding:.4rem .8rem;font-size:.92rem;white-space:nowrap}
+}
+
+/* ---- ボタンの役割（単元の教師画面と同じ。色だけでなく形と記号で区別） ----
+ * 選ぶ：平らな札（選んでいる物だけ濃紺の塗り。.chip・.pick）
+ * 大きな操作を実行する：立体のキー .bkey（保存・記録は濃紺 .go）
+ * 小さく変える：灰色の札 .bstep（コピー）
+ * 映し方を大きく変える：青の塗り .bview（この児童の手立てを記録＝手立てのタブへ移る） */
+.ic{display:inline-block;margin-right:.35em;font-size:.9em;line-height:1}
+.bkey{font:inherit;font-weight:800;font-size:.9rem;padding:.42rem .8rem;border-radius:10px;background:#fff;color:var(--ink);
+  border:2px solid #101728;box-shadow:0 3px 0 #101728;cursor:pointer;transition:transform .05s,box-shadow .05s}
+.bkey:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 #101728}
+.bkey.go{background:#101728;color:#fff}
+.bkey:disabled{opacity:.35;box-shadow:0 1px 0 #101728;cursor:default}
+.bstep{font:inherit;font-weight:700;font-size:.84rem;padding:.35rem .85rem;border:none;border-radius:999px;background:#E6E8EB;color:#101728;cursor:pointer}
+.bstep:hover:not(:disabled){background:#D5D9DE}
+.bstep.sm{padding:.18rem .6rem;font-size:.76rem}
+.bview{font:inherit;font-weight:800;font-size:.86rem;padding:.38rem .85rem;border:none;border-radius:10px;background:#0F5EA8;color:#fff;cursor:pointer}
+.bview:hover:not(:disabled){background:#0B4C8A}
+.bview:disabled,.bstep:disabled{opacity:.45;cursor:default}
+.pick{font:inherit;font-weight:800;font-size:.76rem;padding:.2rem .6rem;border-radius:999px;background:#fff;color:var(--mute);border:2px solid var(--line);cursor:pointer}
+.pick.on{background:#101728;color:#fff;border-color:#101728}
+
+/* 小さな部品（固定の書式は style 属性に書かず、ここに集める） */
+.sp{flex:1}
+.col{flex:1;min-height:0;display:flex;flex-direction:column}
+.sub{font-size:.78rem;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.bkey.sm{padding:.2rem .6rem;font-size:.78rem;box-shadow:0 2px 0 #101728}
 select,input[type=text],input[type=date],textarea{font:inherit;padding:.4rem .55rem;border:1.5px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
 textarea{width:100%;resize:vertical}
 button{font:inherit;font-weight:700;padding:.45rem .95rem;border:none;border-radius:9px;background:var(--ink);color:#fff;cursor:pointer}
-button.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
-button.tiny{padding:.22rem .6rem;font-size:.8rem}
 button:disabled{opacity:.45;cursor:default}
-.tabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:.7rem 0 .8rem;align-items:center}
-.tabs button{border-radius:999px;background:transparent;color:var(--ink);border:2px solid var(--ink);padding:.35rem .95rem}
-.tabs button.on{background:var(--ink);color:#fff}
-.tabs .sp{flex:1}
 .pg{display:none;flex:1;min-height:0}
 .pg.on{display:flex;flex-direction:column}
 
 /* 2列：左で選び、右で見る。列は画面の高さに収め、はみ出す分だけ列の中で送る */
 .split{display:grid;grid-template-columns:minmax(280px,.8fr) minmax(360px,1.4fr);gap:.9rem;flex:1;min-height:0}
-.split > .box{min-height:0;display:flex;flex-direction:column}
+.split > .box{min-height:0;min-width:0;display:flex;flex-direction:column}   /* min-width:0：中の長い行で列が画面より広がらない */
 .scroll{overflow:auto;min-height:0;flex:1}
 @media (max-width:860px){ .split{grid-template-columns:1fr} .wrap{height:auto} .pg.on{display:block} }
 
@@ -67,25 +103,35 @@ td{padding:.32rem .4rem;border-bottom:1px solid var(--line);vertical-align:top}
 details.guide{position:relative}
 details.guide summary{list-style:none;cursor:pointer;font-size:.8rem;font-weight:700;border:1.5px solid var(--line);border-radius:8px;padding:.3rem .7rem;background:#fff}
 details.guide summary::-webkit-details-marker{display:none}
+.topbar details.guide,.topbar #ingest{margin:0 0 .35rem;flex:none}
+.tool h3{margin:0}
+.mk .dim{font-weight:400}
+.stat.mt5{margin-top:.5rem}
+.stat.mb5{margin-bottom:.5rem}
+.stat.para{line-height:1.8;margin-bottom:.5rem}
+.grow1{flex:1}
+.row.tight{margin-top:-.2rem}
+.row > label.auto{min-width:auto}
+#sContent{flex:1;min-width:12rem}
+#sNote{margin-top:.6rem;line-height:1.8}
+#outText{flex:1;min-height:12rem}
 details.guide .panel{position:absolute;right:0;top:2.2rem;z-index:5;width:min(560px,90vw);background:#fff;border:1.5px solid var(--ink);border-radius:10px;padding:.9rem;font-size:.82rem;line-height:1.8}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="head">
+  <!-- 常に出ている見出しは1段：題名｜タブ｜学級・集計元｜基準と読み方・今すぐ集計（単元の教師画面と同じ型） -->
+  <div class="topbar">
     <h1>単元横断分析</h1>
-    <select id="cls"></select>
-    <button class="ghost tiny" id="ingest">今すぐ集計</button>
-    <span class="sub" id="srcs"></span>
-  </div>
-
-  <div class="tabs" id="tabs">
-    <button data-p="kids" class="on">児童別</button>
-    <button data-p="class">学級の傾向</button>
-    <button data-p="sup">手立て</button>
-    <button data-p="out">出力・記録</button>
-    <span class="sp"></span>
+    <nav class="tabs" id="tabs" role="tablist">
+      <button class="tab on" data-p="kids" role="tab" aria-current="page">児童別</button>
+      <button class="tab" data-p="class" role="tab">学級の傾向</button>
+      <button class="tab" data-p="sup" role="tab">手立て</button>
+      <button class="tab" data-p="out" role="tab">出力・記録</button>
+    </nav>
+    <span class="grow"><select id="cls" aria-label="学級"></select><span class="sub" id="srcs"></span></span>
     <details class="guide"><summary>基準と読み方</summary><div class="panel" id="guide"></div></details>
+    <button class="bkey" id="ingest" type="button"><span class="ic" aria-hidden="true">Σ</span>今すぐ集計</button>
   </div>
 
   <!-- ============ 児童別 ============ -->
@@ -103,7 +149,7 @@ details.guide .panel{position:absolute;right:0;top:2.2rem;z-index:5;width:min(56
 
   <!-- ============ 学級の傾向 ============ -->
   <div class="pg" data-pg="class">
-    <div class="box" style="flex:1;min-height:0;display:flex;flex-direction:column">
+    <div class="box col">
       <div class="tool"><span class="chips" id="cunits"></span></div>
       <div class="scroll" id="cview"></div>
     </div>
@@ -119,17 +165,17 @@ details.guide .panel{position:absolute;right:0;top:2.2rem;z-index:5;width:min(56
       <div class="box">
         <h2>手立てを記録する</h2>
         <div class="scroll">
-          <div class="row"><label>対象</label><select id="sTarget" style="flex:1"></select></div>
-          <div class="row"><label>単元</label><select id="sUnit" style="flex:1"></select></div>
+          <div class="row"><label>対象</label><select id="sTarget" class="grow1"></select></div>
+          <div class="row"><label>単元</label><select id="sUnit" class="grow1"></select></div>
           <div class="row"><label>型</label><span class="chips" id="sTypes"></span></div>
-          <div class="row" style="margin-top:-.2rem"><label></label><span class="stat">選ばなければ単元全体</span></div>
-          <div class="row"><label>内容</label><input type="text" id="sContent" style="flex:1;min-width:12rem" placeholder="例：7の段を唱えてからカード10枚"></div>
+          <div class="row tight"><label></label><span class="stat">選ばなければ単元全体</span></div>
+          <div class="row"><label>内容</label><input type="text" id="sContent" placeholder="例：7の段を唱えてからカード10枚"></div>
           <div class="row"><label>頻度</label>
             <select id="sFreq"><option>毎日</option><option>週2〜3回</option><option>週1回</option><option>その他</option></select>
-            <label style="min-width:auto">開始日</label><input type="date" id="sStart">
+            <label class="auto">開始日</label><input type="date" id="sStart">
           </div>
-          <div class="row"><label></label><button id="sSave">記録する</button><span class="stat" id="sStat"></span></div>
-          <div class="stat" style="margin-top:.6rem;line-height:1.8" id="sNote"></div>
+          <div class="row"><label></label><button id="sSave" class="bkey go" type="button">記録する</button><span class="stat" id="sStat"></span></div>
+          <div class="stat" id="sNote"></div>
         </div>
       </div>
     </div>
@@ -140,20 +186,23 @@ details.guide .panel{position:absolute;right:0;top:2.2rem;z-index:5;width:min(56
     <div class="split">
       <div class="box">
         <h2>集計テキスト（氏名・番号を含まない）</h2>
-        <textarea id="outText" readonly style="flex:1;min-height:12rem"></textarea>
-        <div class="row"><button id="copy" class="ghost">コピー</button><span class="stat" id="copyStat"></span></div>
+        <textarea id="outText" readonly></textarea>
+        <div class="row"><button id="copy" class="bstep" type="button"><span class="ic" aria-hidden="true">⧉</span>コピー</button><span class="stat" id="copyStat"></span></div>
       </div>
       <div class="box">
         <h2>判断が変わった記録</h2>
-        <div class="stat" style="line-height:1.8;margin-bottom:.5rem">この仕組みが役に立っているかの物差しです。この画面を見て指導や対応の判断が変わった時だけ記録してください。今年度の記録：<b id="decN">0</b> 件</div>
+        <div class="stat para">この仕組みが役に立っているかの物差しです。この画面を見て指導や対応の判断が変わった時だけ記録してください。今年度の記録：<b id="decN">0</b> 件</div>
         <textarea id="decMemo" rows="4" placeholder="何を見て、何を変えたか（任意。氏名は書かない）"></textarea>
-        <div class="row"><button id="decSave" class="ghost">記録する</button><span class="stat" id="decStat"></span></div>
+        <div class="row"><button id="decSave" class="bkey go" type="button">記録する</button><span class="stat" id="decStat"></span></div>
       </div>
     </div>
   </div>
 </div>
 
 <script>
+/* ===== 単元横断分析のスクリプト（目次） =====
+ *   共通の道具（$・esc・表示の書式）→ タブ → 基準と読み方 → 児童別 → 学級の傾向 → 手立て（一覧・記録）
+ *   → 出力・記録 → 学級の切り替え・今すぐ集計 → 読み込み */
 var BOOT = null, DATA = null, KEY = '', SEL_KID = '', KFILT = 'flag', CUNIT = '', SFILT = 'open', SEL_TYPES = {};
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
@@ -167,10 +216,14 @@ function today(){ var d=new Date(); function z(n){return (n<10?'0':'')+n;} retur
 function fail(el){ return function(e){ $(el).textContent = 'エラー: ' + (e && e.message || e); }; }
 function chip(on, attr, label){ return '<span class="chip'+(on?' on':'')+'" '+attr+'>'+label+'</span>'; }
 
-/* ---------- タブ ---------- */
+/* ---------- タブ（児童別｜学級の傾向｜手立て｜出力・記録） ---------- */
 $('tabs').addEventListener('click', function(e){
   var p = e.target.dataset && e.target.dataset.p; if(!p) return;
-  [].forEach.call(document.querySelectorAll('#tabs button'), function(b){ b.classList.toggle('on', b.dataset.p===p); });
+  [].forEach.call(document.querySelectorAll('#tabs .tab'), function(b){
+    var on = b.dataset.p===p;
+    b.classList.toggle('on', on);
+    if(on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
   [].forEach.call(document.querySelectorAll('.pg'), function(g){ g.classList.toggle('on', g.dataset.pg===p); });
   if(p==='out' && DATA) loadExport();
 });
@@ -243,7 +296,7 @@ function renderKidDetail(){
     var gt = !g ? '—' : (g.short ? '<span class="dim">期間不足</span>' : pctTxt(g.pct));
     var marks = [persistTxt('速さ', x.speedPersist), persistTxt('正確さ', x.accPersist), x.dual ? '伸び↓' : ''].filter(Boolean).join(' ');
     var byM = {}; x.months.forEach(function(m){ byM[m.m] = m; });
-    return '<tr><td><b>'+esc(unitTitle(u))+'</b></td><td class="mk">'+(marks || '<span class="dim" style="font-weight:400">なし</span>')+'</td>' +
+    return '<tr><td><b>'+esc(unitTitle(u))+'</b></td><td class="mk">'+(marks || '<span class="dim">なし</span>')+'</td>' +
       '<td>'+x.sessions+'回</td><td>'+gt+'</td>' +
       mons.map(function(m){
         var v = byM[m];
@@ -253,11 +306,11 @@ function renderKidDetail(){
   }).join('');
   var sups = (DATA.supports||[]).filter(function(s){ return s.target==='child:'+k.email; });
   $('kdetail').innerHTML =
-    '<div class="tool"><h3 style="margin:0">'+k.no+'　'+esc(k.name)+'</h3><span style="flex:1"></span>' +
+    '<div class="tool"><h3>'+k.no+'　'+esc(k.name)+'</h3><span class="sp"></span>' +
     (sups.length ? '<span class="stat">記録済みの手立て '+sups.length+'件</span>' : '') +
-    '<button class="ghost tiny" data-sup="'+esc(k.email)+'">この児童の手立てを記録</button></div>' +
+    '<button type="button" class="bview" data-sup="'+esc(k.email)+'"><span class="ic" aria-hidden="true">→</span>この児童の手立てを記録</button></div>' +
     '<table class="ktab">'+head+body+'</table>' +
-    '<div class="stat" style="margin-top:.5rem">速＝速さ、正＝正確さ。数字は学年内のパーセンタイル（小さいほど低い、50が中央）。伸びも学年内のパーセンタイル。' +
+    '<div class="stat mt5">速＝速さ、正＝正確さ。数字は学年内のパーセンタイル（小さいほど低い、50が中央）。伸びも学年内のパーセンタイル。' +
     '型×月で '+DATA.cfg.an_min_trials+'試行に届かない月は「—」。</div>';
 }
 $('kfilt').addEventListener('click', function(e){ var f = e.target.dataset.kf; if(!f) return; KFILT = f; renderKidList(); });
@@ -275,7 +328,7 @@ function renderClass(){
   $('cunits').innerHTML = cv.map(function(u){ return chip(u.unit===CUNIT, 'data-cu="'+esc(u.unit)+'"', esc(u.title)); }).join('') +
     (DATA.overlaps.length ? chip(CUNIT==='__ov','data-cu="__ov"','単元間の重なり') : '');
   if(CUNIT==='__ov'){
-    $('cview').innerHTML = '<div class="stat" style="margin-bottom:.5rem">下位が続く児童が2つの単元で何人重なるか。偶然でも期待人数くらいは重なります。大きく超える時だけ、単元をまたぐ共通の要因を疑います。</div>' +
+    $('cview').innerHTML = '<div class="stat mb5">下位が続く児童が2つの単元で何人重なるか。偶然でも期待人数くらいは重なります。大きく超える時だけ、単元をまたぐ共通の要因を疑います。</div>' +
       '<table><tr><th>単元の組</th><th>重なり</th><th>偶然の期待</th><th>両方に記録のある人数</th></tr>' +
       DATA.overlaps.map(function(o){ return '<tr><td>'+esc(o.t1)+' × '+esc(o.t2)+'</td><td>'+o.k+'人</td><td>'+o.expected.toFixed(1)+'人</td><td>'+o.n+'人</td></tr>'; }).join('') + '</table>';
     return;
@@ -283,7 +336,7 @@ function renderClass(){
   var u = cv.filter(function(x){ return x.unit===CUNIT; })[0];
   $('cview').innerHTML =
     (u.normWarn ? '<div class="warn">学年の比較人数が最大 '+u.normN+'人で、目安（'+DATA.cfg.an_norm_min+'人）に届きません。印は参考にとどめてください。</div>' : '') +
-    '<div class="stat" style="margin-bottom:.5rem">学級の児童の学年内パーセンタイル平均：速さ <b>'+pctTxt(u.classSpeedPct)+'</b> ／ 正確さ <b>'+pctTxt(u.classAccPct)+'</b>（50前後で学年並み。学年が1学級なら常に50前後）</div>' +
+    '<div class="stat mb5">学級の児童の学年内パーセンタイル平均：速さ <b>'+pctTxt(u.classSpeedPct)+'</b> ／ 正確さ <b>'+pctTxt(u.classAccPct)+'</b>（50前後で学年並み。学年が1学級なら常に50前後）</div>' +
     '<table><tr><th>型</th><th>誤答率（学級）</th><th>（学年）</th><th>想起時間（学級）</th><th>（学年）</th><th>学級の人数</th></tr>' +
     u.types.map(function(t){
       return '<tr><td>'+esc(t.name)+'</td><td>'+errTxt(t.cls.err)+'</td><td class="dim">'+errTxt(t.grd.err)+'</td>' +
@@ -353,7 +406,7 @@ function renderSupports(){
       (s.types.length ? '（'+s.types.map(function(t){ return esc(u&&u.types[t]||t); }).join('・')+'）' : '') + '</div>' +
       '<div>'+esc(s.content)+' <span class="dim">・ '+esc(s.freq)+' ・ '+esc(s.start)+' 〜 '+(s.end ? esc(s.end) : '')+'</span></div>' +
       effTxt(s.effect) +
-      (s.end ? '' : '<div class="row"><button class="ghost tiny" data-end="'+esc(s.id)+'">今日で終了</button></div>') +
+      (s.end ? '' : '<div class="row"><button type="button" class="bkey sm" data-end="'+esc(s.id)+'">今日で終了</button></div>') +
       '</div>';
   }).join('') : '<div class="empty">'+(SFILT==='open' ? '継続中の手立てはありません。右の欄から記録します。' : '終了した手立てはありません。')+'</div>';
 }
