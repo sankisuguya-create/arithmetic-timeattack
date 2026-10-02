@@ -609,7 +609,8 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   });
   const fT = vm.runInNewContext(tui.match(/var CAIM = [^\n]*\n/)[0] + tui.match(/function coopAutoRateOf\(p\)\{[\s\S]*?\n\}/)[0] + ';coopAutoRateOf');
   const fC = vm.runInNewContext(ui2.match(/var CRV = [^\n]*\n/)[0] + ui2.match(/function coopRvAutoRate\(p\)\{[\s\S]*?\n\}/)[0] + ';coopRvAutoRate');
-  [{ tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20 }, { tfin: 21465, n: 25, minutes: 7, lim: 45, pace: 14, used: 9000 }, { tfin: 10, n: 3, minutes: 1, lim: 60, pace: 20 }]
+  [{ tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20 }, { tfin: 21465, n: 25, minutes: 7, lim: 45, pace: 14, used: 9000 }, { tfin: 10, n: 3, minutes: 1, lim: 60, pace: 20 },
+   { tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20, wm: 1.5 }]
     .forEach(p => assert.equal(fC(p), fT(p)));
   const rv = ui2.slice(ui2.indexOf('<div id="coopRv" hidden>'), ui2.indexOf('</div>\n<!-- 協力モード中だけ出る'));
   assert.equal((rv.match(/<button/g) || []).length, 2, 'ボタンは2つだけ');
@@ -716,7 +717,7 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   ['coopCls', 'coopGn', 'coopMode', 'coopOrg'].forEach(id => assert.ok(tui.includes("'" + id + "'"), id));
   // 見本の正答は全員が毎回同じ数（どの起点も均等に育つ）。量は自動の枚数の見込みと同じ前提（1回の正答 × 参加 CPART）
   assert.ok(tui.includes('c = Math.max(1, Math.round(pace * lim / 60 * CPART))'));
-  assert.ok(tui.includes("for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, 1]);"));
+  assert.ok(tui.includes("for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, GROW_MODES.length ? GROW_MODES[(i + k) % GROW_MODES.length] : 1]);"));
   // 再生のつまみ：箱の中はステージの下端、全画面は左上の並び。見本でも使える
   assert.ok(tui.includes('#coopStage > #coopReplay{position:absolute;left:1.4vmin;right:1.4vmin;bottom:1.4vmin;'));
   assert.ok(tui.includes("var to = st.classList.contains('full') ? $('coopTL') : st;"));
@@ -796,12 +797,12 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   // 全部埋まったら -1
   const Af = F.coopAlloc(o1); for (let i = 0; i < tiles.length; i++) F.coopTake(Af, 0); assert.equal(F.coopTake(Af, 0), -1);
   // 教師画面：貼る位置は担当の起点から。組が変わったら、起点が複数のグループの回は組み直す。開始で起点の数を送る
-  assert.ok(tui.includes('var n = Math.round(e[2] * coopRateAt(e[0])), c0 = CP.cursor, o = keyOf(e[1]), vr = coopView(CP.S);'));
+  assert.ok(tui.includes('var n = Math.round(e[2] * coopRateAt(e[0]) * coopGwOf_(e[3])), c0 = CP.cursor, o = keyOf(e[1]), vr = coopView(CP.S);'));
   assert.ok(tui.includes("if(CP.MODE === 'group' && CP.ORD && CP.ORD.length > 1) coopRecompute(CP.evI); else coopRepaint();"));
   assert.ok(tui.includes('opts.org = coopOrgVal();'));
   assert.ok(!/coopRoster\(\); coopRepaint\(\);\n\s*dirty\.textContent = '保存しました。児童/.test(tui));
   // 児童の見返しも同じ手続き（グループは各正答の組番号が担当）
-  assert.ok(ui.includes("var m = Math.round(e[2] * rateAt(e[0])), o = grp ? (e[3] || 0) : e[1];"));
+  assert.ok(ui.includes("var m = Math.round(e[2] * (e[4] || 1) * rateAt(e[0])), o = grp ? (e[3] || 0) : e[1];"));
   assert.ok(ui.includes('RV.ord = coopOrders(RV.tiles, coopOrigins(d.org || 1, VX, VY, OX, OY, W, H, d.seed || 1, d.orgPts));'));
   // 位置の指定：割合 [u, v] を最初の画面に写す（画面の大きさが違っても同じ所）。担当はシードで混ぜる
   const pos = [[0.5, 0.5], [0.2, 0.3], [0.9, 0.8]];
@@ -894,6 +895,50 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   // 書式の固定値は style 属性に書かない（残るのは JS が出し入れする display と、位置・色が値で決まるものだけ）
   const fixed = (tui.match(/style="[^"]*"/g) || []).filter(x => !/^style="display:none"$/.test(x) && !/\+/.test(x));
   assert.ok(fixed.length <= 4, '固定の書式が style 属性に残っている: ' + fixed.join(' '));
+}
+
+/* ---- 育ちの倍率：開始の時点の倍率を回に写し（シート17列目・保存・続きから）、見返しは各正答に倍率を付ける ---- */
+{
+  ctx.Session = teacherSession;
+  const keepGw = ctx.growWeights_;
+  ctx.growWeights_ = () => ({ 1: 2, 2: 1, 3: 1, 4: 1 });
+  assert.ok(ctx.coopStart({ cls: '3-1', minutes: 5, mode: 'child', org: 1 }).ok);
+  const s1 = ctx.coopLive_();
+  assert.equal(JSON.stringify(s1.gw), JSON.stringify({ 1: 2, 2: 1, 3: 1, 4: 1 }));
+  assert.equal(sheets.coop.values[sheets.coop.values.length - 1][16], JSON.stringify(s1.gw), 'coop シートの17列目');
+  assert.equal(JSON.stringify(ctx.coopState(0).gw), JSON.stringify(s1.gw));
+  s1.start -= 60000; ctx.coopPutLive_(s1);
+  ctx.coopNote_(ctx.child_('k02@kyoiku.edu.nishi.or.jp'), 1, 7);   // モード1（2倍）
+  ctx.coopNote_(ctx.child_('k03@kyoiku.edu.nishi.or.jp'), 2, 5);   // モード2（1倍）
+  ctx.coopStop();
+  const sv = ctx.coopSave('倍率テスト'); assert.ok(sv.ok);
+  assert.equal(JSON.stringify(ctx.coopLoad(sv.id).payload.gw), JSON.stringify(s1.gw), '保存データにも入る');
+  // 設定を変えても、終わった回の倍率は変わらない。続きからも前の回の倍率
+  ctx.growWeights_ = () => ({ 1: 1, 2: 3, 3: 1, 4: 1 });
+  const keep = store.coop_live; delete store.coop_live;
+  assert.equal(JSON.stringify(ctx.coopLive_().gw), JSON.stringify(s1.gw), 'キャッシュが消えてもシートから戻る');
+  store.coop_live = keep;
+  const k2 = ctx.child_('k02@kyoiku.edu.nishi.or.jp');
+  ctx.Session = { getActiveUser: () => ({ getEmail: () => 'k02@kyoiku.edu.nishi.or.jp' }), getScriptTimeZone: () => 'Asia/Tokyo' };
+  const rv = ctx.coopReview();
+  assert.ok(rv.ok, JSON.stringify(rv));
+  assert.equal(JSON.stringify(rv.ev.map(e => [e[2], e[4]])), '[[7,2],[5,1]]', '各正答に、そのモードの倍率');
+  assert.equal(rv.wm, 1.25, '倍率の平均');
+  assert.equal(rv.ev.reduce((a, e) => a + e[2], 0), 12, '正答数は生のまま');
+  ctx.Session = teacherSession;
+  assert.ok(ctx.coopStart({ cont: 'live', minutes: 3 }).ok);
+  assert.equal(JSON.stringify(ctx.coopLive_().gw), JSON.stringify(s1.gw), '続きからは前の回の倍率');
+  ctx.coopStop();
+  assert.ok(ctx.coopStart({ cls: '3-1', minutes: 5, mode: 'child' }).ok);
+  assert.equal(ctx.coopLive_().gw[2], 3, '新しく始めた回は今の設定'); ctx.coopStop();
+  assert.equal(ctx.coopGw_({ 1: 9, 2: 'x', 3: -1 })[1], 3); assert.equal(ctx.coopGw_([1]), null);
+  ctx.growWeights_ = keepGw;
+  void k2;
+}
+/* ---- グループの編集：見本（つくりものの回）を映している時は、開始前のグループ分けとして開く ---- */
+{
+  const tui = read('common/teacher.html');
+  assert.ok(tui.includes("function planLiveShown(){ return !!(CP.sess && !CP.prev && CP.sess.id !== 'save' && CP.sess.id !== 'preview' && !CP.loaded && CP.MODE === 'group'); }"));
 }
 
 console.log('coop.test.cjs: all assertions passed.');
