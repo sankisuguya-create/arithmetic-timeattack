@@ -941,4 +941,72 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes("function planLiveShown(){ return !!(CP.sess && !CP.prev && CP.sess.id !== 'save' && CP.sess.id !== 'preview' && !CP.loaded && CP.MODE === 'group'); }"));
 }
 
+/* ---- 児童の見返しに出す回：教師が保存データを選ぶ（選ばなければ直前の回）。正答が1つも無い回は見せない ---- */
+{
+  const asKid = m => { ctx.Session = { getActiveUser: () => ({ getEmail: () => m }), getScriptTimeZone: () => 'Asia/Tokyo' }; };
+  ctx.Session = teacherSession;
+  const l0 = ctx.coopLive_(); if (l0 && l0.status === 'run') ctx.coopStop();
+  ctx.saveConfig({ coop_rv: '' });
+  // 正答の無い回（試しに開始して終えた回）：入口を出さず、見返しも返さない
+  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 5, mode: 'child' }).ok);
+  ctx.coopStop();
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  assert.equal(ctx.coopPeek(60).review, undefined, '正答0の回は入口を出さない');
+  assert.ok(!ctx.coopReview().ok, '正答0の回は見せない');
+  // 回A（k02 が 9 問）を保存 → 回B（k02 が 4 問）で終える
+  ctx.Session = teacherSession;
+  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'penrose', minutes: 5, mode: 'child' }).ok);
+  let a = ctx.coopLive_(); a.start -= 60000; ctx.coopPutLive_(a);
+  ctx.coopNote_(ctx.child_('k02@kyoiku.edu.nishi.or.jp'), 1, 9);
+  ctx.coopStop();
+  const svA = ctx.coopSave('見返しA'); assert.ok(svA.ok);
+  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 5, mode: 'child' }).ok);
+  let b = ctx.coopLive_(); b.start -= 60000; ctx.coopPutLive_(b);
+  ctx.coopNote_(ctx.child_('k02@kyoiku.edu.nishi.or.jp'), 1, 4);
+  ctx.coopStop();
+  // 選んでいない：直前の回（B）
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  assert.equal(ctx.coopReview().total, 4); assert.equal(ctx.coopPeek(60).rid, b.id);
+  // 一覧にクラスと選択が載る
+  ctx.Session = teacherSession;
+  const li = ctx.coopList();
+  assert.equal(li.saves.find(x => x.id === svA.id).cls, '3-1');
+  assert.equal(Object.keys(li.rv).length, 0);
+  // 別のクラスの回は選べない・無い保存データは選べない
+  assert.ok(!ctx.coopSetReview('4-2', svA.id).ok);
+  assert.ok(!ctx.coopSetReview('3-1', 'snosuch0000').ok);
+  // A を選ぶ → 児童には A が出る（図形も A のもの）。メール・名前は応答に入らない
+  const set = ctx.coopSetReview('3-1', svA.id);
+  assert.ok(set.ok); assert.equal(set.rv['3-1'], svA.id);
+  assert.equal(ctx.coopList().rv['3-1'], svA.id);
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  const pk = ctx.coopPeek(60);
+  assert.equal(pk.review, true); assert.equal(pk.rid, 'sv:' + svA.id); assert.equal(pk.pat, 'penrose');
+  const va = ctx.coopReview();
+  assert.ok(va.ok, JSON.stringify(va));
+  assert.equal(va.total, 9); assert.equal(va.pat, 'penrose'); assert.equal(va.me, 1); assert.equal(va.n, 8);
+  const txt = JSON.stringify(va);
+  assert.ok(!txt.includes('@') && !txt.includes('児童') && !('names' in va) && !('gi' in va), '保存データからでも名前・メールを入れない');
+  // 保存データにいない児童には出さない（別クラスの児童にも）
+  asKid('other@kyoiku.edu.nishi.or.jp');
+  assert.ok(!ctx.coopPeek(60).review); assert.ok(!ctx.coopReview().ok);
+  // 協力プレイ中は（選んでいても）見返しを出さない
+  ctx.Session = teacherSession;
+  assert.ok(ctx.coopStart({ cls: '3-1', pat: 'sunflower', minutes: 5, mode: 'child' }).ok);
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  assert.ok(!ctx.coopReview().ok); assert.equal(ctx.coopPeek(60).active, true);
+  ctx.Session = teacherSession; ctx.coopStop();
+  // 「直前の回」に戻す
+  assert.ok(ctx.coopSetReview('3-1', '').ok);
+  assert.equal(ctx.coopList().rv['3-1'], undefined);
+  asKid('k02@kyoiku.edu.nishi.or.jp');
+  assert.ok(!ctx.coopReview().ok, '直前の回は正答0なので見せない');
+  ctx.Session = teacherSession;
+  // 教師画面：見返す回の欄（選んでいるクラスの保存データだけ、変えたらすぐ保存）
+  const tui = read('common/teacher.html');
+  assert.ok(tui.includes('id="coopRvPick"') && tui.includes('.coopSetReview(cls, id)'));
+  assert.ok(tui.includes('<option value="">直前の回</option>') && tui.includes('return s.cls === cls;'));
+  assert.ok(/function coopClsRender\(\)\{[\s\S]*?coopRvPickRender\(\);[\s\S]*?\n\}/.test(tui), 'クラスを替えたら欄を描き直す');
+}
+
 console.log('coop.test.cjs: all assertions passed.');

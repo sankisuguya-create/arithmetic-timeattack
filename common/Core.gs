@@ -41,6 +41,10 @@ var BASE_DEFAULTS = {
   // 出すか。既定は出さない（「みんなで ○もん」だけ。教師画面の協力プレイタブで切り替え）。
   coop_mine: 0,
 
+  // 児童の見返しに出す保存データ（クラスごと）。"クラス=保存ID" をカンマでつなぐ（例 "3-1=s0123abcd45"）。
+  // 書かないクラスは、そのクラスの直前の回を出す（教師画面の協力プレイタブ「見返す回」で選ぶ。coopSetReview）
+  coop_rv: '',
+
   // モードごとの育ちの倍率（背景の床と協力プレイの図形）。"モード:倍率" をカンマでつなぐ（例 "3:2,7:1.5"）。
   // 書かないモードは単元の UNIT.growWeights、それも無ければ1倍。0.5〜3倍に丸める（growWeights_）
   grow_w: ''
@@ -1926,11 +1930,13 @@ function coopList() {
     var v = sh.getDataRange().getValues();
     for (var i = 1; i < v.length; i++) {
       if (!v[i][0]) continue;
-      out.push({ id: String(v[i][0]), name: String(v[i][1]), saved: dstr_(v[i][2]) });
+      // クラスは payload の先頭近くにある。一覧のために全体を JSON.parse しない
+      var mc = String(v[i][4] || '').match(/"cls":"([^"]*)"/);
+      out.push({ id: String(v[i][0]), name: String(v[i][1]), saved: dstr_(v[i][2]), cls: mc ? mc[1] : '' });
     }
   }
   out.reverse();
-  return { ok: true, saves: out };
+  return { ok: true, saves: out, rv: coopRvMap_() };
 }
 
 /** 保存データを読む（再生用。live のセッションは動かさない） */
@@ -1952,6 +1958,52 @@ function coopLoadRaw_(id) {
   return { ok: false, msg: '保存データが見つかりません。' };
 }
 
+/* ---- 児童の見返しに出す回（教師が保存データを選ぶ。選ばなければそのクラスの直前の回） ---- */
+/** config の coop_rv（"3-1=s0123abcd45,3-2=…"）を { クラス: 保存ID } に */
+function coopRvMap_() {
+  var m = {};
+  String(config_().coop_rv || '').split(',').forEach(function (kv) {
+    var p = kv.split('='); var k = String(p[0] || '').trim(), id = String(p[1] || '').trim();
+    if (k && /^s[0-9a-f]{10}$/.test(id)) m[k] = id;
+  });
+  return m;
+}
+/**
+ * 選ばれた保存データの、児童の判定に要る分だけ（クラス・図形・合計・児童の並び）。
+ * coopPeek は開いている児童画面から何度も呼ばれるので、payload 全体ではなくこの小さい控えをキャッシュから読む。
+ * 保存データが消えていれば null（直前の回に戻る）
+ */
+function coopRvHead_(id) {
+  var key = 'coop_rvh_' + id, hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
+  var r = coopLoadRaw_(id);
+  var h = null;
+  if (r.ok && r.payload) {
+    var p = r.payload, tot = Number(p.total) || 0;   // 続きからの回は前の回までの正答も見返しに入る
+    ((p.prior && p.prior.ev) || []).forEach(function (e) { tot += Number(e[2]) || 0; });
+    h = { cls: String(p.cls || ''), pat: p.pat, total: tot, order: p.order || [] };
+  }
+  cache_().put(key, JSON.stringify(h), TTL.session);
+  return h;
+}
+/** 教師画面：そのクラスの見返しに出す保存データを選ぶ。id が空なら「直前の回」に戻す */
+function coopSetReview(cls, id) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  cls = String(cls || '').trim(); id = String(id || '').trim();
+  if (!cls) return { ok: false, msg: 'クラスを選んでください。' };
+  if (id) {
+    cache_().remove('coop_rvh_' + id);
+    var h = coopRvHead_(id);
+    if (!h) return { ok: false, msg: '保存データが見つかりません。' };
+    if (h.cls !== cls) return { ok: false, msg: 'この保存データは別のクラスの回です。' };
+  }
+  var m = coopRvMap_(), parts = [];
+  if (id) m[cls] = id; else delete m[cls];
+  for (var k in m) parts.push(k + '=' + m[k]);
+  saveConfig({ coop_rv: parts.join(',') });
+  return { ok: true, rv: m };
+}
+
 /**
  * 児童画面用：協力モード中なら自分の色に必要な分だけ（他の児童の情報は出さない）。
  * lim（制限秒）を渡すと、いま始める回が協力の終わりまでに遊び終わるか（counts）も返す。
@@ -1960,8 +2012,16 @@ function coopLoadRaw_(id) {
 function coopForChild_(c, lim) {
   var s = coopLive_();
   if (!s || s.status !== 'run' || Date.now() > s.end || !c || classKey_(c) !== s.cls) {
-    // 終わった回を見返せるか（自分のクラスの回で、自分が名簿にいる）。キャッシュだけを見る軽い判定
-    var rv = !!(s && c && classKey_(c) === s.cls && s.kids[c.email] !== undefined && (s.status !== 'run' || Date.now() > s.end));
+    // 終わった回を見返せるか。キャッシュだけを見る軽い判定。正答が1つも無い回（試しに開始して終えた回など）は見せない
+    //  - 教師が保存データを選んだクラス：その回に自分がいれば
+    //  - 選んでいないクラス：最後の回が自分のクラスの回で、自分が名簿にいれば
+    if (!c) return { active: false };
+    var ck = classKey_(c);
+    var pick = coopRvMap_()[ck], h = pick ? coopRvHead_(pick) : null;
+    if (h && h.cls === ck) {
+      return (h.total > 0 && h.order.indexOf(c.email) >= 0) ? { active: false, review: true, rid: 'sv:' + pick, pat: h.pat } : { active: false };
+    }
+    var rv = !!(s && ck === s.cls && s.kids[c.email] !== undefined && (s.status !== 'run' || Date.now() > s.end) && s.total > 0);
     return rv ? { active: false, review: true, rid: s.id, pat: s.pat } : { active: false };
   }
   var i = s.kids[c.email];
@@ -1992,26 +2052,43 @@ function coopReview() {
   if (!c) return { ok: false, msg: 'めいぼに とうろくが ありません。' };
   var ck = classKey_(c), s = coopLive_();
   var running = s && s.status === 'run' && Date.now() <= s.end;
-  if (!s || s.cls !== ck || running) s = running && s.cls === ck ? null : coopLastDone_(ck);
-  if (!s) return { ok: false, msg: 'まだ 見られる 協力プレイが ありません。' };
+  if (running && s.cls === ck) return { ok: false, msg: 'まだ 見られる 協力プレイが ありません。' };
+  var none = { ok: false, msg: 'まだ 見られる 協力プレイが ありません。' };
+  var notMine = { ok: false, msg: 'この 協力プレイには あなたの きろくが ありません。' };
+  // 教師が保存データを選んだクラスはその回（消えていれば直前の回に戻る）
+  var pick = coopRvMap_()[ck], raw = pick ? coopLoadRaw_(pick) : null, p = raw && raw.ok ? raw.payload : null;
+  if (p && String(p.cls) === ck) {
+    var pm = (p.order || []).indexOf(c.email);
+    if (pm < 0) return notMine;
+    return coopRvOut_({ pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn, gi: p.gi || [], gw: p.gw, org: p.org, orgPts: p.orgPts,
+                        n: (p.names || []).length, prior: p.prior, minutes: p.minutes, pace: p.pace, skip: p.skip, end: p.end },
+                      pm, p.ev || []) || none;
+  }
+  if (!s || s.cls !== ck || running) s = coopLastDone_(ck);
+  if (!s) return none;
   var me = s.kids[c.email];
-  if (me === undefined) return { ok: false, msg: 'この 協力プレイには あなたの きろくが ありません。' };
-  var n = (s.names || []).length;
-  var group = s.mode === 'group', pri = (s.prior && s.prior.dur) || 0;
+  if (me === undefined) return notMine;
+  return coopRvOut_({ pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, gi: s.gi || [], gw: s.gw, org: s.org, orgPts: s.orgPts,
+                      n: (s.names || []).length, prior: s.prior, minutes: s.minutes, pace: s.pace, skip: s.skip, end: s.end },
+                    me, coopEvents_(s)) || none;
+}
+/** 見返しの応答を組む（直前の回・保存データで共通）。ev はこの回の [時刻, 児童 index, 正答数, モード]。正答が1つも無ければ null */
+function coopRvOut_(s, me, evNow) {
+  var group = s.mode === 'group', pri = (s.prior && s.prior.dur) || 0, gn = s.gn || 1;
+  function gOf(i) { return Math.max(0, Math.min(gn - 1, Number(s.gi[i]) || 0)); }
   // 各正答：[時刻, 児童 index, 正答数, 組番号（児童ごとの回は 0）, 育ちの倍率]。正答数は生のまま（「じぶん N もん」に使う）
   var gw = s.gw || {}, ws = [];
   for (var gk in gw) ws.push(Number(gw[gk]) || 1);
   function out(e, shift) {
-    return [Number(e[0]) + shift, Number(e[1]) || 0, Number(e[2]) || 0,
-            group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[e[1]]) || 0)) : 0,
-            Number(gw[e[3]]) || 1];
+    return [Number(e[0]) + shift, Number(e[1]) || 0, Number(e[2]) || 0, group ? gOf(e[1]) : 0, Number(gw[e[3]]) || 1];
   }
   var ev = ((s.prior && s.prior.ev) || []).map(function (e) { return out(e, 0); })
-    .concat(coopEvents_(s).map(function (e) { return out(e, pri); }));
+    .concat((evNow || []).map(function (e) { return out(e, pri); }));
   var total = ev.reduce(function (a, e) { return a + e[2]; }, 0);
-  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, n: n, me: me,
+  if (!total) return null;   // 正答が1つも無い回（試しに開始して終えた回など）は見せない
+  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, n: s.n, me: me,
            mine: toBool_(config_().coop_mine),   // 教師の設定で「じぶん」の数を出さないこともできる（出すだけ。他の児童の数は出ない）
-           g: group ? Math.max(0, Math.min((s.gn || 1) - 1, Number(s.gi[me]) || 0)) : null,
+           g: group ? gOf(me) : null,
            ev: ev, total: total, pri: pri, segs: (s.prior && s.prior.segs) || [],
            wm: ws.length ? ws.reduce(function (a, w) { return a + w; }, 0) / ws.length : 1,   // 倍率の平均（自動の枚数の見込みに使う。教師画面と同じ）
            minutes: s.minutes, lim: Number(config_().limit_sec) || 60, pace: s.pace || FLOOR_PRIOR_.perMin, skip: s.skip || 0,

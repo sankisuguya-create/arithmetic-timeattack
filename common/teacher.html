@@ -362,7 +362,8 @@ details.more[open] summary{border-color:var(--ink)}
   border:1.5px solid var(--ink);background:#fff;box-shadow:0 4px 14px rgba(16,23,40,.25);transform:translate(-50%,-60%)}
 #coopPlanDirty{font-size:.8rem;font-weight:700}
 #coopPlanHint{margin:.1rem 0 .5rem}
-#coopGuide,#coopRateTag,#coopRvMineStat{margin:0}
+#coopGuide,#coopRateTag,#coopRvMineStat,#coopRvPickStat{margin:0}
+.coopBox #coopRvPick{flex:1;min-width:0;max-width:16rem}
 #coopRate{width:4.5rem}
 .morePanel p.note{margin:.5rem 0 0;line-height:1.7}
 /* 「止まっている・減った・数えられていない」に見える間だけ、理由をひらがなで出す（モニターを見る児童向け） */
@@ -573,6 +574,10 @@ details.more[open] summary{border-color:var(--ink)}
             <input id="coopRate" type="number" min="0.5" step="0.5" placeholder="自動"> 枚
             <span id="coopRateTag" class="note">自動</span>
             <button id="coopRateAuto" class="bstep sm" type="button" style="display:none">自動にもどす</button></div>
+          <div class="mrow"><span class="ctl">見返す回</span>
+            <select id="coopRvPick" aria-label="児童の「前回の協力プレイ」に出す回"></select>
+            <span class="ptag">すぐ反映</span>
+            <span id="coopRvPickStat" class="note"></span></div>
           <div class="mrow"><span class="ctl">児童の見返し</span>
             <select id="coopRvMine"><option value="0">「みんなで」だけ出す</option><option value="1">「じぶん」の正答数も出す</option></select>
             <span class="ptag">すぐ反映</span>
@@ -583,6 +588,7 @@ details.more[open] summary{border-color:var(--ink)}
             終わった図形を映している間は、画面の「続きから」で同じ図形を育て続けられます。<br>
             <b>起点</b>は図形が育ち始める点の数です。2以上にすると、児童（色づかいがグループならグループ）ごとに担当の起点が決まり、そこから育ちます。
             児童数にすると島の大きさがその子の正答数になり、モニターと児童の見返しで見えます。<br>
+            <b>見返す回</b>は、選んでいるクラスの児童が「前回の協力プレイ」で見る回です。保存データから選びます。選ばなければそのクラスの直前の回で、正答が1つも無い回（試しに開始して終えた回など）と、協力プレイをまだしていないクラスでは何も出しません。
             <b>児童の見返し</b>は、児童画面の「前回の協力プレイ」で「じぶん ○もん」を出すかどうかです（既定は出さない。変えるとすぐ保存されます）。</p>
         </div>
       </details></span>
@@ -2198,6 +2204,7 @@ function coopClsRender(){
       return '<button type="button" title="' + esc(o.textContent) + '" data-cls="' + esc(o.value) + '"' + (o.value === sel.value ? ' class="on"' : '') +
         (sel.disabled ? ' disabled' : '') + '>' + esc(name) + '<small>' + esc(o.getAttribute('data-n') || '') + '人</small></button>';
     }).join('');
+  coopRvPickRender();                         // 「見返す回」は選んでいるクラスの分を出す
 }
 $('coopClsPick').onclick = function(e){
   var b = e.target.closest('button[data-cls]'); if(!b || b.disabled) return;
@@ -2663,15 +2670,44 @@ $('coopSave').onclick = function(){
     btn.disabled = false; setStat('coopStat', '保存できませんでした: ' + e.message, true);
   }).coopSave(name);
 };
+var CP_SAVES = [], CP_RV = {};   // 保存データの一覧（id・名前・クラス）と、クラスごとの「見返す回」（{ クラス: 保存ID }）
 function coopRefreshSaves(){
   google.script.run.withSuccessHandler(function(r){
     if(!r || !r.ok) return;
-    $('coopSaves').innerHTML = (r.saves || []).map(function(s){
+    CP_SAVES = r.saves || []; CP_RV = r.rv || {};
+    $('coopSaves').innerHTML = CP_SAVES.map(function(s){
       return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
     }).join('') || '<option value="">（保存データなし）</option>';
+    coopRvPickRender();
   }).coopList();
 }
 coopRefreshSaves();
+/* 児童の「前回の協力プレイ」に出す回（クラスごと）。選んでいるクラスの保存データだけを並べる。
+   選ばなければ、そのクラスの直前の回（正答が1つも無い回は出さない）。変えたらすぐ保存する */
+var CP_RV_CLS = null;
+function coopRvPickRender(){
+  var cls = $('coopCls').value, rv = CP_RV || {}, cur = rv[cls] || '', sel = $('coopRvPick');
+  var opts = '<option value="">直前の回</option>' + (CP_SAVES || []).filter(function(s){ return s.cls === cls; }).map(function(s){
+    return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
+  }).join('');
+  sel.innerHTML = opts;
+  sel.value = cur;
+  if(sel.value !== cur) sel.value = '';     // 選んでいた保存データが一覧から消えた
+  if(CP_RV_CLS !== cls) $('coopRvPickStat').textContent = '';
+  CP_RV_CLS = cls;
+}
+$('coopRvPick').onchange = function(){
+  var el = this, st = $('coopRvPickStat'), cls = $('coopCls').value, id = el.value;
+  el.disabled = true; st.textContent = '保存中…';
+  google.script.run.withSuccessHandler(function(r){
+    el.disabled = false;
+    if(!r || !r.ok){ st.textContent = (r && r.msg) || '保存できません'; el.value = CP_RV[cls] || ''; return; }
+    CP_RV = r.rv || {}; st.textContent = '保存しました';
+  }).withFailureHandler(function(e){
+    el.disabled = false; el.value = CP_RV[cls] || ''; st.textContent = '保存できません: ' + e.message;
+  }).coopSetReview(cls, id);
+};
+
 $('coopLoad').onclick = function(){
   var id = $('coopSaves').value;
   if(!id) return;
