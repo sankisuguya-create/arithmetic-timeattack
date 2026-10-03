@@ -10,6 +10,8 @@ const { read, loadUnit } = require('./lib/kit.cjs');
 const core = loadUnit('kuku');
 const ar = vm.createContext({});
 vm.runInContext(read('apps/hub/Archive.gs'), ar);
+const an = vm.createContext({});
+vm.runInContext(read('apps/hub/Analysis.gs'), an);
 
 // 年度：4月始まり。テストではタイムゾーンに依らないよう UTC で見る
 const fyOf = ts => { const d = new Date(ts); return d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; };
@@ -135,6 +137,36 @@ const T = (y, m, d) => new Date(Date.UTC(y, m - 1, d, 3));
   // 画面は確認の語を自分で組み立てない（正本は arConfirmWord_）
   const h = read('apps/hub/teacher.html');
   assert.ok(!h.includes("fy + '年度を消去'") && h.includes('var want = y.confirm;'));
+}
+
+/* ---------- 年度の境目：3実装（Core.gs の fyOfTime_／Archive.gs の arFyOf_／Analysis.gs の anFyStart_）が同じ ---------- */
+{
+  // GAS の Session.getScriptTimeZone + Utilities.formatDate のモック。テストは UTC で見る
+  const GAS = {
+    Session: { getScriptTimeZone: () => 'UTC' },
+    Utilities: {
+      formatDate: (d, tz, p) => ({
+        'yyyy': String(d.getUTCFullYear()),
+        'M': String(d.getUTCMonth() + 1),
+        'yyyy-MM-dd': d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0')
+      })[p]
+    }
+  };
+  [core, ar, an].forEach(c => { c.Session = GAS.Session; c.Utilities = GAS.Utilities; });
+  // 境目の日（3/31・4/1、前年跨ぎの両側）と途中の日
+  for (const [y, m, d] of [[2025, 3, 31], [2025, 4, 1], [2024, 3, 31], [2024, 4, 1],
+                          [2025, 7, 15], [2025, 1, 10], [2024, 12, 31], [2026, 1, 1]]) {
+    const ts = new Date(Date.UTC(y, m - 1, d)).getTime(), fy = fyOf(ts);
+    assert.equal(core.fyOfTime_(ts), fy, `fyOfTime_ ${y}/${m}/${d}`);
+    assert.equal(ar.arFyOf_(ts), fy, `arFyOf_ ${y}/${m}/${d}`);   // Core と同じガード・同じ結果の写し
+    const ymd = GAS.Utilities.formatDate(new Date(ts), 'UTC', 'yyyy-MM-dd');
+    assert.equal(an.anFyStart_(ymd), fy + '-04-01', `anFyStart_ ${ymd}`);   // ymd 版の境目も一致
+  }
+  // 読めない時刻はどちらの正本も 0（行の ts が空・壊れていても年度 0 に落ちる）
+  [0, null, ''].forEach(ts => {
+    assert.equal(core.fyOfTime_(ts), 0, 'fyOfTime_ ガード');
+    assert.equal(ar.arFyOf_(ts), 0, 'arFyOf_ ガード');
+  });
 }
 
 /* ---------- 画面と Core の取り決め ---------- */

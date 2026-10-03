@@ -196,6 +196,9 @@ function fyOfTime_(ts) {
   return m >= 4 ? y : y - 1;
 }
 
+/** 年度のはじめ（4/1 0:00）の時刻。年度の境目はここと fyOfTime_ の2箇所にだけ書く */
+function fyStartMs_(fy) { return new Date(fy, 3, 1).getTime(); }
+
 /**
  * 名簿の行を正規化して返す。{ mail, grade, cls, no, name } の配列。
  *
@@ -2752,12 +2755,12 @@ function buildAnalysis_(fyear) {
     // 今年度: 年度の切り替わりでリセット。進級・編入で所属が変わった児童の
     // 過去分が新クラスに混ざるのを防ぐ（log の行は履歴として残る）
     var win = days > 0 ? (now.getTime() - days * 86400000) : 0;
-    var fyStart = new Date(curFy, 3, 1).getTime();
+    var fyStart = fyStartMs_(curFy);
     cutoff = Math.max(win, fyStart);
     span = win > fyStart ? ('直近' + days + '日') : '4/1以降';
   } else {
-    cutoff = new Date(viewFy, 3, 1).getTime();
-    until = new Date(viewFy + 1, 3, 1).getTime();
+    cutoff = fyStartMs_(viewFy);
+    until = fyStartMs_(viewFy + 1);
     span = viewFy + '年度';
   }
 

@@ -22,7 +22,7 @@
  *    - スプレッドシートの「版の履歴」には書き換える前の値が残る。完全に消す手順は docs/SETUP.md「過年度」。
  *
  * 権限: スプレッドシートの所有者だけ（各単元のスプレッドシートを開いて書き換えるため）。
- * 計算（番号の振り方・行の書き換え）は ar*_ の純粋関数に分け、tests/archive.test.cjs が Node で直接叩く。
+ * 計算（番号の振り方・行の書き換え）は ar*_ の純粋関数に分け、tests/past.test.cjs が Node で直接叩く。
  */
 
 var AR_LOG_SHEET = 'ar_log';
@@ -259,6 +259,7 @@ function arScrubSupport_(rows, fy, fyOf, map) {
 
 /** Core.gs の fyOfTime_ と同じ（年度の境目。ハブ側の正本） */
 function arFyOf_(ts) {
+  if (!ts) return 0;
   var d = new Date(ts), tz = Session.getScriptTimeZone();
   var y = Number(Utilities.formatDate(d, tz, 'yyyy')), m = Number(Utilities.formatDate(d, tz, 'M'));
   return m >= 4 ? y : y - 1;
