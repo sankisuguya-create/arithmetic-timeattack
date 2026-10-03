@@ -61,7 +61,7 @@ apps/
     bai/Unit.gs      何倍でしょうの出題定義（詳細: apps/grade3/bai/README.md）
   grade5/
     volume/Unit.gs   体積の出題定義（詳細: apps/grade5/volume/README.md）
-  hub/           ハブ（Code.gs / links.html / teacher.html / Analysis.gs / analysis.html）
+  hub/           ハブ（Code.gs / links.html / teacher.html / Analysis.gs / analysis.html / Archive.gs）
 docs/
   ARCHITECTURE.md  設計の考え方
   SETUP.md         設置手順

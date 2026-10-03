@@ -416,5 +416,6 @@ function setup() {
   cache_().remove('ready');
   ensureReady_();
   if (typeof anEnsureTrigger_ === 'function') anEnsureTrigger_();   // 横断分析の夜間集計。トリガーは実行した人のものになるので、所有者が setup で作る
-  return 'セットアップ完了（links / roster / config を用意し、夜間集計のトリガーを確認しました）';
+  if (typeof arEnsureTrigger_ === 'function') arEnsureTrigger_();   // 4/1 の名簿の年度保存（Archive.gs）
+  return 'セットアップ完了（links / roster / config を用意し、夜間集計と名簿の年度保存のトリガーを確認しました）';
 }

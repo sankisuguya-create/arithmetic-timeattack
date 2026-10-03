@@ -62,6 +62,15 @@ body{background:var(--paper);color:var(--ink);
 .where{font-size:.76rem;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tabpage{display:none;flex:1;min-height:0}
 .tabpage.on{display:flex;flex-direction:column}
+/* 過年度 */
+.arT{border-collapse:collapse;width:100%;font-size:.86rem;margin:.3rem 0 .6rem}
+.arT th{text-align:left;font-size:.74rem;color:var(--mute);padding:.35rem .4rem}
+.arT td{padding:.45rem .4rem;border-top:1.5px solid var(--line);vertical-align:top}
+.arT td.num{text-align:right;font-variant-numeric:tabular-nums}
+.arT .pii{color:#C0392B;font-weight:800}
+.arH{font-size:.85rem;margin:.8rem 0 .2rem}
+.bkey.stop{background:#C0330A;color:#fff;border-color:#7A2006;box-shadow:0 3px 0 #7A2006}
+.lead{font-size:.86rem;margin-bottom:.5rem;line-height:1.6}
 
 /* 2列：左で選び、右で編集する。各列は画面の高さに収め、はみ出す分だけ列の中で送る */
 .split{display:grid;grid-template-columns:minmax(300px,1fr) minmax(340px,1.25fr);gap:.9rem;flex:1;min-height:0}
@@ -79,6 +88,7 @@ button{font:inherit;font-weight:700;padding:.5rem 1rem;border:none;border-radius
 button:disabled{opacity:.45;cursor:default}
 .bar{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.8rem}
 .stat{font-size:.8rem;color:var(--mute)}
+.note{font-size:.76rem;color:var(--mute)}
 .dirty{font-size:.8rem;font-weight:700}
 details.help{margin-top:.7rem;font-size:.8rem;color:var(--mute);line-height:1.8}
 details.help summary{cursor:pointer;font-weight:700}
@@ -138,6 +148,7 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
       <button class="tab on" data-p="links" role="tab" aria-current="page">単元リンク</button>
       <button class="tab" data-p="roster" role="tab">名簿</button>
       <button class="tab" data-p="cfg" role="tab">表示と権限</button>
+      <button class="tab" data-p="past" role="tab">過年度</button>
     </nav>
     <span class="grow"><span class="where" id="where"></span></span>
     <div class="golinks" id="golinks"></div>
@@ -192,6 +203,38 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
         このハブの <code>roster</code> シートが名簿の正本です。編集はシートで行います。
         各単元の <code>roster</code> シートの A1 に <code>=IMPORTRANGE("ハブのスプレッドシートURL","roster!A:E")</code> を入れて参照させます（初回のみ単元側で「アクセスを許可」）。<br>
         記録・分析の対象は、メールアドレスと氏名の両方がある児童だけです。名簿にない児童や氏名が空の児童も「おためし」として全モードを使えますが、記録はされません。
+      </details>
+    </div>
+  </div>
+
+  <!-- ============ 過年度（Archive.gs） ============ -->
+  <div class="tabpage" data-pg="past">
+    <div class="box col">
+      <h2>過年度の名簿と個人情報</h2>
+      <p class="lead">年度ごとに、<b>児童の氏名・メールアドレスが残っている人数</b>（全単元の記録の合計）を出します。
+        「消去」を押すと、その年度の記録の氏名とメールを <b>児童001</b> などに置き換えます。<b>元に戻せません。</b>
+        番号は年度の中で全単元共通です（同じ児童は、どの単元でも同じ番号）。学年・組・番号は残るので、単元の「過年度」「分析」タブの集団の統計はそのまま見られます。</p>
+      <div class="stat" id="arStat">読み込み中…</div>
+      <div class="scroll"><table class="arT" id="arYears"></table>
+        <div id="arUnits" class="stat"></div>
+        <h3 class="arH">実行の記録</h3>
+        <table class="arT" id="arLog"></table>
+      </div>
+      <div class="bar">
+        <button id="arReload" class="bstep" type="button">↻ 読み込み直す</button>
+        <button id="arRoster" class="bkey" type="button">いまの名簿を前年度の名簿として保存</button>
+        <span class="stat" id="arMsg"></span>
+      </div>
+      <details class="help">
+        <summary>名簿の年度保存と、消去の範囲</summary>
+        <p><b>名簿の年度保存</b>：毎年 4/1 の朝に、ハブと各単元の <code>roster</code> が <code>roster_前年度</code>（例 roster_2025）へ値のまま写されます。
+          ハブの <code>roster</code> は消えません。新年度の名簿は準備ができた時に <code>roster</code> を書き換えてください。
+          4/1 より前に名簿を入れ替える時は、先に「いまの名簿を前年度の名簿として保存」を押してください（4/1 の自動保存は、すでに roster_前年度 があれば何もしません）。</p>
+        <p><b>消去の範囲</b>：各単元の log・mistakes・coop・coop_log・coop_save のうちその年度の行、summary のうち今の名簿にいない児童の行、
+          ハブの an_facts・an_support（児童を対象にした手立て）のうちその年度の行。名簿シート roster_年度 はハブ・各単元とも削除します。
+          今年度は消せません。summary（自己ベスト）は年度で区切られていないので、今の名簿にいる児童の行は残します。</p>
+        <p><b>消えないもの</b>：手立ての内容・メモ（an_support・an_decisions）に手で書いた氏名、<code>グループ分け</code> シート、
+          そしてスプレッドシートの<b>版の履歴</b>（書き換える前の値が残ります）。完全に消す手順は docs/SETUP.md の「過年度」にあります。</p>
       </details>
     </div>
   </div>
@@ -277,6 +320,64 @@ $('maintabs').addEventListener('click', function(e){
   });
   document.querySelectorAll('.tabpage').forEach(function(d){ d.classList.toggle('on', d.dataset.pg === p); });
 });
+
+/* ---------- 過年度（Archive.gs の arStatus / arAnonymize / arArchiveRosterNow） ---------- */
+var AR = null, arAsked = false;
+$('maintabs').addEventListener('click', function(e){
+  if(e.target && e.target.dataset && e.target.dataset.p === 'past' && !arAsked){ arAsked = true; arLoad(); }
+});
+function arLoad(){
+  $('arStat').textContent = '各単元の記録を読んでいます…（単元が多いと数十秒かかります）';
+  google.script.run.withSuccessHandler(function(r){ AR = r; arRender(); })
+    .withFailureHandler(function(e){ $('arStat').textContent = '読み込めません: ' + e.message; })
+    .arStatus();
+}
+$('arReload').onclick = arLoad;
+function arRender(){
+  var r = AR;
+  $('arStat').textContent = r.owner ? '' : '消去と名簿の保存は、スプレッドシートの所有者だけが押せます。';
+  $('arRoster').disabled = !r.owner;
+  var head = '<thead><tr><th>年度</th><th>氏名・メールが残っている児童（単元ごとの合計）</th><th>名簿シート</th><th></th></tr></thead>';
+  $('arYears').innerHTML = r.years.length ? head + '<tbody>' + r.years.map(function(y){
+    var isCur = y.fy >= r.cur;
+    var per = r.units.filter(function(u){ return y.units[u.id]; }).map(function(u){ return esc(u.title) + ' ' + y.units[u.id] + '人'; }).join('、');
+    var pii = y.pii ? '<span class="pii">' + y.pii + ' 人分</span><div class="note">' + per + '</div>' : '残っていません';
+    var btn = isCur ? '<span class="note">今年度は消せません</span>'
+      : (y.pii || y.rosters.length || y.pending)
+        ? '<button class="bkey stop" data-ar="' + y.fy + '"' + (r.owner ? '' : ' disabled') + '>' + (y.pending ? '続きから消去' : 'この年度を消去') + '</button>'
+        : '<span class="note">消去済み</span>';
+    return '<tr><td><b>' + y.fy + '年度</b>' + (isCur ? '（今年度）' : '') + '</td><td>' + pii + '</td><td>' +
+      (y.rosters.length ? esc(y.rosters.join('、')) : '–') + '</td><td>' + btn + '</td></tr>';
+  }).join('') + '</tbody>' : '<tbody><tr><td class="note">記録がありません。links シートの「sheet」欄に各単元の記録スプレッドシートを入れると読めます。</td></tr></tbody>';
+  var bad = r.units.filter(function(u){ return u.err; });
+  $('arUnits').textContent = '読んだ単元 ' + r.units.length + ' 件' + (bad.length ? '（開けない単元: ' + bad.map(function(u){ return u.title + ' ' + u.err; }).join('、') + '）' : '');
+  $('arLog').innerHTML = r.log.length ? '<thead><tr><th>日時</th><th>年度</th><th>実行した人</th><th>児童数</th><th>結果</th></tr></thead><tbody>' +
+    r.log.map(function(l){ return '<tr><td>' + esc(l.at) + '</td><td>' + l.fy + '</td><td>' + esc(l.by) + '</td><td class="num">' + esc(l.kids) + '</td><td>' + esc(l.msg) + '</td></tr>'; }).join('') + '</tbody>'
+    : '<tbody><tr><td class="note">まだ実行していません。</td></tr></tbody>';
+}
+$('arYears').addEventListener('click', function(e){
+  var fy = e.target && e.target.dataset ? e.target.dataset.ar : null;
+  if(!fy) return;
+  var want = fy + '年度を消去';
+  var typed = window.prompt(fy + '年度の記録から、児童の氏名とメールアドレスを「児童001」などに置き換えます。元に戻せません。\n' +
+    '続けるときは「' + want + '」と入力してください。');
+  if(typed === null) return;
+  if(typed.trim() !== want){ $('arMsg').textContent = '入力が違うため中止しました。'; return; }
+  e.target.disabled = true;
+  $('arMsg').textContent = '消去しています…（数分かかることがあります。画面を閉じないでください）';
+  google.script.run.withSuccessHandler(function(r){ $('arMsg').textContent = r.msg; arLoad(); })
+    .withFailureHandler(function(err){ $('arMsg').textContent = '止まりました: ' + err.message; arLoad(); })
+    .arAnonymize(Number(fy), typed.trim());
+});
+$('arRoster').onclick = function(){
+  var fy = AR ? AR.cur - 1 : 0;
+  var m = new Date().getMonth() + 1;
+  if(m < 4 && AR) fy = AR.cur;   // 1〜3月に押した時は「今年度」の名簿を保存する（4月から前年度になる）
+  if(!window.confirm('いまの名簿（roster）を roster_' + fy + ' として保存します。よろしいですか？')) return;
+  google.script.run.withSuccessHandler(function(msg){ $('arMsg').textContent = msg; arLoad(); })
+    .withFailureHandler(function(err){ $('arMsg').textContent = '保存できません: ' + err.message; })
+    .arArchiveRosterNow(fy);
+};
 
 /* 単元の教師ページ URL。児童用 URL に page=teacher を足すだけ（各単元の doGet が同じ約束で分岐する） */
 function unitTeacherUrl(u){

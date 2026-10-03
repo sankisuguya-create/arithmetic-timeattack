@@ -61,9 +61,10 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 4;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
+var ENGINE_VER = 5;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
                       // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
                       // 4 = coopPeek（児童画面の定期確認。開いたままの画面に印をすぐ出す）
+                      // 5 = getPastYears（教師画面の過年度タブ）
 /**
  * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
  *
@@ -2406,6 +2407,148 @@ function getAnalysis(fresh, fyear) {
   var out = buildAnalysis_(fy);
   var json = JSON.stringify(out);
   if (json.length < 90000) cache_().put(key, json, 120);
+  return out;
+}
+
+/* ============================================================
+ *  過年度（教師画面の「過年度」タブ）
+ *
+ *  log を年度（4/1〜翌3/31）ごとに畳み、型ごと・問題ごとに
+ *  「どこで時間がかかり、どこで誤答が多かったか」を出す。個人は出さない（集団の値だけ）。
+ *
+ *  問題ごとの出題数は log に残っていない（残るのは誤答・遅かった問題だけ）。
+ *  そこで出題の正本 UNIT.gen を回して「モードごとの各問題の出やすさ」を求め、
+ *  その年度の回ごとの解いた数（attempts）に掛けて出題数を推定する（推定出題数）。
+ *  genQueue_ は直前3問の重複を避けるので、実際の出題とは少しずれる（推定と明記して出す）。
+ *
+ *  個人情報の消去（児童001などへの置き換え）はハブの「過年度」タブで全単元まとめて行う。
+ *  単元ごとに振ると、同じ児童が単元ごとに別の番号になるため（apps/hub/Archive.gs）。
+ * ============================================================ */
+
+var PAST_FREQ_DRAWS_ = 3000;   // モードごとに gen を回す回数。1%の問題で相対誤差 約±18%（二項分布の標準誤差）
+var PAST_ITEM_MIN_ = 20;       // 推定出題数がこれ未満の問題は誤答率の順位に入れない（an_min_trials と同じ値）
+var PAST_ITEM_TOP_ = 15;
+
+/** その時刻が属する年度（4月始まり）。読めなければ 0 */
+function fyOfTime_(ts) {
+  if (!ts) return 0;
+  var d = new Date(ts), tz = Session.getScriptTimeZone();
+  var y = Number(Utilities.formatDate(d, tz, 'yyyy')), m = Number(Utilities.formatDate(d, tz, 'M'));
+  return m >= 4 ? y : y - 1;
+}
+
+/** モードごとの各問題の出やすさ { mode: { 't|tag': 確率 } }。gen は決定的なのでシードを固定すれば毎回同じ */
+function tagFreq_() {
+  var hit = cache_().get('tagfreq');
+  if (hit) return JSON.parse(hit);
+  var out = {};
+  modeIds_().forEach(function (m) {
+    var rand = rng_(20250401 + Number(m)), cnt = {}, f = {};
+    for (var i = 0; i < PAST_FREQ_DRAWS_; i++) {
+      var it = UNIT.gen(rand, m), k = (it.t || '') + '|' + it.tag;
+      cnt[k] = (cnt[k] || 0) + 1;
+    }
+    Object.keys(cnt).forEach(function (k) { f[k] = cnt[k] / PAST_FREQ_DRAWS_; });
+    out[m] = f;
+  });
+  var j = JSON.stringify(out);
+  if (j.length < 90000) cache_().put('tagfreq', j, 21600);
+  return out;
+}
+
+/**
+ * log の行 → 年度ごとの集計（純粋。tests/past.test.cjs が叩く）。
+ * rows: log の値（見出し行を含む）。fyOf: 時刻 → 年度。freq: tagFreq_() の形。order: 型の並び。
+ */
+function pastStats_(rows, fyOf, freq, order) {
+  var typeSet = {};
+  order.forEach(function (t) { typeSet[t] = true; });
+  var Y = {};
+  function yr(fy) {
+    return Y[fy] || (Y[fy] = { fy: fy, trials: 0, kids: {}, pii: {}, types: {}, items: {} });
+  }
+  function item(y, k) { return y.items[k] || (y.items[k] = { miss: 0, slow: 0, est: 0 }); }
+
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i], ts = rowTime_(row[0]);
+    var fy = ts ? fyOf(ts) : 0;
+    if (!fy) continue;
+    var y = yr(fy), mail = String(row[1] || '').trim().toLowerCase();
+    y.trials++;
+    if (mail) y.kids[mail] = true;
+    if (mail.indexOf('@') >= 0) y.pii[mail] = true;   // 消去前の児童（メールが残っている）
+
+    String(row[13] || '').split(',').forEach(function (e) {
+      var p = String(e).split(':');
+      if (p.length < 6 || !typeSet[p[0]]) return;
+      var a = y.types[p[0]] || (y.types[p[0]] = { n: 0, miss: 0, ntk: 0, ln: 0 });
+      a.n += Number(p[1]) || 0;                        // 1回目で正答した問題の数
+      var x = typeStat_(e);
+      if (x && x.ntk > 0 && x.ln) { a.ntk += x.ntk; a.ln += x.ln; }
+    });
+    splitCellItems_(row[11], typeSet).forEach(function (e) {
+      var c = e.indexOf(':'), t = e.slice(0, c);
+      if (c < 0 || !typeSet[t]) return;
+      var a = y.types[t] || (y.types[t] = { n: 0, miss: 0, ntk: 0, ln: 0 });
+      a.miss++;
+      item(y, t + '|' + e.slice(c + 1)).miss++;
+    });
+    splitCellItems_(row[12], typeSet).forEach(function (e) {
+      // "型:タグ:ms"。タグに ':' は入らない（契約）が、念のため最後の ':' で切る
+      var c = e.indexOf(':'), l = e.lastIndexOf(':');
+      if (c < 0 || l <= c) return;
+      item(y, e.slice(0, c) + '|' + e.slice(c + 1, l)).slow++;
+    });
+    var f = freq[String(row[6])] || freq[Number(row[6])];
+    var att = Number(row[10]) || 0;
+    if (f && att) Object.keys(f).forEach(function (k) { item(y, k).est += att * f[k]; });
+  }
+
+  return Object.keys(Y).map(Number).sort(function (a, b) { return b - a; }).map(function (fy) {
+    var y = Y[fy], types = {}, items = [];
+    order.forEach(function (t) {
+      var a = y.types[t];
+      if (!a) return;
+      var tot = a.n + a.miss;
+      types[t] = { n: tot, miss: a.miss,
+                   rate: tot ? Math.round(1000 * a.miss / tot) / 10 : null,       // 誤答率（%）
+                   ms: a.ntk ? Math.round(Math.exp(a.ln / a.ntk)) : null };       // 初打鍵までの幾何平均
+    });
+    Object.keys(y.items).forEach(function (k) {
+      var o = y.items[k];
+      if (!o.miss && !o.slow) return;
+      var p = k.indexOf('|');
+      var est = Math.round(o.est);
+      items.push({ t: k.slice(0, p), tag: k.slice(p + 1), miss: o.miss, slow: o.slow, est: est,
+                   rate: est >= PAST_ITEM_MIN_ ? Math.round(1000 * Math.min(o.miss, est) / est) / 10 : null });
+    });
+    function topBy(key) {
+      return items.filter(function (o) { return key === 'rate' ? (o.rate != null && o.miss > 0) : o.slow > 0; })
+        .sort(function (a, z) { return (z[key] - a[key]) || (z.miss - a.miss); }).slice(0, PAST_ITEM_TOP_);
+    }
+    return { fy: fy, trials: y.trials, kids: Object.keys(y.kids).length, pii: Object.keys(y.pii).length,
+             types: types, missTop: topBy('rate'), slowTop: topBy('slow') };
+  });
+}
+
+function getPastYears(fresh) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var key = 'past_' + today_();
+  if (!fresh) {
+    var hit = cache_().get(key);
+    if (hit) return JSON.parse(hit);
+  }
+  var v = sh_(SHEETS.LOG).getDataRange().getValues();
+  var order = typeOrder_(), cur = curSchoolYear_(), freq = tagFreq_();
+  // 「過年度すべて」は今年度より前の行を1つの年度（番号 1）として畳み直す。年度ごとの上位表を足し合わせると、
+  // 上位に入らなかった年度の分が抜けて誤答率がゆがむため
+  var all = pastStats_(v, function (ts) { var f = fyOfTime_(ts); return (f && f < cur) ? 1 : 0; }, freq, order);
+  var out = { cur: cur, order: order, types: UNIT.types, itemMin: PAST_ITEM_MIN_,
+              years: pastStats_(v, fyOfTime_, freq, order), allPast: all[0] || null,
+              rosters: ss_().getSheets().map(function (s) { return s.getName(); })
+                .filter(function (n) { return /^roster_\d{4}$/.test(n); }) };
+  var j = JSON.stringify(out);
+  if (j.length < 90000) cache_().put(key, j, 600);
   return out;
 }
 

@@ -872,9 +872,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   ['グループ数', 'グループを編集…', "'グループ' + COOP_LETTERS[g]", "('グループ' + 'ABCDEFGHIJ'[grpOf(i)] + ' ')"].forEach(k => assert.ok(tui.includes(k), k));
   ['組数', '組を編集', '組分け', "'組<small>'", "+ '組 ')"].forEach(k => assert.ok(!tui.includes(k), k));
   assert.ok(ui.includes("'じぶんの グループを 目立たせる'") && ui.includes("'あなたのグループの色'") && !ui.includes('くみを') && !ui.includes('あなたの組'));
-  // タブは「公開モード｜協力プレイ｜全般設定｜分析」の順
+  // タブは「公開モード｜協力プレイ｜全般設定｜分析｜過年度」の順
   const tabs = [...tui.slice(tui.indexOf('<nav class="tabs"'), tui.indexOf('</nav>')).matchAll(/role="tab"[^>]*>([^<]+)</g)].map(m => m[1]);
-  assert.equal(JSON.stringify(tabs), JSON.stringify(['公開モード', '協力プレイ', '全般設定', '分析']));
+  assert.equal(JSON.stringify(tabs), JSON.stringify(['公開モード', '協力プレイ', '全般設定', '分析', '過年度']));
   // 書体：教師画面は BIZ UDPゴシック（読めなければ端末の日本語ゴシック）。時計と正答数は字幅のそろった BIZ UDゴシック
   assert.ok(tui.includes('family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700'));
   assert.ok(tui.includes('font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif'));
@@ -885,7 +885,7 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const tui = read('common/teacher.html');
   assert.ok(tui.includes('function $(id){ return document.getElementById(id); }'));
   assert.equal((tui.match(/document\.getElementById\(/g) || []).length, 1, 'id での取得は $ に一本化');
-  assert.ok(tui.includes("var PAGES = { mode: 'pageMode', coop: 'pageCoop', set: 'pageSet', ana: 'pageAna' };"));
+  assert.ok(tui.includes("var PAGES = { mode: 'pageMode', coop: 'pageCoop', set: 'pageSet', ana: 'pageAna', past: 'pagePast' };"));
   assert.ok(tui.includes('function coopLockForm_(lock){') && (tui.match(/coopLockForm_\(/g) || []).length >= 3);
   assert.ok(tui.includes('function coopSyncForm_(s){') && (tui.match(/coopSyncForm_\(/g) || []).length >= 3);
   // ボタンの役割は協力プレイ以外のタブにも
