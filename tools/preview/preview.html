@@ -234,15 +234,13 @@ async function main() {
     "  show('start');\n" +
     "}";
 
-  // index.html はサーバーでテンプレートとして評価され、単元の id と Core.gs の版が埋め込まれる。プレビューではその場で埋める
+  // index.html はサーバーでテンプレートとして評価され、単元の id が埋め込まれる。プレビューではその場で埋める
   var appIdRe = /<\?!= JSON\.stringify\(String\(UNIT\.id\)\) \?>/;
   if (!appIdRe.test(uiText)) { fail('common/index.html の APP_ID の埋め込み（<?!= JSON.stringify(String(UNIT.id)) ?>）が見つかりませんでした。'); return; }
-  var verRe = /<\?!= ENGINE_VER \?>/, verM = coreText.match(/var ENGINE_VER = (\d+)/);
-  if (!verRe.test(uiText) || !verM) { fail('common/index.html の版の埋め込み（<?!= ENGINE_VER ?>）または Core.gs の ENGINE_VER が見つかりませんでした。'); return; }
   // 共有層：実機は include() が coop_shared の中身を挿入する。プレビューも同じ場所に同じ中身を置く
   var incRe = /<\?!= include\('coop_shared'\) \?>/;
   if (!incRe.test(uiText)) { fail('common/index.html の共有層の挿入（<?!= include(\'coop_shared\') ?>）が見つかりませんでした。'); return; }
-  var patchedUi = uiText.replace(appIdRe, JSON.stringify(unit)).replace(verRe, verM[1]).replace(incRe, coopShared).replace(previewItemRe, newPreviewItem).replace(elseBlockRe, newElseBlock);
+  var patchedUi = uiText.replace(appIdRe, JSON.stringify(unit)).replace(incRe, coopShared).replace(previewItemRe, newPreviewItem).replace(elseBlockRe, newElseBlock);
 
   var helperScript =
     '<script>\n' +
