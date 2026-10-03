@@ -6,19 +6,23 @@ const assert = require('node:assert/strict');
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const src = fs.readFileSync(path.join(__dirname, '..', 'common', 'index.html'), 'utf8');
 
-// サーバーのテンプレートが埋め込む箇所は3つだけ（単元の id、Core.gs の版の番号、協力プレイの共有層）
-const SCRIPTLETS = ['<?!= JSON.stringify(String(UNIT.id)) ?>', '<?!= ENGINE_VER ?>', "<?!= include('coop_shared') ?>"];
+// サーバーのテンプレートが埋め込む箇所は2つだけ（単元の id と、協力プレイの共有層）
+const SCRIPTLETS = ['<?!= JSON.stringify(String(UNIT.id)) ?>', "<?!= include('coop_shared') ?>"];
 for (const s of SCRIPTLETS) assert.equal(src.split(s).length - 1, 1, s + ' は1つだけ');
 // index.html には、ほかにテンプレートの記号が無い（あると GAS の評価で壊れる）
 assert.equal(src.split('<?').length - 1, SCRIPTLETS.length);
-// 版は Core.gs の ENGINE_VER が唯一の宣言 — teacher.html もスクリプレットで受け取る
+// 版ずれ検知：WANT_VER は画面ファイルそれぞれの手書きでなくてはならない。
+// scriptlet（<?!= ENGINE_VER ?>）にすると稼働中の Core.gs の値で埋まり、応答の版と必ず一致して検知が死ぬ
 {
   const t = fs.readFileSync(path.join(__dirname, '..', 'common', 'teacher.html'), 'utf8');
-  assert.equal(t.split('var WANT_VER = <?!= ENGINE_VER ?>;').length - 1, 1, 'teacher.html の WANT_VER も scriptlet');
   assert.equal(t.split("<?!= include('coop_shared') ?>").length - 1, 1, 'teacher.html にも共有層の挿入は1つだけ');
   const core = fs.readFileSync(path.join(__dirname, '..', 'common', 'Core.gs'), 'utf8');
   assert.equal(core.split('var ENGINE_VER = ').length - 1, 1, 'ENGINE_VER の宣言は Core.gs に1つだけ');
-  assert.ok(!/var WANT_VER = \d/.test(src) && !/var WANT_VER = \d/.test(t), 'WANT_VER の手書き数値が残っている');
+  assert.ok(/var WANT_VER = \d+;/.test(src), 'index.html の WANT_VER が手書きでない');
+  assert.ok(/var WANT_VER = \d+;/.test(t), 'teacher.html の WANT_VER が手書きでない');
+  assert.equal(core.match(/var ENGINE_VER = (\d+)/)[1], src.match(/var WANT_VER = (\d+)/)[1], 'index.html の WANT_VER が ENGINE_VER とずれている');
+  assert.equal(src.match(/var WANT_VER = (\d+)/)[1], t.match(/var WANT_VER = (\d+)/)[1], 'index.html と teacher.html の WANT_VER がずれている');
+  assert.ok(!src.includes('<?!= ENGINE_VER ?>') && !t.includes('<?!= ENGINE_VER ?>'), 'WANT_VER の scriptlet 化は検知を自明化させるので禁止');
 }
 
 function pick(name) {
