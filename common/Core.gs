@@ -682,7 +682,7 @@ function submitSession(token, items) {
   if (!c) return { ok: false, code: 'bad', msg: '名簿に登録がありません。' };
   var limSec = Number(s.lim) || Number(cfg.limit_sec);
 
-  if (!items || !items.length || items.length > 500) {
+  if (!itemsValid_(items)) {
     return { ok: false, code: 'bad', msg: '記録できませんでした。' };
   }
   var sumMs = 0;
@@ -816,6 +816,29 @@ function submitSession(token, items) {
     best: res.best, star: res.star, updated: res.updated, rank: rank,
     medal: (!isPractice && rank >= 1 && rank <= 3) ? ['🥇', '🥈', '🥉'][rank - 1] : ''
   };
+}
+
+/**
+ * 送られた解答列の形を検査する。正答は児童側に配っているので、同じ正解の1問を
+ * 何度も送れば点数を水増しできてしまう（学級のメダル・順位が埋まる）。
+ * 出題番号は 0〜QN-1 の整数で重複なし、ms・tk は 0 以上、解答の履歴は配列の配列に限る。
+ * ms を負にすると合計時間の検査をすり抜けられるので、ここで止める。
+ */
+function itemsValid_(items) {
+  if (!items || !items.length || items.length > QN) return false;
+  var seen = {};
+  for (var n = 0; n < items.length; n++) {
+    var it = items[n];
+    if (!it) return false;
+    var i = it.i;
+    if (typeof i !== 'number' || i !== Math.floor(i) || i < 0 || i >= QN || seen[i]) return false;
+    seen[i] = true;
+    if (!(Number(it.ms) >= 0) || (it.tk != null && !(Number(it.tk) >= 0))) return false;
+    var a = it.a || [];
+    if (!Array.isArray(a)) return false;
+    for (var w = 0; w < a.length; w++) if (!Array.isArray(a[w])) return false;
+  }
+  return true;
 }
 
 /** 空欄は 0 とみなす。byTotal なら合計で、そうでなければ欄ごとに比べる。

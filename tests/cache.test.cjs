@@ -32,7 +32,7 @@ function ctxFor(unitId, store) {
   const c = vm.createContext({ localStorage: ls, location: { pathname: '/userCodeAppPanel' }, JSON });
   vm.runInContext('var APP_ID = ' + JSON.stringify(unitId) + ';\n' +
     line(/var BOOT_KEY = .*;/) + '\n' + pick('bootCacheSave') + '\n' + pick('bootCacheLoad') + '\n' +
-    line(/var PEND_KEY = .*;/) + '\n' + pick('pendSave') + '\n' + pick('pendLoad') + '\n' + pick('pendClear'), c);
+    line(/var PEND_KEY = .*;/) + '\n' + pick('pendSave') + '\n' + pick('pendWrite') + '\n' + pick('pendLoad') + '\n' + pick('pendClear'), c);
   return c;
 }
 
@@ -48,9 +48,9 @@ assert.equal(divmod.bootCacheLoad(), null);
 
 // 未送信の記録も単元ごと
 kuku.pendSave({ token: 't1' });
-assert.equal(divmod.pendLoad(), null);
-assert.equal(kuku.pendLoad().token, 't1');
-kuku.pendClear();
-assert.equal(kuku.pendLoad(), null);
+assert.equal(divmod.pendLoad().length, 0);
+assert.equal(kuku.pendLoad()[0].token, 't1');
+kuku.pendClear('t1');
+assert.equal(kuku.pendLoad().length, 0);
 
 console.log('cache: ok');
