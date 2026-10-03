@@ -12,7 +12,7 @@ var SHEETS = {
   LOG: 'log', DAILY: 'daily', SUMMARY: 'summary',
   WCHILD: 'weak_child', WCLASS: 'weak_class',
   COOP: 'coop', COOPLOG: 'coop_log', COOPSAVE: 'coop_save',
-  MISTAKES: 'mistakes'
+  MISTAKES: 'mistakes', USED: 'used'
 };
 
 /**
@@ -71,7 +71,7 @@ var BASE_DEFAULTS = {
 
 var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
 var QN = 200;                              // 1セッションの出題数
-var SCHEMA_VERSION = 6;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし） / 5 = 年度ロールオーバー用トリガー / 6 = 協力モードのシート
+var SCHEMA_VERSION = 7;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし） / 5 = 年度ロールオーバー用トリガー / 6 = 協力モードのシート / 7 = 記録済み token の used シート
 var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
 
 /**
@@ -80,7 +80,7 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 5;   // 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
+var ENGINE_VER = 6;   // 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
                       // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
                       // 4 = coopPeek（児童画面の定期確認。開いたままの画面に印をすぐ出す）
                       // 5 = getPastYears（教師画面の過年度タブ）
@@ -652,10 +652,11 @@ function startSession(mode, practice) {
   }
 
   var seed = Math.floor(Math.random() * 2147483647);
-  var token = Utilities.getUuid();
-  cache_().put('sess_' + token,
-    JSON.stringify({ seed: seed, mode: mode, mail: mail, t: Date.now(),
-                     lim: Number(cfg.limit_sec), p: !!practice }), TTL.session);
+  var sess = { n: Utilities.getUuid(), seed: seed, mode: mode, mail: mail, t: Date.now(),
+               lim: Number(cfg.limit_sec), p: !!practice };
+  var token = makeToken_(sess);
+  // キャッシュは「まだ記録していない」の速い印。消えていても token だけで採点できる
+  cache_().put('sess_' + sess.n, '1', TTL.session);
 
   return {
     ok: true, token: token,
@@ -672,9 +673,19 @@ function startSession(mode, practice) {
  */
 function submitSession(token, items) {
   var mail = email_();
-  var raw = cache_().get('sess_' + token);
-  if (!raw) return { ok: false, code: 'gone', msg: 'この記録は すでに ほぞんされています。' };
-  var s = JSON.parse(raw);
+  // 署名つき token はそれ自体が回の情報を持つ。旧形式（UUID）はキャッシュに回の情報がある
+  var s = readToken_(token), ckey;
+  if (s) {
+    if (Date.now() - Number(s.t) > TOKEN_DAYS_ * 86400000) {
+      return { ok: false, code: 'gone', msg: 'きろくの きげんが きれました。' };
+    }
+    ckey = 'sess_' + s.n;
+  } else {
+    ckey = 'sess_' + token;
+    var raw = cache_().get(ckey);
+    if (!raw) return { ok: false, code: 'gone', msg: 'この記録は すでに ほぞんされています。' };
+    s = JSON.parse(raw);
+  }
   if (s.mail !== mail) return { ok: false, code: 'bad', msg: '不正なリクエストです。' };
 
   var cfg = config_();
@@ -773,7 +784,14 @@ function submitSession(token, items) {
     return { ok: false, msg: 'こんでいます。あとで おくりなおします。' };
   }
   try {
-    cache_().remove('sess_' + token);
+    if (s.n) {
+      // キャッシュの印が残っていれば未記録。消えていたら used シートで二重記録を確かめる
+      if (!cache_().get(ckey) && tokenUsed_(s.n)) {
+        return { ok: false, code: 'gone', msg: 'この記録は すでに ほぞんされています。' };
+      }
+      sh_(SHEETS.USED).appendRow([s.n, new Date()]);
+    }
+    cache_().remove(ckey);
 
     if (!isPractice) {
       // 本番だけ log に残す。練習を混ぜると分析が濁る（列の位置は LOG_COL_）
@@ -816,6 +834,67 @@ function submitSession(token, items) {
     best: res.best, star: res.star, updated: res.updated, rank: rank,
     medal: (!isPractice && rank >= 1 && rank <= 3) ? ['🥇', '🥈', '🥉'][rank - 1] : ''
   };
+}
+
+/*
+ * 署名つき token。回の情報（出題の種・モード・メール・開始時刻・制限時間・練習か）を
+ * サーバーだけが持つ鍵で署名して児童の端末に持たせる。CacheService は保存を保証しないので、
+ * 回の情報をキャッシュだけに置くと、消えた回は採点できずに記録が失われていた。
+ * 形は "s2.<本体>.<署名>"（どちらも URL 安全な base64）。
+ */
+var TOKEN_DAYS_ = 7;                       // 端末に退避した記録を受け付ける日数。used シートもこの日数より古い行を消す
+var SIGN_KEY_ = 'sign_key';
+
+function signKey_() {
+  var props = PropertiesService.getScriptProperties();
+  var k = props.getProperty(SIGN_KEY_);
+  if (!k) {
+    // 通常は ensureReady_ がロックの中で作る。ここは作られていなかったときの保険
+    k = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty(SIGN_KEY_, k);
+  }
+  return k;
+}
+
+function sign_(body) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, signKey_()));
+}
+
+function makeToken_(sess) {
+  var body = Utilities.base64EncodeWebSafe(JSON.stringify(sess), Utilities.Charset.UTF_8);
+  return 's2.' + body + '.' + sign_(body);
+}
+
+/** 署名が合えば回の情報を返す。旧形式・改竄・壊れた token は null */
+function readToken_(token) {
+  var p = String(token || '').split('.');
+  if (p.length !== 3 || p[0] !== 's2' || !p[1] || p[2] !== sign_(p[1])) return null;
+  try {
+    var s = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(p[1])).getDataAsString('UTF-8'));
+    return (s && s.n) ? s : null;
+  } catch (e) { return null; }
+}
+
+/** 記録済みか。キャッシュの印が消えた回でだけ呼ぶ（シートを読むので遅い） */
+function tokenUsed_(n) {
+  var sh = sh_(SHEETS.USED);
+  var last = sh.getLastRow();
+  if (last < 2) return false;
+  var v = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < v.length; i++) if (String(v[i][0]) === n) return true;
+  return false;
+}
+
+/** used シートから受付期限を過ぎた行を消す（resetDaily から呼ぶ） */
+function pruneUsed_() {
+  var sh = ss_().getSheetByName(SHEETS.USED);
+  if (!sh || sh.getLastRow() < 2) return;
+  var v = sh.getDataRange().getValues();
+  var lim = Date.now() - (TOKEN_DAYS_ + 1) * 86400000, keep = [v[0]];
+  for (var i = 1; i < v.length; i++) if (rowTime_(v[i][1]) >= lim) keep.push(v[i]);
+  if (keep.length === v.length) return;
+  sh.clearContents();
+  sh.getRange(1, 1, keep.length, 2).setValues(keep);
 }
 
 /**
@@ -1153,6 +1232,7 @@ function rolloverRoster(now) {
 
 /** 時間主導トリガー。前日以前の行を落とすだけ */
 function resetDaily() {
+  try { pruneUsed_(); } catch (e) { console.error('pruneUsed_ 失敗: ' + e.message); }   // 失敗しても日々の順位は消す
   var sh = sh_(SHEETS.DAILY);
   var v = sh.getDataRange().getValues();
   if (v.length <= 1) return;
@@ -3306,6 +3386,7 @@ function ensureReady_() {
     ensureSheets_();
     ensureSchema_();
     ensureTriggers_();
+    signKey_();                              // 署名の鍵はロックの中で1回だけ作る（同時に作ると鍵が割れる）
     props.setProperty(READY_KEY, String(SCHEMA_VERSION));
     cache_().put('ready', String(SCHEMA_VERSION), 3600);
   } catch (e) {
@@ -3425,6 +3506,7 @@ function ensureSheets_() {
                        'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins', 'origin_pos', 'grow_w'];
   defs[SHEETS.COOPLOG] = ['session', 't', 'email', 'correct', 'mode'];
   defs[SHEETS.COOPSAVE] = ['save_id', 'name', 'saved', 'session', 'payload'];
+  defs[SHEETS.USED] = ['token', 'ts'];
 
   // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
   // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。
