@@ -11,8 +11,27 @@ var SHEETS = {
   CONFIG: 'config', ROSTER: 'roster', CLASS: 'class_config',
   LOG: 'log', DAILY: 'daily', SUMMARY: 'summary',
   WCHILD: 'weak_child', WCLASS: 'weak_class',
-  COOP: 'coop', COOPLOG: 'coop_log', COOPSAVE: 'coop_save'
+  COOP: 'coop', COOPLOG: 'coop_log', COOPSAVE: 'coop_save',
+  MISTAKES: 'mistakes'
 };
+
+/**
+ * log シートの列。[キー, ヘッダ名] の並びが正本 — 添字が列の位置（15列）。
+ * 書き込み（submitSession の appendRow）・読み取り（集計・過年度・誤答展開）・
+ * 1行目のヘッダ宣言（ensureSheets_ の defs）は全部ここから引く。
+ * ハブ側には Core.gs が無いので、Analysis.gs の AN_LOG_COL_ / AN_LOG_WIDTH_ と
+ * Archive.gs の AR_LOG_COL_ / AR_SHEETS_ が写しを持つ
+ * — 一致は tests/analysis.test.cjs / past.test.cjs が検査する。
+ * 列の挿入・並べ替えは既存の記録と写しを壊すので、単元・ハブ・テストを揃えて行うこと。
+ */
+var LOG_DEF_ = [
+  ['TS', 'ts'], ['MAIL', 'email'], ['GRADE', '学年'], ['CLS', '組'], ['NO', '番号'], ['NAME', '氏名'],
+  ['MODE', 'mode'], ['MNAME', 'モード名'], ['LIM', 'limit_sec'], ['CORRECT', 'correct'],
+  ['ATTEMPTS', 'attempts'], ['MISS', 'miss_items'], ['SLOW', 'slow_items'], ['TSTAT', 'type_stats'], ['WRONG', 'wrong_items']
+];
+var LOG_COL_ = {}, LOG_HEAD_ = [];
+LOG_DEF_.forEach(function (d, i) { LOG_COL_[d[0]] = i; LOG_HEAD_[i] = d[1]; });
+var LOG_WIDTH_ = LOG_DEF_.length;
 
 /** 全単元で共通の既定値。UNIT.defaults で上書きできる */
 var BASE_DEFAULTS = {
@@ -176,6 +195,9 @@ function fyOfTime_(ts) {
   var y = Number(Utilities.formatDate(d, tz, 'yyyy')), m = Number(Utilities.formatDate(d, tz, 'M'));
   return m >= 4 ? y : y - 1;
 }
+
+/** 年度のはじめ（4/1 0:00）の時刻。年度の境目はここと fyOfTime_ の2箇所にだけ書く */
+function fyStartMs_(fy) { return new Date(fy, 3, 1).getTime(); }
 
 /**
  * 名簿の行を正規化して返す。{ mail, grade, cls, no, name } の配列。
@@ -437,8 +459,20 @@ function genQueue_(seed, mode, n) {
 }
 
 /**
- * 送信用に切り詰める:
- * [出題トークン, 欄, 答え, まきじゃく, 問題型, はかりの文字盤, 並べ方, 覆い, 図]
+ * キュー項目（1問分の送信用の配列）の位置づけ。
+ *   Q: 出題トークン, F: 欄, ANS: 答え（F の順）, RULER: まきじゃく,
+ *   T: 問題型, DIAL: はかりの文字盤, ROWS: 並べ方, VEIL: 覆い, FIG: 図
+ *
+ * 書き込みは packQueue_、読み取りは index.html の2箇所（begin/beginPractice）と
+ * tests/divmod.test.cjs。同じ1問をオブジェクトで組み立てるのが
+ * nextPracticeItem と index.html の pFetch（キーはここの小文字）。
+ * 添字・キーを変えるときは両側を同じこの表で揃えること
+ * （配列の並び自体は送信中データとの互換なので変えない）。
+ */
+var QI_ = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8 };
+
+/**
+ * 送信用に切り詰める（配列の並びは QI_）。
  *
  * 並べ方（rows）と覆い（veil）を問題ごとに載せるのは、まきじゃくや文字盤と同じ理由。
  * 単元が「この問題はこう並べる」と決められないと、共通画面が単元ごとの形を
@@ -446,9 +480,17 @@ function genQueue_(seed, mode, n) {
  */
 function packQueue_(q) {
   return q.map(function (x) {
-    return [x.q, x.f, x.f.map(function (k) { return x.ans[k]; }),
-            x.ruler || null, x.t, x.dial || null,
-            x.rows || null, (x.veil == null ? null : x.veil), x.fig || null];
+    var it = [];
+    it[QI_.Q] = x.q;
+    it[QI_.F] = x.f;
+    it[QI_.ANS] = x.f.map(function (k) { return x.ans[k]; });
+    it[QI_.RULER] = x.ruler || null;
+    it[QI_.T] = x.t;
+    it[QI_.DIAL] = x.dial || null;
+    it[QI_.ROWS] = x.rows || null;
+    it[QI_.VEIL] = (x.veil == null ? null : x.veil);
+    it[QI_.FIG] = x.fig || null;
+    return it;
   });
 }
 
@@ -578,6 +620,7 @@ function nextPracticeItem(mode, type) {
     for (var i = 0; i < 60 && it.t !== type; i++) it = UNIT.gen(rand, mode);
   }
 
+  // 返す形は packQueue_ の配列と同じ1問を、QI_ の小文字のキーで渡す
   return {
     ok: true, q: it.q, f: it.f,
     ans: it.f.map(function (k) { return it.ans[k]; }),
@@ -733,12 +776,24 @@ function submitSession(token, items) {
     cache_().remove('sess_' + token);
 
     if (!isPractice) {
-      // 本番だけ log に残す。練習を混ぜると分析が濁る
-      sh_(SHEETS.LOG).appendRow([
-        new Date(), mail, c.grade, c.cls, c.no, c.name,
-        s.mode, modeName_(s.mode), limSec, correct, attempts,
-        miss.join(','), slow.join(','), statStr, wrong.join(',')
-      ]);
+      // 本番だけ log に残す。練習を混ぜると分析が濁る（列の位置は LOG_COL_）
+      var lr = [];
+      lr[LOG_COL_.TS] = new Date();
+      lr[LOG_COL_.MAIL] = mail;
+      lr[LOG_COL_.GRADE] = c.grade;
+      lr[LOG_COL_.CLS] = c.cls;
+      lr[LOG_COL_.NO] = c.no;
+      lr[LOG_COL_.NAME] = c.name;
+      lr[LOG_COL_.MODE] = s.mode;
+      lr[LOG_COL_.MNAME] = modeName_(s.mode);
+      lr[LOG_COL_.LIM] = limSec;
+      lr[LOG_COL_.CORRECT] = correct;
+      lr[LOG_COL_.ATTEMPTS] = attempts;
+      lr[LOG_COL_.MISS] = miss.join(',');
+      lr[LOG_COL_.SLOW] = slow.join(',');
+      lr[LOG_COL_.TSTAT] = statStr;
+      lr[LOG_COL_.WRONG] = wrong.join(',');
+      sh_(SHEETS.LOG).appendRow(lr);
     }
     res = updateSummary_(mail, s.mode, limSec, isPractice ? 'p' : 'r', correct, attempts);
     if (!isPractice) rank = updateDaily_(classKey_(c), s.mode, limSec, mail, correct);
@@ -763,7 +818,8 @@ function submitSession(token, items) {
   };
 }
 
-/** 空欄は 0 とみなす。byTotal なら合計で、そうでなければ欄ごとに比べる */
+/** 空欄は 0 とみなす。byTotal なら合計で、そうでなければ欄ごとに比べる。
+ *  答え a[i] は qq.f[i] の順で届く（QI_.ANS と同じ並び。児童側は currentAns が f.map で作る） */
 function match_(a, qq, byTotal) {
   if (!a || a.length !== qq.f.length) return false;
   var got = 0, want = 0;
@@ -1136,14 +1192,20 @@ function getConfigForUI() {
  * 教師画面の床のプレビューに、児童の画面（index.html）と同じ生成器を渡す。
  * 生成器の写しは index.html の 'FLOOR_GEN_BEGIN';〜'FLOOR_GEN_END';（何もしない文）の間の1か所だけに置き、ここで切り出して埋め込む
  * （teacher.html に2つ目の写しを置くと、片方だけ直して図形が食い違う。貼るファイルも増やさない）。
+ * その直後の 'FLOOR_UI_BEGIN';〜'FLOOR_UI_END'; には、描画に使う定数・計算（色の系統・3層の進み・菱形のパス）を置く。
+ * こちらも同じものを埋め込み、教師画面に2つ目の実装を持たせない。
  * 印が見つからなければ空を返し、教師画面はプレビューの欄に「読み込めません」と出す。
  */
 function floorGenSource_(html) {
   // 印はコメントではなく「何もしない文」。HtmlService の getContent() は JS のコメントを消して返すため、
   // コメントの印（旧 /* FLOOR_GEN_BEGIN */）はサーバーからは見えなかった（len が約2.7万字減り、印が -1 になる）
-  var a = html.indexOf("'FLOOR_GEN_BEGIN';"), b = html.indexOf("'FLOOR_GEN_END';");
-  if (a < 0 || b < a) return '';
-  return html.slice(a, b).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
+  var seg_ = function (begin, end) {
+    var a = html.indexOf(begin), b = html.indexOf(end);
+    return (a < 0 || b < a) ? '' : html.slice(a, b);
+  };
+  var gen = seg_("'FLOOR_GEN_BEGIN';", "'FLOOR_GEN_END';"), ui = seg_("'FLOOR_UI_BEGIN';", "'FLOOR_UI_END';");
+  if (!gen || !ui) return '';
+  return (gen + ui).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
 }
 function floorGenForTeacher_() {
   // 失敗しても evaluate() ごと倒さず、埋め込み側の try/catch（teacher.html）が拾える断片を返す。
@@ -1151,7 +1213,7 @@ function floorGenForTeacher_() {
   try {
     var html = include('index');
     var src = floorGenSource_(html);
-    if (!src) return "throw new Error('index.html 内に FLOOR_GEN_BEGIN / FLOOR_GEN_END の印が見つかりません（index を最新の版に貼り直す。読めた長さ " + html.length + "）')";
+    if (!src) return "throw new Error('index.html 内に FLOOR_GEN_BEGIN / FLOOR_GEN_END / FLOOR_UI_BEGIN / FLOOR_UI_END の印が見つかりません（index を最新の版に貼り直す。読めた長さ " + html.length + "）')";
     return src;
   } catch (e) {
     return "throw new Error('index ファイルを読めません（" + String(e.message || e).replace(/'/g, '') + "）')";
@@ -2134,7 +2196,7 @@ function aggregateCore_() {
 
   function slot(mail, row) {
     if (!child[mail]) {
-      child[mail] = { name: row[5], grade: row[2], cls: row[3], no: row[4], t: {}, miss: 0 };
+      child[mail] = { name: row[LOG_COL_.NAME], grade: row[LOG_COL_.GRADE], cls: row[LOG_COL_.CLS], no: row[LOG_COL_.NO], t: {}, miss: 0 };
     }
     return child[mail];
   }
@@ -2145,17 +2207,17 @@ function aggregateCore_() {
   var used = 0;
 
   for (var i = 1; i < v.length; i++) {
-    var mail = String(v[i][1]).toLowerCase();
+    var mail = String(v[i][LOG_COL_.MAIL]).toLowerCase();
     if (!mail || !named[mail]) continue;
     var row = v[i];
 
     if (cutoff) {
-      var ts = rowTime_(row[0]);
+      var ts = rowTime_(row[LOG_COL_.TS]);
       if (ts && ts < cutoff) continue;    // 読めない ts は残す（見落としを避ける）
     }
     used++;
 
-    String(row[13] || '').split(',').forEach(function (t) {
+    String(row[LOG_COL_.TSTAT] || '').split(',').forEach(function (t) {
       if (!t) return;
       var p = t.split(':');
       if (p.length < 3) return;
@@ -2170,7 +2232,7 @@ function aggregateCore_() {
       }
     });
 
-    String(row[11] || '').split(',').forEach(function (t) {
+    String(row[LOG_COL_.MISS] || '').split(',').forEach(function (t) {
       if (!t) return;
       var ty = t.split(':')[0];
       if (!ty) return;
@@ -2178,7 +2240,7 @@ function aggregateCore_() {
       slot(mail, row).miss++;
     });
 
-    String(row[14] || '').split(',').forEach(function (t) {
+    String(row[LOG_COL_.WRONG] || '').split(',').forEach(function (t) {
       if (!t || t.indexOf('|') < 0) return;
       wrongCnt[t] = (wrongCnt[t] || 0) + 1;
     });
@@ -2215,7 +2277,7 @@ function fmtByType_(type, joined) {
  * named が渡されたときは、その集合に無い児童の記録を除く（名簿外は分析対象外）。
  */
 function writeMistakes_(logRows, named) {
-  var sh = ss_().getSheetByName('mistakes') || ss_().insertSheet('mistakes');
+  var sh = ss_().getSheetByName(SHEETS.MISTAKES) || ss_().insertSheet(SHEETS.MISTAKES);
   sh.clear(); sh.setConditionalFormatRules([]);
 
   var head = ['日時', '学年', '組', '番号', '氏名', 'モード', '問題型', 'もんだい', '正しい答え', 'こたえた値'];
@@ -2223,8 +2285,8 @@ function writeMistakes_(logRows, named) {
 
   for (var i = 1; i < logRows.length; i++) {
     var row = logRows[i];
-    if (named && !named[String(row[1] || '').toLowerCase()]) continue;
-    var wrongStr = String(row[14] || '');
+    if (named && !named[String(row[LOG_COL_.MAIL] || '').toLowerCase()]) continue;
+    var wrongStr = String(row[LOG_COL_.WRONG] || '');
     if (!wrongStr) continue;
     wrongStr.split(',').forEach(function (entry) {
       var p = entry.split('|');
@@ -2232,7 +2294,8 @@ function writeMistakes_(logRows, named) {
       var type = p[0], tag = p[1], correct, wrong;
       if (p.length >= 4) { correct = fmtByType_(type, p[2]); wrong = fmtByType_(type, p[3]); }
       else { correct = ''; wrong = fmtByType_(type, p[2]); }   // 旧形式
-      body.push([row[0], row[2], row[3], row[4], row[5], row[7], type, tag, correct, wrong]);
+      body.push([row[LOG_COL_.TS], row[LOG_COL_.GRADE], row[LOG_COL_.CLS], row[LOG_COL_.NO],
+                 row[LOG_COL_.NAME], row[LOG_COL_.MNAME], type, tag, correct, wrong]);
     });
   }
   body.reverse();
@@ -2466,15 +2529,15 @@ function pastStats_(rows, fyOf, freq, order) {
   function item(y, k) { return y.items[k] || (y.items[k] = { miss: 0, slow: 0, est: 0 }); }
 
   for (var i = 1; i < rows.length; i++) {
-    var row = rows[i], ts = rowTime_(row[0]);
+    var row = rows[i], ts = rowTime_(row[LOG_COL_.TS]);
     var fy = ts ? fyOf(ts) : 0;
     if (!fy) continue;
-    var y = yr(fy), mail = String(row[1] || '').trim().toLowerCase();
+    var y = yr(fy), mail = String(row[LOG_COL_.MAIL] || '').trim().toLowerCase();
     y.trials++;
     if (mail) y.kids[mail] = true;
     if (mail.indexOf('@') >= 0) y.pii[mail] = true;   // 消去前の児童（メールが残っている）
 
-    String(row[13] || '').split(',').forEach(function (e) {
+    String(row[LOG_COL_.TSTAT] || '').split(',').forEach(function (e) {
       var p = String(e).split(':');
       if (p.length < 6 || !typeSet[p[0]]) return;
       var a = y.types[p[0]] || (y.types[p[0]] = { n: 0, miss: 0, ntk: 0, ln: 0 });
@@ -2482,21 +2545,21 @@ function pastStats_(rows, fyOf, freq, order) {
       var x = typeStat_(e);
       if (x && x.ntk > 0 && x.ln) { a.ntk += x.ntk; a.ln += x.ln; }
     });
-    splitCellItems_(row[11], typeSet).forEach(function (e) {
+    splitCellItems_(row[LOG_COL_.MISS], typeSet).forEach(function (e) {
       var c = e.indexOf(':'), t = e.slice(0, c);
       if (c < 0 || !typeSet[t]) return;
       var a = y.types[t] || (y.types[t] = { n: 0, miss: 0, ntk: 0, ln: 0 });
       a.miss++;
       item(y, t + '|' + e.slice(c + 1)).miss++;
     });
-    splitCellItems_(row[12], typeSet).forEach(function (e) {
+    splitCellItems_(row[LOG_COL_.SLOW], typeSet).forEach(function (e) {
       // "型:タグ:ms"。タグに ':' は入らない（契約）が、念のため最後の ':' で切る
       var c = e.indexOf(':'), l = e.lastIndexOf(':');
       if (c < 0 || l <= c) return;
       item(y, e.slice(0, c) + '|' + e.slice(c + 1, l)).slow++;
     });
-    var f = freq[String(row[6])] || freq[Number(row[6])];
-    var att = Number(row[10]) || 0;
+    var f = freq[String(row[LOG_COL_.MODE])] || freq[Number(row[LOG_COL_.MODE])];
+    var att = Number(row[LOG_COL_.ATTEMPTS]) || 0;
     if (f && att) Object.keys(f).forEach(function (k) { item(y, k).est += att * f[k]; });
   }
 
@@ -2698,12 +2761,12 @@ function buildAnalysis_(fyear) {
     // 今年度: 年度の切り替わりでリセット。進級・編入で所属が変わった児童の
     // 過去分が新クラスに混ざるのを防ぐ（log の行は履歴として残る）
     var win = days > 0 ? (now.getTime() - days * 86400000) : 0;
-    var fyStart = new Date(curFy, 3, 1).getTime();
+    var fyStart = fyStartMs_(curFy);
     cutoff = Math.max(win, fyStart);
     span = win > fyStart ? ('直近' + days + '日') : '4/1以降';
   } else {
-    cutoff = new Date(viewFy, 3, 1).getTime();
-    until = new Date(viewFy + 1, 3, 1).getTime();
+    cutoff = fyStartMs_(viewFy);
+    until = fyStartMs_(viewFy + 1);
     span = viewFy + '年度';
   }
 
@@ -2737,20 +2800,20 @@ function buildAnalysis_(fyear) {
   var v = sh_(SHEETS.LOG).getDataRange().getValues();
   var minTs = 0;   // 年度選択肢を出すための最古の記録時刻
   for (var i2 = 1; i2 < v.length; i2++) {
-    var row = v[i2], m = String(row[1]).toLowerCase();
-    var ts = rowTime_(row[0]);
+    var row = v[i2], m = String(row[LOG_COL_.MAIL]).toLowerCase();
+    var ts = rowTime_(row[LOG_COL_.TS]);
     if (!ts) continue;
     // 年度選択肢のために最古の記録を追う。記録が残っていれば、卒業した児童の
     // 分（現行名簿に無い）も年度リストに出せる。氏名の無い行は対象外
-    if (String(row[5] || '').trim() && (!minTs || ts < minTs)) minTs = ts;
+    if (String(row[LOG_COL_.NAME] || '').trim() && (!minTs || ts < minTs)) minTs = ts;
     if (ts < cutoff || (until && ts >= until)) continue;
 
     var rc = roster[m];
-    if (!rc && !hasYearRoster && String(row[5] || '').trim()) {
+    if (!rc && !hasYearRoster && String(row[LOG_COL_.NAME] || '').trim()) {
       // 年度名簿が無い過去年度: log 行の所属（その時点の学年・組）を名簿にする
-      var g = Number(row[2]), rm = String(row[3]).trim();
+      var g = Number(row[LOG_COL_.GRADE]), rm = String(row[LOG_COL_.CLS]).trim();
       var ck = g + '-' + rm;
-      rc = roster[m] = { ck: ck, no: Number(row[4]), name: String(row[5]).trim() };
+      rc = roster[m] = { ck: ck, no: Number(row[LOG_COL_.NO]), name: String(row[LOG_COL_.NAME]).trim() };
       if (!classes[ck]) classes[ck] = { cls: ck, label: g + '年' + rm + '組', grade: g, room: rm, n: 0, trials: 0 };
       classes[ck].n++;
     }
@@ -2759,7 +2822,7 @@ function buildAnalysis_(fyear) {
     var b = bag(rc.ck);
     b.trials++;
     if (classes[rc.ck]) classes[rc.ck].trials++;
-    var d = dstr_(row[0]);
+    var d = dstr_(row[LOG_COL_.TS]);
     b.daily[d] = (b.daily[d] || 0) + 1;
 
     var st = b.kids[m];
@@ -2767,7 +2830,7 @@ function buildAnalysis_(fyear) {
     st.tries++;
 
     // type_stats … "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2"
-    String(row[13] || '').split(',').forEach(function (e) {
+    String(row[LOG_COL_.TSTAT] || '').split(',').forEach(function (e) {
       var x = typeStat_(e);
       if (!x) return;                          // 初打鍵の無い古い行は想起の集計に入れない
       var ty = x.t;
@@ -2776,7 +2839,7 @@ function buildAnalysis_(fyear) {
       addAcc_(acc, x); addAcc_(sa, x);
     });
 
-    splitCellItems_(row[11], typeSet).forEach(function (e) {
+    splitCellItems_(row[LOG_COL_.MISS], typeSet).forEach(function (e) {
       var ty = e.split(':')[0];
       if (!ty) return;
       var acc = b.types[ty] || (b.types[ty] = newAcc_());
@@ -2784,7 +2847,7 @@ function buildAnalysis_(fyear) {
       st.miss++;
     });
 
-    splitCellItems_(row[14], typeSet).forEach(function (e) {
+    splitCellItems_(row[LOG_COL_.WRONG], typeSet).forEach(function (e) {
       if (e.indexOf('|') < 0) return;
       b.wrong[e] = (b.wrong[e] || 0) + 1;
     });
@@ -3130,6 +3193,11 @@ function validateUnit_() {
             }
           });
         }
+        // 採点の合計判定は、児童側（index.html の isRight）が ruler/dial の有無、
+        // サーバー側（match_）が UNIT.byTotal で切り替える。両者がずれると
+        // 正しく答えた児童が「まちがい」になるので、一致をここで検査する
+        var wantsTotal = UNIT.byTotal ? !!UNIT.byTotal(it) : false;
+        if (wantsTotal !== !!(it.ruler || it.dial)) say('gen(モード' + mid + ') の型 ' + it.t + ': byTotal=' + wantsTotal + ' ですが ruler/dial 出題が ' + !!(it.ruler || it.dial) + ' です（児童側は ruler/dial で合計判定するため正答が誤採点になります）');
         if (it.rows !== undefined) {
           var us = String(it.rows).split('').filter(function (c) { return c === '_'; }).length;
           if (us !== (it.f || []).length) say('gen(モード' + mid + ') の rows の空欄数 ' + us + ' が f の数 ' + (it.f || []).length + ' と合いません');
@@ -3273,7 +3341,7 @@ function migrateModeNameAndWrong_() {
     }
   }
 
-  insertModeName(ss_().getSheetByName(SHEETS.LOG), 7);
+  insertModeName(ss_().getSheetByName(SHEETS.LOG), LOG_COL_.MODE + 1);   // mode 列（1始まり）の直後に入れる
   insertModeName(ss_().getSheetByName(SHEETS.SUMMARY), 2);
   insertModeName(ss_().getSheetByName(SHEETS.DAILY), 3);
 
@@ -3324,8 +3392,7 @@ function ensureSheets_() {
   defs[SHEETS.CONFIG] = ['key', 'value'];
   defs[SHEETS.ROSTER] = ['email', '学年', '組', '番号', '氏名'];
   defs[SHEETS.CLASS] = classHead_();
-  defs[SHEETS.LOG] = ['ts', 'email', '学年', '組', '番号', '氏名', 'mode', 'モード名', 'limit_sec',
-                      'correct', 'attempts', 'miss_items', 'slow_items', 'type_stats', 'wrong_items'];
+  defs[SHEETS.LOG] = LOG_HEAD_;
   defs[SHEETS.DAILY] = ['date', 'class', 'mode', 'モード名', 'limit_sec', 'email', 'best', 'ts'];
   defs[SHEETS.SUMMARY] = ['email', 'mode', 'モード名', 'limit_sec', 'kind',
                           'tries', 'total_correct', 'total_attempts', 'best', 'best_count'];

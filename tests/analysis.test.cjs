@@ -13,6 +13,9 @@ const an = vm.createContext({});
 vm.runInContext(read('apps/hub/Analysis.gs'), an);
 
 /* ---------- log の読み方が Core.gs と同じ ---------- */
+// log の列位置・幅の正本は Core.gs の LOG_DEF_。ハブ側は写し（AN_LOG_COL_ / AN_LOG_WIDTH_）を持つ
+assert.deepEqual(JSON.parse(JSON.stringify(an.AN_LOG_COL_)), JSON.parse(JSON.stringify(core.LOG_COL_)), 'Analysis.gs の列位置が Core.gs と違う');
+assert.equal(an.AN_LOG_WIDTH_, core.LOG_WIDTH_, 'Analysis.gs の log 列数が Core.gs と違う');
 const statCases = [
   'A:3:4500:3:3000:3100000:20.1:135.2',   // 対数の和あり
   'B:2:3000:2:2000:2100000',               // 対数の和の無い古い行
@@ -37,8 +40,8 @@ for (const c of cells) {
 /* ---------- log の1行 → 型ごとの寄与 ---------- */
 {
   const row = [];
-  row[11] = `${t0}:a,${t0}:b,${t1}:c`;
-  row[13] = `${t0}:5:9000:5:6000:7300000:30.5:186.1,${t1}:2:3000:2:2000:2100000`;
+  row[core.LOG_COL_.MISS] = `${t0}:a,${t0}:b,${t1}:c`;
+  row[core.LOG_COL_.TSTAT] = `${t0}:5:9000:5:6000:7300000:30.5:186.1,${t1}:2:3000:2:2000:2100000`;
   const by = an.anRowFacts_(row, typeSet);
   assert.equal(by[t0].ok, 5); assert.equal(by[t0].miss, 2); assert.equal(by[t0].ntk, 5);
   assert.equal(by[t1].ok, 2); assert.equal(by[t1].miss, 1);

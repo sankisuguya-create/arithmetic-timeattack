@@ -166,15 +166,15 @@ same(unit.glyph['かける'], unit.glyph['しょう'], '①②の唱えの欄も
 // 欄キー '' に宣言すると、③⑤⑥のあまりの欄まで漢数字になる
 assert.equal(unit.glyph[''], undefined, "欄キー '' に字形を宣言しないこと");
 
-// 配信の形。rows と veil が7・8番目に載り、載せない型では null のまま（9番目は図。わり算には無い）
+// 配信の形。キュー項目の位置づけは Core.gs の QI_ が正本（ここでは namespaced で引く）
 const packed = ctx.packQueue_(ctx.genQueue_(7, 7, 3));
-packed.forEach(x => { assert.equal(x.length, 9); assert.ok(x[6]); assert.equal(x[7], 2); assert.equal(x[8], null); });
+packed.forEach(x => { assert.equal(x.length, 9); assert.ok(x[ctx.QI_.ROWS]); assert.equal(x[ctx.QI_.VEIL], 2); assert.equal(x[ctx.QI_.FIG], null); });
 // ①②も並べ方を持つ（欄が式の途中に入るため）が、覆いは要らない
 [5, 1].forEach(m => ctx.packQueue_(ctx.genQueue_(7, m, 3)).forEach(x => {
-  assert.equal(x.length, 9); assert.ok(x[6]); assert.equal(x[7], null);
+  assert.equal(x.length, 9); assert.ok(x[ctx.QI_.ROWS]); assert.equal(x[ctx.QI_.VEIL], null);
 }));
 ctx.packQueue_(ctx.genQueue_(7, 3, 3)).forEach(x => {
-  assert.equal(x[6], null); assert.equal(x[7], null);
+  assert.equal(x[ctx.QI_.ROWS], null); assert.equal(x[ctx.QI_.VEIL], null);
 });
 
 /* ============================================================
@@ -189,7 +189,7 @@ function loadUi(extra) {
     paintSlots() {}, locked: false, ready: true, practice: false, firstKeyAt: 0
   }, extra));
   for (const name of ['digitCap_', 'valOf', 'currentAns', 'isRight', 'handleInput',
-                      'moveField', 'capField_', 'glyph_', 'slotSpan_', 'unitSpan', 'ghostHtml_']) {
+                      'moveField', 'capField_', 'esc', 'glyph_', 'slotSpan_', 'unitSpan', 'ghostHtml_']) {
     const m = ui.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?^\\}', 'm'));
     assert.ok(m, name); vm.runInContext(m[0], c);
   }

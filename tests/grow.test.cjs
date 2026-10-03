@@ -43,7 +43,9 @@ const { read, loadUnit } = require('./lib/kit.cjs');
   const tui = read('common/teacher.html'), ui = read('common/index.html'), core = read('common/Core.gs');
   // 協力プレイ：回に写した倍率で、正答のモードごとに枚数を掛ける。自動の枚数は倍率の平均で見込む
   assert.ok(tui.includes('var n = Math.round(e[2] * coopRateAt(e[0]) * coopGwOf_(e[3]))'));
-  assert.ok(tui.includes('* (p.wm || 1);') && ui.includes('* (p.wm || 1);'));
+  // 倍率の平均で見込む式は共有層に1つだけ。両画面は同じものを挿入する
+  assert.ok(read('common/coop_shared.html').includes('* (p.wm || 1);'));
+  assert.ok(tui.includes("<?!= include('coop_shared') ?>") && ui.includes("<?!= include('coop_shared') ?>"));
   assert.ok(tui.includes("CP.GW = s.gw || {};"));
   assert.ok(ui.includes('var m = Math.round(e[2] * (e[4] || 1) * rateAt(e[0]))'), '児童の見返しは各正答の倍率で');
   // 全般設定：モードごとの欄。保存で grow_w に入れる

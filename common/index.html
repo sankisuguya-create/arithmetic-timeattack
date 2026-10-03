@@ -518,8 +518,9 @@ var MODES = {}, MODES_ALL = [], LOCKED = {};
    区別するために要る。両方を『よみこみ中…』と出すと、
    通信が止まったように見えて教師・児童とも打つ手が分からなくなる。 */
 var BOOTED = false;
-/* この画面が前提にする Core.gs の版。貼り替えを片方だけ忘れたときに検知する */
-var WANT_VER = 5;
+/* この画面が前提にする Core.gs の版。貼り替えを片方だけ忘れたときに検知する
+   （数字はサーバーが Core.gs の ENGINE_VER から埋めるので、版を上げるのは Core.gs だけ） */
+var WANT_VER = <?!= ENGINE_VER ?>;
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -546,6 +547,11 @@ var SLOTCOLOR = {};
 /* 演算子トークン → 表示記号。四則は全単元共通なのでここに置く */
 var OPS = {'+':'+', '-':'−', '×':'×', '÷':'÷', '=':'='};
 
+/* キュー項目（サーバーが packQueue_ で組み立てる1問の配列）の位置づけ。
+   写し元は common/Core.gs の QI_ — contract.test.cjs が一致を検査する。
+   添字はここから引く（x[QI.F] のように）。配列の並び自体は変えない */
+var QI = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8 };
+
 var CFG = {limitSec:60, missLimit:3, guest:false, open:{}};
 var BEST = {}, MEDAL = {}, STARS = {}, PBEST = {};
 
@@ -562,6 +568,16 @@ var TYPES={}, TYPES_BY_MODE={};
 
 var $ = function(id){ return document.getElementById(id); };
 var eqEl=$('eq'), barEl=$('bar'), countEl=$('count');
+
+/* サーバーから届く文字（モード名・型名・閉じている理由・URL 等）を innerHTML に流す時は esc に通す。
+   教師画面・ハブと同じ実装（どこか1箇所で直しても、ほかの画面の esc は置き換えないこと）。
+   例外：図（q.fig と rulerSVG/dialSVG の SVG）、unitSpan・slotSpan_・ghostHtml_ のように自分で要素を
+   組み立てる断片は生のHTMLを必要とするので素のまま。数値（回数・ベスト・星の数）はそのまま連結する。 */
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
 
 /* ============================================================
  *  未送信データの退避
@@ -640,56 +656,15 @@ function floorAdd(mode, n){
   try{ var c = bootCacheLoad(); if(c && c.floor){ c.floor.min = FLOOR.min; bootCacheSave(c); } }catch(e){}
 }
 
-/* ---- 色：学年の色（--acc）と第二の色の「系統」。菱形の向き（5方向）ごとに明暗を少しずらし、宝石の切子面のように見せる ---- */
-function floorFam_(hex){
-  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'').trim());
-  var c = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [53,208,165];
-  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
-    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
-  });
-}
-
 /* ---- 協力モード：自分の色の印 ----
    boot() / startSession() が運んでくる coop で描く。
    色の割り当ては教師画面（teacher.html）と同じ決まった手順：
    シードから色の候補を最遠点選択で選び、シードでシャッフルする。
-   サーバーから届くのは自分の index だけ（他の児童の色は届かない）。 */
+   サーバーから届くのは自分の index だけ（他の児童の色は届かない）。
+   協力プレイの共有の部品（色・起点・割当・枚数の見込み・描画の定数）は common/coop_shared.html に
+   1つだけ置き、両画面に同じものを挿入する： */
 var COOP = { active: false };
-function coopRng_(seed){ var s = seed >>> 0; return function(){ s = (s * 1103515245 + 12345) >>> 0; return (s >>> 8) / 16777216; }; }
-/* 色の候補：OKLab（見た目の差がほぼ距離に比例する色空間）で、色相10°ごと×明るさ4段×鮮やかさ2段のうち
- * 画面で出せるものを並べ、すでに選んだ色から最も遠い候補を順に取る（最遠点選択）。
- * 金色の角度で色相だけを回す旧手順は、明るさ・鮮やかさが揃いやすく似た色が多かった。
- * 明るさの差は色覚の型を問わず残るので、L に重み1.6をかけて明るさの違いを優先させる（重みは実測で調整、根拠は計算のみ）。
- * 29色すべてを見分けられる配色は存在しない。見分けは「自分の色を目立たせる」（色以外の手がかり）で行う */
-function coopOkToRgb_(L, C, h){
-  var a = C * Math.cos(h * Math.PI / 180), b = C * Math.sin(h * Math.PI / 180);
-  var l = Math.pow(L + 0.3963377774 * a + 0.2158037573 * b, 3), m = Math.pow(L - 0.1055613458 * a - 0.0638541728 * b, 3),
-      s = Math.pow(L - 0.0894841775 * a - 1.2914855480 * b, 3);
-  var lin = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-             -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
-  for(var i = 0; i < 3; i++){ if(lin[i] < -1e-4 || lin[i] > 1.0001) return null; }
-  return lin.map(function(c){ c = Math.min(1, Math.max(0, c)); return Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055)); });
-}
-function coopPalette_(n, seed){
-  var rand = coopRng_(seed * 7919), h0 = rand() * 360, cand = [], i, j, h, L, C;
-  var LS = [0.50, 0.61, 0.72, 0.83], CS = [0.10, 0.16];
-  for(h = 0; h < 360; h += 10) for(i = 0; i < LS.length; i++) for(j = 0; j < CS.length; j++){
-    L = LS[i]; C = CS[j];
-    var rgb = coopOkToRgb_(L, C, h0 + h);
-    if(rgb) cand.push({ L: L * 1.6, a: C * Math.cos((h0 + h) * Math.PI / 180), b: C * Math.sin((h0 + h) * Math.PI / 180), rgb: rgb.join(',') });
-  }
-  var cols = [], md = cand.map(function(){ return 1e9; }), k = Math.floor(rand() * cand.length);
-  for(i = 0; i < n; i++){
-    if(i > 0){ k = 0; for(j = 1; j < cand.length; j++) if(md[j] > md[k]) k = j; }
-    var c = cand[k]; cols.push(c.rgb);
-    for(j = 0; j < cand.length; j++){
-      var d = (cand[j].L - c.L) * (cand[j].L - c.L) + (cand[j].a - c.a) * (cand[j].a - c.a) + (cand[j].b - c.b) * (cand[j].b - c.b);
-      if(d < md[j]) md[j] = d;
-    }
-  }
-  for(i = n - 1; i > 0; i--){ j = Math.floor(rand() * (i + 1)); var t = cols[i]; cols[i] = cols[j]; cols[j] = t; }
-  return cols;
-}
+<?!= include('coop_shared') ?>
 /* 自分の色：児童ごとなら自分の index、グループなら自分の組の色（教師画面と同じ式） */
 function coopMyColor_(){
   return COOP.mode === 'group'
@@ -740,17 +715,10 @@ function coopPeekApply_(r){
 
 /* ===== 終わった協力プレイの見返し =====
  * 教師画面（teacher.html）の協力の図形と同じ規則で、最後の形を1枚だけ描く（動きや再生はしない）。
- * 下の数値と coopRvAutoRate は teacher.html の CVW / CSMIN / CZOOM_STEP / CCOVER / CAIM / CPART / CGAP と coopAutoRateOf の写し。
- * 直す時は両方を同じに直す（tests/coop.test.cjs が照合する）。
+ * 数値（CRV）と枚数の見込み（coopAutoRate_）は共有層（coop_shared.html）のものを使う。
  * できる操作は「自分（自分の組）の色を目立たせる」だけ。色はモニターと同じ（回ごとのシードで決まり、新しく始めるたびに変わる）。
  * 名前・番号・組の一覧は届かない。 */
-var CRV = { CVW: 3.6, CSMIN: 0.32, CZOOM_STEP: 0.72, CCOVER: 0.9, CAIM: 0.85, CPART: 0.9, CGAP: 25 };
 var RV = { d: null, hi: false, tiles: null, W: 0, H: 0 };
-function coopRvAutoRate(p){
-  var plays = p.minutes * 60 / (p.lim + CRV.CGAP);
-  var expect = Math.max(1, p.n) * CRV.CPART * plays * p.pace * p.lim / 60 * (p.wm || 1);
-  return Math.max(0.5, Math.round((CRV.CAIM * p.tfin - (p.used || 0)) / expect * 10) / 10);
-}
 function coopRvOpen(){
   $('coopRv').hidden = false; RV.hi = false; RV.d = null; $('coopRvMine').classList.remove('on');
   $('coopRvMsg').textContent = 'よみこみ中…'; $('coopRvTot').textContent = '';
@@ -766,78 +734,13 @@ function coopRvOpen(){
     coopRvMineLabel();
     $('coopRvMine').style.visibility = '';
     /* 「じぶん」は教師の設定（mine）で出さないこともできる。古い Core は mine を返さないので、そのときは出す */
-    $('coopRvTot').innerHTML = (d.mine === false ? '' : '<small>じぶん</small>' + coopRvMyTotal(d) + ' もん<i class="sep"></i>') + '<small>みんなで</small>' + d.total + ' もん';
+    $('coopRvTot').innerHTML = (d.mine === false ? '' : '<small>じぶん</small>' + coopRvMyTotal(d) + ' もん<i class="sep"></i>') + '<small>みんなで</small>' + esc(d.total) + ' もん';
     coopRvDraw();
   }).withFailureHandler(function(){ $('coopRvMsg').textContent = 'よみこめませんでした'; }).coopReview();
 }
 /* 自分の正答数：届いた正答の列から自分の index の分を足すだけ（サーバーへの問い合わせは増やさない）。続きからの回は前の回の分も含む */
 function coopRvMyTotal(d){
   var n = 0; (d.ev || []).forEach(function(e){ if(e[1] === d.me) n += Number(e[2]) || 0; }); return n;
-}
-/* ---- 起点（teacher.html と index.html に同じものを置く。tests/coop.test.cjs が照合する） ----
- * 起点ごとに担当が決まり、児童 i（グループなら組 g）の正答は起点 (i mod 起点の数) から近い順に、空いているタイルへ貼る。
- * 位置は最初の画面（縮尺1）の左上を (0, 0)、右下を (1, 1) とした割合 [u, v] で持つ（画面の大きさが違っても同じ所に来る）。
- * 既定の位置（coopOriginsN）：起点1つなら育ち始める点（vx, vy）だけで今までと同じ形、2つ以上なら最初の画面の中に格子状。
- * 教師が見本の上で動かした位置（pos）があればそれを使う。どの起点を誰が担当するかはシードで混ぜる（番号の若い児童がいつも同じ所、にならないように） */
-function coopOriginsN(k, ox, oy, w, h){
-  if(k <= 1) return [[ox / w, oy / h]];
-  var cols = Math.max(1, Math.min(k, Math.round(Math.sqrt(k * 0.8 * w / (0.76 * h))))), rows = Math.ceil(k / cols), pts = [], r, c;
-  for(r = 0; r < rows; r++){
-    var inRow = Math.min(cols, k - r * cols);
-    for(c = 0; c < inRow; c++) pts.push([0.1 + 0.8 * (c + 0.5 + (cols - inRow) / 2) / cols, 0.12 + 0.76 * (r + 0.5) / rows]);
-  }
-  return pts;
-}
-function coopOrigins(k, vx, vy, ox, oy, w, h, seed, pos){
-  var custom = pos && pos.length === k, i, j, t;
-  if(k <= 1 && !custom){ var a = [vx, vy]; a.anchor = true; return [a]; }   // 育ち始める点そのもの（並びを作り直さない）
-  var pts = (custom ? pos : coopOriginsN(k, ox, oy, w, h)).map(function(q){ return [vx - ox + q[0] * w, vy - oy + q[1] * h]; });
-  var sd = (seed * 131 + 7) >>> 0;
-  for(i = pts.length - 1; i > 0; i--){ sd = (sd * 1103515245 + 12345) >>> 0; j = (sd >>> 8) % (i + 1); t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
-  return pts;
-}
-/* 起点ごとのタイルの並び。tiles はすでに育ち始める点から近い順なので、起点が育ち始める点1つならそのまま使う。
- * 起点が複数なら、まず自分の領域（いちばん近い起点が自分のタイル）を近い順に、埋まったら外のタイルを近い順に使う。
- * 近い順だけにすると、正答の多い隣の島が先に起点のまわりを埋め、正答の少ない子の島が他の島の縁に細く押し出された */
-function coopOrders(tiles, pts){
-  var n = tiles.length, i, k;
-  if(pts.length === 1 && pts[0].anchor){ var id = new Int32Array(n); for(i = 0; i < n; i++) id[i] = i; return [id]; }
-  var own = new Int32Array(n);
-  for(i = 0; i < n; i++){
-    var best = 0, bd = Infinity;
-    for(k = 0; k < pts.length; k++){ var dd = Math.hypot(tiles[i].cx - pts[k][0], tiles[i].cy - pts[k][1]); if(dd < bd){ bd = dd; best = k; } }
-    own[i] = best;
-  }
-  // 領域の外か・距離（1/8 px）・番号を1つの数にまとめ、型付き配列の速い並べ替えを使う（OUT と M は 2 の累乗なので % M で番号に戻る）
-  var M = 2097152, OUT = 1099511627776, key = new Float64Array(n);
-  return pts.map(function(p, pk){
-    for(i = 0; i < n; i++) key[i] = (own[i] === pk ? 0 : OUT) + Math.floor(Math.hypot(tiles[i].cx - p[0], tiles[i].cy - p[1]) * 8) * M + i;
-    key.sort();
-    var o = new Int32Array(n); for(i = 0; i < n; i++) o[i] = key[i] % M;
-    return o;
-  });
-}
-function coopAlloc(ord){ return { ord: ord, ptr: new Int32Array(ord.length), used: new Uint8Array(ord.length ? ord[0].length : 0) }; }
-/* 起点 o の担当の正答を1枚貼る先：その起点から近い順で、まだ空いている最初のタイル。空きが無ければ -1 */
-function coopTake(A, o){
-  var k = o % A.ord.length, ord = A.ord[k], p = A.ptr[k];
-  while(p < ord.length && A.used[ord[p]]) p++;
-  A.ptr[k] = p;
-  if(p >= ord.length) return -1;
-  A.used[ord[p]] = 1; return ord[p];
-}
-/* 完成に要る枚数：起点を順に1枚ずつ貼り、最小の縮尺の画面に入るタイルの9割が塗れるまでの枚数（担当の偏りは見込まない）。
- * 起点1つなら「近い順に並べて、画面に入るタイルの9割目まで」と同じ */
-function coopFinOf(tiles, ord, inFin, cover){
-  var tot = 0, i;
-  for(i = 0; i < tiles.length; i++) if(inFin(tiles[i])) tot++;
-  var need = Math.ceil(tot * cover), have = 0, placed = 0, A = coopAlloc(ord), o = 0;
-  while(have < need){
-    var j = coopTake(A, o); o = (o + 1) % ord.length;
-    if(j < 0) break;
-    placed++; if(inFin(tiles[j])) have++;
-  }
-  return need ? placed : 0;
 }
 function coopRvClose(){ $('coopRv').hidden = true; RV.d = null; RV.tiles = null; }
 function coopRvDraw(){
@@ -863,10 +766,10 @@ function coopRvDraw(){
   var vmin = view(CRV.CSMIN);
   var tfin = coopFinOf(tiles, ord, function(t){ return inV(t, vmin); }, CRV.CCOVER), used = 0, segr = [];
   (d.segs || []).forEach(function(g){
-    var r = coopRvAutoRate({ tfin: tfin, n: g.n, minutes: g.minutes, lim: g.lim, pace: g.pace, used: used, wm: d.wm || 1 });
+    var r = coopAutoRate_({ tfin: tfin, n: g.n, minutes: g.minutes, lim: g.lim, pace: g.pace, used: used, wm: d.wm || 1 });
     segr.push({ end: g.end, rate: r }); used += (Number(g.total) || 0) * r;
   });
-  var rate = coopRvAutoRate({ tfin: tfin, n: (d.n || 1) - (d.skip || 0), minutes: d.minutes || 10, lim: d.lim || 60, pace: d.pace || 20, used: used, wm: d.wm || 1 });
+  var rate = coopAutoRate_({ tfin: tfin, n: (d.n || 1) - (d.skip || 0), minutes: d.minutes || 10, lim: d.lim || 60, pace: d.pace || 20, used: used, wm: d.wm || 1 });
   function rateAt(t){ if(d.pri && t < d.pri){ for(var k = 0; k < segr.length; k++) if(t <= segr[k].end) return segr[k].rate; } return rate; }
   // 正答を順に、担当の起点（児童ごとなら index、グループなら組）から近い空きへ貼り、画面の9割が塗れたら1段ずつ引く（教師画面と同じ）
   var S = 1, vt = 0, pv = 0, vr = view(S), A = coopAlloc(ord);
@@ -890,23 +793,21 @@ function coopRvDraw(){
   var fams = pal.map(coopFam_);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
   ctx.setTransform(DPR * S, 0, 0, DPR * S, DPR * (OX - VX * S), DPR * (OY - VY * S)); ctx.lineJoin = 'round';
-  // 輪郭は closePath() で閉じない（多数を1本の Path2D にまとめると時間が二乗で伸びる。teacher.html の coopPoly と同じ）
-  function poly(P, t){ var p = t.p, j; P.moveTo(p[0][0], p[0][1]); for(j = 1; j < p.length; j++) P.lineTo(p[j][0], p[j][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
-    if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(j = 1; j < h.length; j++) P.lineTo(h[j][0], h[j][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); } }
+  // 菱形のパスは床の floorPoly_（FLOOR_UI 区画）と同じものを使う（closePath で閉じない）
   var base = new Path2D(), bk = {};
   for(i = 0; i < tiles.length; i++){
     var t = tiles[i]; if(!inV(t, vr)) continue;
-    if(t.k < 0){ poly(base, t); continue; }
+    if(t.k < 0){ floorPoly_(base, t); continue; }
     var key = group ? (t.g || 0) : t.k;
     var mine = group ? (t.g === d.g) : (t.k === d.me);
     var a = (!RV.hi || mine) ? 1 : 0.10;
     var col = (fams[key] || fams[0])[t.dir] + '|' + a;
-    (bk[col] = bk[col] || new Path2D()); poly(bk[col], t);
+    (bk[col] = bk[col] || new Path2D()); floorPoly_(bk[col], t);
   }
-  ctx.strokeStyle = 'rgba(16,23,40,0.12)'; ctx.lineWidth = .8 / S; ctx.stroke(base);
+  ctx.strokeStyle = 'rgba(' + CGHOST + ',0.12)'; ctx.lineWidth = .8 / S; ctx.stroke(base);
   for(var k2 in bk){ var p2 = k2.split('|');
     ctx.fillStyle = 'rgba(' + p2[0] + ',' + p2[1] + ')'; ctx.fill(bk[k2]);
-    ctx.strokeStyle = 'rgba(16,23,40,' + (0.16 * Number(p2[1])) + ')'; ctx.lineWidth = .8 / S; ctx.stroke(bk[k2]);
+    ctx.strokeStyle = 'rgba(' + CGHOST + ',' + (0.16 * Number(p2[1])) + ')'; ctx.lineWidth = .8 / S; ctx.stroke(bk[k2]);
   }
 }
 // 左上の灰色の札（「前回の協力プレイ」）が見返しの入口。協力中の札は押しても何も起きない
@@ -986,17 +887,13 @@ function coopEmblem_(col, pat){
     ctx.beginPath(); ctx.arc(d / 2, d / 2, d / 2 - 3, 0, 6.2832); ctx.stroke();
   }catch(e){ /* 印が描けなくても遊びは止めない */ }
 }
-/* 協力の色は "r,g,b" 文字列。floorFam_（16進）と同じ5段の明暗にする */
-function coopFam_(rgb){
-  var c = rgb.split(',').map(Number);
-  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
-    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
-  });
-}
+
 
 /* ---- 図形の生成器 ----
-   design リポジトリ growing-figures/generators.js の写し（b94681c）。図形を直すときは向こうを正本として直し、
+   design リポジトリ growing-figures/generators.js の写し。図形を直すときは向こうを正本として直し、
    check.cjs を通してからここへ写す。ここでは window.GrowingFigures に入る。
+   写し元: sankisuguya-create/design growing-figures/generators.js @ b94681c
+   （写し直すときはこのピンと tests/fixtures/generators.<コミット>.js の原本を一緒に進める。手順は docs/ARCHITECTURE.md）
    FLOOR_GEN_BEGIN と FLOOR_GEN_END の印（引用符で囲んだ何もしない文）の間は、教師画面の床のプレビューがサーバー側で切り出して使う（Core.gs の floorGenSource_）。
    写し直すときも印は残す。印と同じ字面（引用符とセミコロンまで）をコメントに書かない（生のファイルを読むとコメントの中で切れる）。 */
 'FLOOR_GEN_BEGIN';   // 印はコメントにしない（GAS の include がコメントを消すため）
@@ -1912,6 +1809,33 @@ function coopFam_(rgb){
   else root.GrowingFigures = api;
 })(window);   // 写し元は (this)。この画面は strict なので window を渡す
 'FLOOR_GEN_END';
+'FLOOR_UI_BEGIN';   // 生成器とは別の区画：床の見え方の共有部品。教師画面のプレビューにも同じものが埋め込まれる
+
+/* ---- 色：学年の色（--acc）と第二の色の「系統」。菱形の向き（5方向）ごとに明暗を少しずらし、宝石の切子面のように見せる ---- */
+function floorFam_(hex){
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'').trim());
+  var c = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [53,208,165];
+  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
+    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
+  });
+}
+
+/* ---- 3つの層の進み。u 枚ぶん育った時、輪郭→色1（thick）→色2（thin）の順に何枚目まで描くか。
+   u の出し方は使う側ごと（児童は標準の分数 × 育ちの速さ、教師プレビューは正答数 × 1正答あたりの育ち） ---- */
+function floorProg_(u, N, K, T){
+  return { line: Math.min(u, N), thick: Math.max(0, Math.min(u - N, K)), thin: Math.max(0, Math.min(u - N - K, T)) };
+}
+
+/* ---- 描画の定数と菱形のパス。濃さは40段階に丸め、同じ色・同じ濃さの菱形を1本のパスに集めて1回で塗る ---- */
+var FLOOR_Q = 40, FLOOR_LINE = '16,23,40', FLOOR_A = { line: 0.18, thick: 0.30, thin: 0.26 };
+// 輪郭は closePath() で閉じない：多くの図形を1本の Path2D にまとめると、closePath() の回数に対して時間が二乗で伸びる
+// （Chromium で4万枚 7.5秒、始点へ lineTo で戻すと 13ms）。始点の次の点まで重ねて引き、線の角も閉じた時と同じにする
+function floorPoly_(P, t){
+  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
+  // 穴（逆回り）があれば同じパスに足す。塗りは非ゼロ規則なので穴が抜ける（丸い渦格子の中心の輪など）
+  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); }
+}
+'FLOOR_UI_END';
 
 /* ---- 床を作る：単元が宣言した図形（UNIT.floorPattern。既定はペンローズ）の生成器を呼び、
    育ち始める点からの距離順に並べ、色を割り当てる ---- */
@@ -1972,19 +1896,13 @@ function floorMask_(){
   return true;
 }
 
-/** 標準の分数から、3つの層それぞれの進み（何枚目まで描くか）を出す */
-function floorProg_(min){
-  var F = FLOOR, u = Math.floor(min * floorRate_()), N = F.tiles.length, K = F.thick.length;
-  return { line: Math.min(u, N), thick: Math.max(0, Math.min(u - N, K)), thin: Math.max(0, Math.min(u - N - K, F.thin.length)) };
+/** 標準の分数から、3つの層それぞれの進み（何枚目まで描くか）を出す。層の数え方は FLOOR_UI 区画の floorProg_ が正本 */
+function floorProgMin_(min){
+  var F = FLOOR;
+  return floorProg_(Math.floor(min * floorRate_()), F.tiles.length, F.thick.length, F.thin.length);
 }
 
 /* ---- 描画。濃さを40段階に丸め、同じ色・同じ濃さの菱形を1本のパスに集めて1回で塗る ---- */
-var FLOOR_Q = 40, FLOOR_LINE = '16,23,40', FLOOR_A = { line: 0.18, thick: 0.30, thin: 0.26 };
-function floorPoly_(P, t){
-  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
-  // 穴（逆回り）があれば同じパスに足す。塗りは非ゼロ規則なので穴が抜ける（丸い渦格子の中心の輪など）
-  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); }
-}
 function floorQ_(a){ return Math.max(1, Math.round(a * FLOOR_Q)); }
 function floorBucket_(){
   var m = {};
@@ -2078,8 +1996,8 @@ function floorRender_(animate){
   $('floorBase').hidden = !on; $('floorGrow').hidden = !on;
   if(!on || scr !== 'start'){ $('floorReplay').hidden = true; return; }
   if(!F.tiles.length && !floorGen_()) return;
-  $('floorReplay').hidden = !(floorProg_(F.min).line > 0);   // まだ何も育っていなければ見返すものが無い
-  var moved = floorMask_(), g = floorProg_(F.replay >= 0 ? F.min * F.replay / 6 : F.min);
+  $('floorReplay').hidden = !(floorProgMin_(F.min).line > 0);   // まだ何も育っていなければ見返すものが無い
+  var moved = floorMask_(), g = floorProgMin_(F.replay >= 0 ? F.min * F.replay / 6 : F.min);
   if(!F.shown){ floorDraw_(g); F.grew = false; return; }   // 初めて描く時は演出しない
   var grow = (animate || F.grew) && !floorSame_(F.shown, g);
   F.grew = false;
@@ -2107,16 +2025,16 @@ function floorReplay(){
   var F = FLOOR;
   if(!floorOn_() || scr !== 'start' || !F.tiles.length) return;
   floorSettle_();
-  if(F.replay < 0 || F.replay >= 6){ F.replay = 0; floorDraw_(floorProg_(0)); return; }
+  if(F.replay < 0 || F.replay >= 6){ F.replay = 0; floorDraw_(floorProgMin_(0)); return; }
   F.replay++;
-  floorGrow_(F.shown, floorProg_(F.min * F.replay / 6));
+  floorGrow_(F.shown, floorProgMin_(F.min * F.replay / 6));
 }
 /* メニューを離れる時は見返しをやめ、今の育ちを黙って描いておく（戻った時に、見返しの途中から育つ演出にならないように） */
 function floorReplayEnd_(){
   var F = FLOOR;
   if(F.replay < 0) return;
   F.replay = -1; floorSettle_();
-  if(F.tiles.length) floorDraw_(floorProg_(F.min));
+  if(F.tiles.length) floorDraw_(floorProgMin_(F.min));
 }
 function floorOnShow(id){
   if(id !== 'start'){ floorReplayEnd_(); floorSettle_(); return; }   // メニューを離れたら演出は打ち切って焼き付ける
@@ -2174,7 +2092,7 @@ function emptyBox(){
 /* 上段＝番号とモード名だけ。副題は出さない（児童が選ぶのに要らず、名前の幅を奪う） */
 function cardTop(m, idx){
   return '<div class="top"><div class="k">'+(idx+1)+'</div>'+
-         '<div class="t">'+MODES[m].name+'</div></div>';
+         '<div class="t">'+esc(MODES[m].name)+'</div></div>';
 }
 
 function renderMenu(){
@@ -2187,7 +2105,7 @@ function renderMenu(){
   $('modeGrid').innerHTML = vis.map(function(m, idx){
     if(isLocked(m)){
       return '<div class="card locked" data-mode="'+m+'">'+ cardTop(m, idx) +
-        '<div class="bot"><div class="lock">'+LOCKED[m]+'</div></div></div>';
+        '<div class="bot"><div class="lock">'+esc(LOCKED[m])+'</div></div></div>';
     }
     var hs = BEST[m];
     return '<div class="card" data-mode="'+m+'">'+ cardTop(m, idx) +
@@ -2221,7 +2139,7 @@ function openPractice(){
   $('poptGrid').innerHTML = vis.map(function(m, idx){
     return '<div class="card'+(isLocked(m)?' locked':'')+'" data-pmode="'+m+'">'+
       cardTop(m, idx) +
-      (isLocked(m) ? '<div class="bot"><div class="lock">'+LOCKED[m]+'</div></div>' : '')+
+      (isLocked(m) ? '<div class="bot"><div class="lock">'+esc(LOCKED[m])+'</div></div>' : '')+
       '</div>';
   }).join('');
   show('popt');
@@ -2244,8 +2162,8 @@ function openTypeSelect(){
   var cards = ['<div class="card" data-ptype=""><div class="k">1</div>' +
                '<div><div class="t">ぜんぶ</div><div class="s">いろいろ まざる</div></div></div>'];
   list.forEach(function(t, i){
-    cards.push('<div class="card" data-ptype="'+t+'"><div class="k">'+(i+2)+'</div>' +
-               '<div><div class="t">'+(TYPES[t] || t)+'</div></div></div>');
+    cards.push('<div class="card" data-ptype="'+esc(t)+'"><div class="k">'+(i+2)+'</div>' +
+               '<div><div class="t">'+esc(TYPES[t] || t)+'</div></div></div>');
   });
   $('ptypeGrid').innerHTML = cards.join('');
   show('ptype');
@@ -2561,7 +2479,7 @@ function capField_(q, i){
 
 function unitSpan(u){
   var c = UNITS[u];
-  return '<span class="u"'+(c ? ' style="color:'+c+'"' : '')+'>'+u+'</span>';
+  return '<span class="u"'+(c ? ' style="color:'+c+'"' : '')+'>'+esc(u)+'</span>';
 }
 
 function draw(){
@@ -2582,7 +2500,7 @@ function draw(){
      * 共通画面が単元を知ることになるため。問いには「＝」を付けない（式ではない）。
      */
     var ask = q.q.map(function(tok){
-      return UNITS.hasOwnProperty(tok) ? unitSpan(tok) : '<span>'+tok+'</span>';
+      return UNITS.hasOwnProperty(tok) ? unitSpan(tok) : '<span>'+esc(tok)+'</span>';
     }).join('');
     eqEl.className = 'eq';
     eqEl.innerHTML =
@@ -2625,7 +2543,7 @@ function draw(){
         if(tok === SLOT) return slotSpan_(q, si++);
         if(UNITS.hasOwnProperty(tok)) return unitSpan(tok);
         if(OPS.hasOwnProperty(tok)) return '<span class="op">'+OPS[tok]+'</span>';
-        return '<span>'+tok+'</span>';
+        return '<span>'+esc(tok)+'</span>';
       }).join('');
       return '<span class="line'+(rowVeiled_(q, ri) ? ' veiled' : '')+'" data-row="'+ri+'">'+
              inner+'</span>';
@@ -2635,7 +2553,7 @@ function draw(){
     q.q.forEach(function(tok){
       if(UNITS.hasOwnProperty(tok)) lhs += unitSpan(tok);
       else if(OPS.hasOwnProperty(tok)) lhs += '<span class="op">'+OPS[tok]+'</span>';
-      else lhs += '<span>'+tok+'</span>';
+      else lhs += '<span>'+esc(tok)+'</span>';
     });
     // 式が長いときは「＝」以下を2段目に落とす。
     var oneHtml = '<span class="line">'+lhs+'<span class="op">=</span>'+rhs+'</span>';
@@ -3010,6 +2928,7 @@ function pFetch(){
       pFail = 0;
       var a = {};
       r.f.forEach(function(u, i){ a[u] = r.ans[i]; });
+      // キュー項目の形は packQueue_（Core.gs の QI_）と同じ。こちらはキーで届く
       pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
               rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null};
     }else{ pFail++; }
@@ -3061,9 +2980,9 @@ function beginPractice(timed){
       CFG.limitSec = r.limitSec; CFG.missLimit = r.missLimit;
       queue = r.qs.map(function(x){
         var a = {};
-        x[1].forEach(function(u, i){ a[u] = x[2][i]; });
-        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null,
-                rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
+        x[QI.F].forEach(function(u, i){ a[u] = x[QI.ANS][i]; });
+        return {q:x[QI.Q], f:x[QI.F], ans:a, ruler:x[QI.RULER]||null, t:x[QI.T]||null, dial:x[QI.DIAL]||null,
+                rows:x[QI.ROWS]||null, veil:(x[QI.VEIL] == null ? null : x[QI.VEIL]), fig:x[QI.FIG]||null};
       });
       qi = 0; clearTyped(); ready = true;
       if(r.coop) COOP = r.coop;                    // 開いたまま協力モードが始まっても、次の本番で印が出る
@@ -3147,9 +3066,9 @@ function begin(m){
       CFG.limitSec = r.limitSec; CFG.missLimit = r.missLimit;
       queue = r.qs.map(function(x){
         var a = {};
-        x[1].forEach(function(u, i){ a[u] = x[2][i]; });
-        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null,
-                rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
+        x[QI.F].forEach(function(u, i){ a[u] = x[QI.ANS][i]; });
+        return {q:x[QI.Q], f:x[QI.F], ans:a, ruler:x[QI.RULER]||null, t:x[QI.T]||null, dial:x[QI.DIAL]||null,
+                rows:x[QI.ROWS]||null, veil:(x[QI.VEIL] == null ? null : x[QI.VEIL]), fig:x[QI.FIG]||null};
       });
       ready = true; clearTyped();
       if(r.coop){ COOP = r.coop; coopBadge_(); }
@@ -3423,7 +3342,7 @@ function applyBoot(r, live){
     // 教師のアカウントで児童画面を開いた時だけ、教師画面への導線を出す。
     // 判定はサーバー（isTeacher_）。児童には teacherUrl 自体が渡らない
     if(r.teacher && r.teacherUrl){
-      tl.innerHTML = '<a href="' + r.teacherUrl + '">せんせい用の ページ →</a>';
+      tl.innerHTML = '<a href="' + esc(r.teacherUrl) + '">せんせい用の ページ →</a>';
       tl.style.display = '';
     }else{
       tl.style.display = 'none';

@@ -375,8 +375,9 @@ assert.ok(/liveRun \? coopLiveRemain\(\)/.test(tui));
 assert.ok(tui.includes('id="coopNames"') && tui.includes('#coopStage.nonames #coopRoster{display:none}'));
 // 自動の枚数：九九（1分20問）・29人・10分・1回60秒・完成34,669枚（1920×1080 のペンローズ）で約8枚
 {
-  const src = tui.match(/var CAIM = [^\n]*\n/)[0] + tui.match(/function coopAutoRateOf\(p\)\{[\s\S]*?\n\}/)[0];
-  const f = vm.runInNewContext(src + ';coopAutoRateOf');
+  const sh = read('common/coop_shared.html');
+  const src = sh.match(/var CRV = [^\n]*\n/)[0] + sh.match(/function coopAutoRate_\(p\)\{[\s\S]*?\n\}/)[0];
+  const f = vm.runInNewContext(src + ';coopAutoRate_');
   assert.equal(f({ tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20 }), 8);
   assert.equal(f({ tfin: 21465, n: 29, minutes: 10, lim: 60, pace: 20 }), 5);
   assert.equal(f({ tfin: 34669, n: 29, minutes: 5, lim: 60, pace: 20 }), 16);   // 時間が半分なら倍
@@ -528,8 +529,9 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes('id="coopCont"') && tui.indexOf('id="coopCont"') > tui.indexOf('<div id="coopStage"'));
   assert.ok(/function coopRateAt\(t\)/.test(tui) && tui.includes('coopRateAt(e[0])'));
   // 続きの回の枚数は残りの余白で決める（使った枚数が多いほど少ない。下限0.5）
-  const src = tui.match(/var CAIM = [^\n]*\n/)[0] + tui.match(/function coopAutoRateOf\(p\)\{[\s\S]*?\n\}/)[0];
-  const f = vm.runInNewContext(src + ';coopAutoRateOf');
+  const shRate = read('common/coop_shared.html');
+  const src = shRate.match(/var CRV = [^\n]*\n/)[0] + shRate.match(/function coopAutoRate_\(p\)\{[\s\S]*?\n\}/)[0];
+  const f = vm.runInNewContext(src + ';coopAutoRate_');
   const base = { tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20 };
   assert.equal(f(base), 8);
   assert.ok(f(Object.assign({ used: 15000 }, base)) < f(base));
@@ -601,17 +603,18 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(vs.ok, JSON.stringify(vs)); assert.equal(vs.mode, 'group');
   store.coop_live = keepLive;
   ctx.Session = teacherSession;
-  // 画面：数値と枚数の式は教師画面の写し。できる操作は「とじる」と「自分の色を目立たせる」だけ
+  // 画面：数値と枚数の式は共有層（coop_shared.html）を両画面が挿入する。できる操作は「とじる」と「自分の色を目立たせる」だけ
   const ui2 = read('common/index.html');
+  const sh2 = read('common/coop_shared.html');
+  assert.ok(tui.includes("<?!= include('coop_shared') ?>") && ui2.includes("<?!= include('coop_shared') ?>"), '両画面に include がある');
   const num = (src, k) => Number((src.match(new RegExp('\\b' + k + '\\s*[=:]\\s*([0-9.]+)')) || [])[1]);
-  ['CVW', 'CSMIN', 'CZOOM_STEP', 'CCOVER', 'CAIM', 'CPART', 'CGAP'].forEach(k => {
-    assert.ok(num(tui, k) > 0 && num(tui, k) === num(ui2.slice(ui2.indexOf('var CRV')), k), k + ' が教師画面と同じ');
-  });
-  const fT = vm.runInNewContext(tui.match(/var CAIM = [^\n]*\n/)[0] + tui.match(/function coopAutoRateOf\(p\)\{[\s\S]*?\n\}/)[0] + ';coopAutoRateOf');
-  const fC = vm.runInNewContext(ui2.match(/var CRV = [^\n]*\n/)[0] + ui2.match(/function coopRvAutoRate\(p\)\{[\s\S]*?\n\}/)[0] + ';coopRvAutoRate');
-  [{ tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20 }, { tfin: 21465, n: 25, minutes: 7, lim: 45, pace: 14, used: 9000 }, { tfin: 10, n: 3, minutes: 1, lim: 60, pace: 20 },
-   { tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20, wm: 1.5 }]
-    .forEach(p => assert.equal(fC(p), fT(p)));
+  assert.deepEqual(['CVW', 'CSMIN', 'CZOOM_STEP', 'CCOVER', 'CAIM', 'CPART', 'CGAP'].map(k => num(sh2, k)),
+    [3.6, 0.32, 0.72, 0.9, 0.85, 0.9, 25], '共有層の定数');
+  assert.ok(sh2.includes("var CGHOST = '16,23,40'"), '輪郭・にじみの色は床の FLOOR_LINE と同じ値');
+  const fAuto = vm.runInNewContext(sh2.match(/var CRV = [^\n]*\n/)[0] + sh2.match(/function coopAutoRate_\(p\)\{[\s\S]*?\n\}/)[0] + ';coopAutoRate_');
+  assert.equal(fAuto({ tfin: 21465, n: 25, minutes: 7, lim: 45, pace: 14, used: 9000 }), 6.5);
+  assert.equal(fAuto({ tfin: 10, n: 3, minutes: 1, lim: 60, pace: 20 }), 0.5);
+  assert.equal(fAuto({ tfin: 34669, n: 29, minutes: 10, lim: 60, pace: 20, wm: 1.5 }), 5.3);
   const rv = ui2.slice(ui2.indexOf('<div id="coopRv" hidden>'), ui2.indexOf('</div>\n<!-- 協力モード中だけ出る'));
   assert.equal((rv.match(/<button/g) || []).length, 2, 'ボタンは2つだけ');
   assert.ok(!/coopRvCv'\)\.addEventListener|coopRvCv\.on/.test(ui2), '図形を押して他の人の色を選ぶ手段は無い');
@@ -630,10 +633,11 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
 /* ---- 色：児童画面と教師画面で同じ手順・同じ色。似た色を減らす（CIEDE2000 の最小色差で確かめる） ---- */
 {
   const tui = read('common/teacher.html'), ui = read('common/index.html');
-  const fT = vm.runInNewContext(tui.match(/function coopRng\(seed\)[^\n]*\n/)[0] +
-    tui.slice(tui.indexOf('function coopOkToRgb('), tui.indexOf('function coopFam(rgb)')) + ';coopPalette');
-  const fC = vm.runInNewContext(ui.match(/function coopRng_\(seed\)[^\n]*\n/)[0] +
-    ui.slice(ui.indexOf('function coopOkToRgb_('), ui.indexOf('/* 自分の色：児童ごとなら')) + ';coopPalette_');
+  const sh = read('common/coop_shared.html');
+  const fT = vm.runInNewContext(sh.match(/function coopRng_\(seed\)[^\n]*\n/)[0] +
+    sh.slice(sh.indexOf('function coopOkToRgb_('), sh.indexOf('function coopAutoRate_(')) + ';coopPalette_');
+  assert.ok(!/function coopRng\(|function coopPalette\(|function coopFam\(/.test(tui), '教師画面に写しは残さない');
+  assert.ok(!/function coopPalette_\(|function coopFam_\(/.test(ui), '児童画面に写しは残さない');
   const lab = rgb => {
     const c = rgb.split(',').map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
     const X = (0.4124 * c[0] + 0.3576 * c[1] + 0.1805 * c[2]) / 0.95047, Y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2],
@@ -659,7 +663,7 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const minDe = cols => { const L = cols.map(lab); let m = 1e9;
     for(let i = 0; i < L.length; i++) for(let j = i + 1; j < L.length; j++) m = Math.min(m, de00(L[i], L[j])); return m; };
   for(let seed = 1; seed <= 30; seed++){
-    [29, 6, 1].forEach(n => assert.equal(JSON.stringify(fC(n, seed)), JSON.stringify(fT(n, seed)), '同じシードなら同じ色 n=' + n));
+    [29, 6, 1].forEach(n => assert.equal(fT(n, seed).length, n, '同じシードなら同じ色 n=' + n));
     const p29 = fT(29, seed);
     assert.equal(p29.length, 29); assert.equal(new Set(p29).size, 29);
     p29.forEach(c => assert.ok(/^\d{1,3},\d{1,3},\d{1,3}$/.test(c) && c.split(',').every(v => +v <= 255), c));
@@ -716,18 +720,19 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(/function coopUseSession\(s, evAll\)\{\n  coopPrevOff_\(\);/.test(tui), '本物の回を映すと見本をやめる');
   ['coopCls', 'coopGn', 'coopMode', 'coopOrg'].forEach(id => assert.ok(tui.includes("'" + id + "'"), id));
   // 見本の正答は全員が毎回同じ数（どの起点も均等に育つ）。量は自動の枚数の見込みと同じ前提（1回の正答 × 参加 CPART）
-  assert.ok(tui.includes('c = Math.max(1, Math.round(pace * lim / 60 * CPART))'));
-  assert.ok(tui.includes("for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CGAP) + lim + CGAP * i / n) * 1000), i, c, GROW_MODES.length ? GROW_MODES[(i + k) % GROW_MODES.length] : 1]);"));
+  assert.ok(tui.includes('c = Math.max(1, Math.round(pace * lim / 60 * CRV.CPART))'));
+  assert.ok(tui.includes("for(i = 0; i < n; i++) ev.push([Math.round((k * (lim + CRV.CGAP) + lim + CRV.CGAP * i / n) * 1000), i, c, GROW_MODES.length ? GROW_MODES[(i + k) % GROW_MODES.length] : 1]);"));
   // 再生のつまみ：箱の中はステージの下端、全画面は左上の並び。見本でも使える
   assert.ok(tui.includes('#coopStage > #coopReplay{position:absolute;left:1.4vmin;right:1.4vmin;bottom:1.4vmin;'));
   assert.ok(tui.includes("var to = st.classList.contains('full') ? $('coopTL') : st;"));
   assert.ok(tui.includes("$('coopReplay').classList.add('on');      // 見本も"));
   assert.ok(tui.includes('<span id="coopPrevTag">見本</span>'));
-  // 輪郭は closePath() で閉じない（多数を1本の Path2D にまとめると二乗で遅くなる）
-  const poly = src => src.slice(src.indexOf('function coopPoly(P, t)'), src.indexOf('\n}', src.indexOf('function coopPoly(P, t)')));
-  assert.ok(!poly(tui).includes('closePath'));
-  const rvp = ui0 => ui0.slice(ui0.indexOf('  function poly(P, t){'), ui0.indexOf('} }', ui0.indexOf('  function poly(P, t){')));
-  assert.ok(!rvp(read('common/index.html')).includes('closePath'));
+  // 輪郭は closePath() で閉じない（多数を1本の Path2D にまとめると二乗で遅くなる）。菱形のパスは床の floorPoly_ 1本
+  const uiPoly = read('common/index.html');
+  const poly = uiPoly.slice(uiPoly.indexOf('function floorPoly_(P, t)'), uiPoly.indexOf('\n}', uiPoly.indexOf('function floorPoly_(P, t)')));
+  assert.ok(!poly.includes('closePath'));
+  assert.ok(!/function coopPoly\(/.test(tui) && /floorPoly_\(/.test(tui), '教師画面は floorPoly_ を使う');
+  assert.ok(!uiPoly.includes('function poly(P, t){') && uiPoly.includes('floorPoly_(bk[col], t)'), '児童画面も floorPoly_ を使う');
   assert.ok(tui.includes('.coopBox .clsPick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));'));
   assert.ok(tui.includes("if(one) name = name.replace(/^\\d+年/, '');"));
   // 常に出ている見出しは1段（題名・タブ・写し・注意・行き先）。タブは見出しの段の中
@@ -751,11 +756,13 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.equal(sheets.coop.values[sheets.coop.values.length - 1][14], 4, 'coop シートの15列目に置く');
   assert.equal(ctx.coopState(0).org, 4);
   const tui = read('common/teacher.html'), ui = read('common/index.html');
-  // 起点の手続きは teacher.html と index.html で一字一句同じ
-  const cut = src => src.slice(src.indexOf('/* ---- 起点（teacher.html と index.html に同じものを置く'), src.indexOf('function coopFinOf(')) +
+  // 起点の手続きは共有層（coop_shared.html）に1つだけ。両画面は同じものを挿入する（include は上で確かめた）
+  const shared = read('common/coop_shared.html');
+  const cut = src => src.slice(src.indexOf('/* ---- 起点（'), src.indexOf('function coopFinOf(')) +
     src.slice(src.indexOf('function coopFinOf('), src.indexOf('\n}\n', src.indexOf('function coopFinOf(')) + 3);
-  assert.ok(cut(tui).length > 1500); assert.equal(cut(ui), cut(tui));
-  const F = vm.runInNewContext(cut(tui) + ';({ coopOrigins, coopOrders, coopAlloc, coopTake, coopFinOf })');
+  assert.ok(cut(shared).length > 1500);
+  assert.ok(!tui.includes('function coopOrigins(') && !ui.includes('function coopOrigins('), '画面側に写しは残さない');
+  const F = vm.runInNewContext(cut(shared) + ';({ coopOrigins, coopOrders, coopAlloc, coopTake, coopFinOf })');
   // 合成のタイル：格子。育ち始める点（vx, vy）から近い順に並べてある（教師画面と同じ前提）
   const W = 800, H = 450, OX = W * 0.14, OY = H * 0.78, VX = 1.1 * OX / 0.32, VY = 1.1 * OY / 0.32;
   const tiles = [];
@@ -1018,6 +1025,48 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes("st.classList.toggle('prevEmpty', !P.ev.length)") && tui.includes("classList.remove('preview', 'prevEmpty')"));
   assert.ok(tui.includes('#coopStage.preview #coopPrevOn{display:inline-block}'), '回を映している間は出さない');
   assert.ok(tui.includes('#coopStage.prevEmpty #coopPrevTag,#coopStage.prevEmpty #coopReplay'), 'かくした時は「見本」の札と再生のつまみも出さない');
+}
+
+/* ---- 記録の体裁：type_stats の要素順は書き込み側の契約 ----
+ * "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2:Σln(初打鍵まで):Σln(初打鍵まで)^2"
+ * 読み側（typeStat_⇔anTypeStat_）は analysis.test.cjs が等価検査済み。ここでは
+ * submitSession が書き出す実際のセルの要素順を固定する（順を入れ替えると読み側すべてが同じ誤解で読み続ける） */
+{
+  sheets.log = new Sheet('log', ctx.LOG_HEAD_);
+  sheets.summary = sheets.summary || new Sheet('summary',
+    ['email', 'mode', 'name', 'limit_sec', 'kind', 'tries', 'total_correct', 'total_attempts', 'best', 'best_count']);
+  sheets.daily = new Sheet('daily', []);
+  ctx.Session = { getActiveUser: () => ({ getEmail: () => 'k01@kyoiku.edu.nishi.or.jp' }),
+                  getScriptTimeZone: () => 'Asia/Tokyo' };
+  const mode = ctx.modeIds_()[0];
+  const q = ctx.genQueue_(7, mode, ctx.QN);
+  const seen = {}, pair = [];
+  q.forEach((qq, i) => { if (seen[qq.t] !== undefined) pair.push(seen[qq.t], i); else seen[qq.t] = i; });
+  const sameT = pair.slice(0, 2);
+  assert.equal(q[sameT[0]].t, q[sameT[1]].t, '同じ型の2問が要る');
+  // 同じ型の2問を1回ずつ正解（初打鍵あり）：stat[t] の全要素が動く
+  const items = sameT.map((i, k) => ({ i: i, a: [q[i].f.map(u => q[i].ans[u])], ms: 1500 + k * 1000, tk: 800 + k * 200 }));
+  store.sess_TT = JSON.stringify({ seed: 7, mode: mode, mail: 'k01@kyoiku.edu.nishi.or.jp', t: Date.now(), lim: 60, p: false });
+  const sub = ctx.submitSession('TT', items);
+  assert.ok(sub.ok, JSON.stringify(sub));
+  const cell = sheets.log.values[sheets.log.values.length - 1][ctx.LOG_COL_.TSTAT];
+  const parts = String(cell).split(':');
+  // 位置の意味を固定する
+  assert.equal(parts[0], q[sameT[0]].t, '先頭は型');
+  assert.equal(parts[1], '2', '試行数');
+  assert.equal(parts[2], '4000', 'Σ送信まで（1500+2500）');
+  assert.equal(parts[3], '2', '初打鍵あり数');
+  assert.equal(parts[4], String(800 + 1000), 'Σ初打鍵まで');
+  assert.equal(parts[5], String(800 * 800 + 1000 * 1000), 'Σ(初打鍵まで)^2');
+  const ln = Math.round((Math.log(800) + Math.log(1000)) * 1000) / 1000;
+  const ln2 = Math.round((Math.log(800) * Math.log(800) + Math.log(1000) * Math.log(1000)) * 1000) / 1000;
+  assert.equal(parts[6], String(ln), 'Σln（小数3位に丸める）');
+  assert.equal(parts[7], String(ln2), 'Σln^2（小数3位に丸める）');
+  // 書いたセルが読み側の正本（typeStat_）で同じ意味に戻ること
+  const x = ctx.typeStat_(cell);
+  assert.equal(x.ntk, 2); assert.equal(x.tk, 1800); assert.equal(x.tk2, 800 * 800 + 1000 * 1000);
+  assert.ok(Math.abs(x.ln - ln) < 0.001 && Math.abs(x.ln2 - ln2) < 0.001);
+  ctx.Session = teacherSession;
 }
 
 console.log('coop.test.cjs: all assertions passed.');

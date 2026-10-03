@@ -118,8 +118,9 @@ var COLORS = {};
 /* 上から順に試す。収まった時点で確定する */
 var STEPS = [2.35, 2.0, 1.7, 1.45, 1.25, 1.1];
 
+/* 教師画面・ハブ設定・分析画面と同じ実装（どこか1箇所で直しても、ほかの画面の esc は置き換えないこと） */
 function esc(s){
-  return String(s).replace(/[&<>"]/g, function(c){
+  return String(s==null?'':s).replace(/[&<>"]/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
   });
 }

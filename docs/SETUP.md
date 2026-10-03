@@ -42,7 +42,7 @@ HTML は `ファイル > + > HTML` で追加。**拡張子は入力しない**�
 単元ごとに 1〜4 を繰り返す。
 
 1. 新しいスプレッドシートを作成
-2. `拡張機能 > Apps Script` に4ファイルを貼る
+2. `拡張機能 > Apps Script` に5ファイルを貼る
 
 | Apps Script 上の名前 | 中身 |
 |---|---|
@@ -50,6 +50,7 @@ HTML は `ファイル > + > HTML` で追加。**拡張子は入力しない**�
 | `Unit`（.gs） | `apps/grade<学年>/<単元>/Unit.gs` |
 | `index`（HTML） | `common/index.html` |
 | `teacher`（HTML） | `common/teacher.html` |
+| `coop_shared`（HTML） | `common/coop_shared.html`（協力プレイの共有部品。index・teacher に挿入される） |
 
 3. `setup` を1回実行して承認する
 4. `roster` シートの A1 に次を入れ、ハブの名簿を参照させる

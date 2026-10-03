@@ -10,6 +10,8 @@ const { read, loadUnit } = require('./lib/kit.cjs');
 const core = loadUnit('kuku');
 const ar = vm.createContext({});
 vm.runInContext(read('apps/hub/Archive.gs'), ar);
+const an = vm.createContext({});
+vm.runInContext(read('apps/hub/Analysis.gs'), an);
 
 // 年度：4月始まり。テストではタイムゾーンに依らないよう UTC で見る
 const fyOf = ts => { const d = new Date(ts); return d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; };
@@ -18,7 +20,16 @@ const T = (y, m, d) => new Date(Date.UTC(y, m - 1, d, 3));
 /* ---------- pastStats_ ---------- */
 {
   const types = Object.keys(core.UNIT.types), A = types[0];
-  const head = ['ts', 'email', '学年', '組', '番号', '氏名', 'mode', 'モード名', 'limit_sec', 'correct', 'attempts', 'miss_items', 'slow_items', 'type_stats', 'wrong_items'];
+  // log のヘッダ・列位置・シート名の正本は Core.gs の LOG_DEF_ / SHEETS。ハブ側は写しを持つ
+  assert.deepEqual(JSON.parse(JSON.stringify(core.LOG_HEAD_)), ['ts', 'email', '学年', '組', '番号', '氏名', 'mode', 'モード名', 'limit_sec', 'correct', 'attempts', 'miss_items', 'slow_items', 'type_stats', 'wrong_items'], 'log のヘッダ宣言');
+  assert.equal(core.LOG_HEAD_.length, core.LOG_WIDTH_, 'LOG_HEAD_ と LOG_WIDTH_ のずれ');
+  assert.equal(core.SHEETS.MISTAKES, 'mistakes');
+  assert.deepEqual(JSON.parse(JSON.stringify(ar.AR_LOG_COL_)), JSON.parse(JSON.stringify(core.LOG_COL_)), 'Archive.gs の列位置が Core.gs と違う');
+  assert.deepEqual(JSON.parse(JSON.stringify(ar.AR_SHEETS_)), {
+    LOG: core.SHEETS.LOG, SUMMARY: core.SHEETS.SUMMARY, MISTAKES: core.SHEETS.MISTAKES,
+    COOP: core.SHEETS.COOP, COOPLOG: core.SHEETS.COOPLOG, COOPSAVE: core.SHEETS.COOPSAVE
+  }, 'Archive.gs のシート名が Core.gs と違う');
+  const head = core.LOG_HEAD_;
   const ln = Math.log(2000);
   const rows = [head,
     // 2024年度：A を 8 問1回目で正答・2 問誤答。7x8 が2回、遅いのが1回
@@ -126,6 +137,36 @@ const T = (y, m, d) => new Date(Date.UTC(y, m - 1, d, 3));
   // 画面は確認の語を自分で組み立てない（正本は arConfirmWord_）
   const h = read('apps/hub/teacher.html');
   assert.ok(!h.includes("fy + '年度を消去'") && h.includes('var want = y.confirm;'));
+}
+
+/* ---------- 年度の境目：3実装（Core.gs の fyOfTime_／Archive.gs の arFyOf_／Analysis.gs の anFyStart_）が同じ ---------- */
+{
+  // GAS の Session.getScriptTimeZone + Utilities.formatDate のモック。テストは UTC で見る
+  const GAS = {
+    Session: { getScriptTimeZone: () => 'UTC' },
+    Utilities: {
+      formatDate: (d, tz, p) => ({
+        'yyyy': String(d.getUTCFullYear()),
+        'M': String(d.getUTCMonth() + 1),
+        'yyyy-MM-dd': d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0')
+      })[p]
+    }
+  };
+  [core, ar, an].forEach(c => { c.Session = GAS.Session; c.Utilities = GAS.Utilities; });
+  // 境目の日（3/31・4/1、前年跨ぎの両側）と途中の日
+  for (const [y, m, d] of [[2025, 3, 31], [2025, 4, 1], [2024, 3, 31], [2024, 4, 1],
+                          [2025, 7, 15], [2025, 1, 10], [2024, 12, 31], [2026, 1, 1]]) {
+    const ts = new Date(Date.UTC(y, m - 1, d)).getTime(), fy = fyOf(ts);
+    assert.equal(core.fyOfTime_(ts), fy, `fyOfTime_ ${y}/${m}/${d}`);
+    assert.equal(ar.arFyOf_(ts), fy, `arFyOf_ ${y}/${m}/${d}`);   // Core と同じガード・同じ結果の写し
+    const ymd = GAS.Utilities.formatDate(new Date(ts), 'UTC', 'yyyy-MM-dd');
+    assert.equal(an.anFyStart_(ymd), fy + '-04-01', `anFyStart_ ${ymd}`);   // ymd 版の境目も一致
+  }
+  // 読めない時刻はどちらの正本も 0（行の ts が空・壊れていても年度 0 に落ちる）
+  [0, null, ''].forEach(ts => {
+    assert.equal(core.fyOfTime_(ts), 0, 'fyOfTime_ ガード');
+    assert.equal(ar.arFyOf_(ts), 0, 'arFyOf_ ガード');
+  });
 }
 
 /* ---------- 画面と Core の取り決め ---------- */

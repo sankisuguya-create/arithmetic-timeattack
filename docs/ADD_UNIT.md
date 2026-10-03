@@ -348,7 +348,7 @@ span は目盛りの窓と答えの値域の両方を決めているため、表
 ## 8. 設置する
 
 1. 新しいスプレッドシートを作る
-2. `拡張機能 > Apps Script` に4ファイルを貼る
+2. `拡張機能 > Apps Script` に5ファイルを貼る
 
 | Apps Script 上の名前 | 中身 |
 |---|---|
@@ -356,6 +356,7 @@ span は目盛りの窓と答えの値域の両方を決めているため、表
 | `Unit`（.gs） | 作った `Unit.gs` |
 | `index`（HTML） | `common/index.html` |
 | `teacher`（HTML） | `common/teacher.html` |
+| `coop_shared`（HTML） | `common/coop_shared.html` |
 
 3. `setup` を1回実行して承認する（末尾に Unit.gs の検査結果が出る。問題があれば直す）
 4. デプロイ（実行＝自分／アクセス＝ドメイン内）

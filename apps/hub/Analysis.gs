@@ -99,6 +99,11 @@ function analysisUrl_() {
  *  log の読み方（common/Core.gs の写し。tests/analysis.test.cjs が同じ結果になることを確かめる）
  * ============================================================ */
 
+/** log シートの列位置と幅 — common/Core.gs の LOG_COL_ / LOG_WIDTH_ の写し（analysis.test.cjs が一致を検査する） */
+var AN_LOG_COL_ = { TS:0, MAIL:1, GRADE:2, CLS:3, NO:4, NAME:5, MODE:6, MNAME:7, LIM:8,
+                  CORRECT:9, ATTEMPTS:10, MISS:11, SLOW:12, TSTAT:13, WRONG:14 };
+var AN_LOG_WIDTH_ = 15;
+
 /** Core.gs typeStat_ と同じ。"型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2[:Σln:Σln^2]" */
 function anTypeStat_(e) {
   var p = String(e).split(':');
@@ -132,7 +137,7 @@ function anSplitItems_(cell, typeSet) {
 function anRowFacts_(row, typeSet) {
   var by = {};
   function slot(t) { return by[t] || (by[t] = { ok: 0, miss: 0, ntk: 0, ln: 0, ln2: 0 }); }
-  String(row[13] || '').split(',').forEach(function (e) {
+  String(row[AN_LOG_COL_.TSTAT] || '').split(',').forEach(function (e) {
     if (!e) return;
     var p = e.split(':');
     if (p.length < 2 || !p[0]) return;
@@ -141,7 +146,7 @@ function anRowFacts_(row, typeSet) {
     var x = anTypeStat_(e);
     if (x) { s.ntk += x.ntk; s.ln += x.ln; s.ln2 += x.ln2; }
   });
-  anSplitItems_(row[11], typeSet).forEach(function (it) {
+  anSplitItems_(row[AN_LOG_COL_.MISS], typeSet).forEach(function (it) {
     var t = it.split(':')[0];
     if (t) slot(t).miss++;
   });
@@ -286,10 +291,10 @@ function anIngest_() {
       while (cur < last) {
         if (Date.now() - t0 > AN_TIME_BUDGET_MS) { pending = true; break; }
         var n = Math.min(AN_BATCH_ROWS, last - cur);
-        var v = log.getRange(cur + 1, 1, n, 15).getValues();
+        var v = log.getRange(cur + 1, 1, n, AN_LOG_WIDTH_).getValues();
         v.forEach(function (row) {
-          var mail = String(row[1] || '').trim().toLowerCase();
-          var ymd = anYmd_(row[0]);
+          var mail = String(row[AN_LOG_COL_.MAIL] || '').trim().toLowerCase();
+          var ymd = anYmd_(row[AN_LOG_COL_.TS]);
           if (!mail || !ymd) return;
           var week = anMondayOf_(ymd), by = anRowFacts_(row, typeSet);
           Object.keys(by).forEach(function (t) { anFactAdd_(facts, mail, meta.unit, t, week, by[t]); });
