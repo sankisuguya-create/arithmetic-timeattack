@@ -584,20 +584,41 @@ function esc(s){
  * ============================================================ */
 // 未送信の記録も単元ごとに分ける。以前の共通の置き場（km_pending）に残っているものは、読むだけ読んで送り直す
 var PEND_KEY = 'km_pending_' + APP_ID;
-function pendSave(p){ try{ localStorage.setItem(PEND_KEY, JSON.stringify(p)); }catch(e){} }
-function pendLoad(){ try{ return JSON.parse(localStorage.getItem(PEND_KEY) || localStorage.getItem('km_pending') || 'null'); }catch(e){ return null; } }
-function pendClear(){ try{ localStorage.removeItem(PEND_KEY); localStorage.removeItem('km_pending'); }catch(e){} }
+// 置き場は token ごとの配列。1件だけだと、混んでいて送れなかった回が次の回の退避で上書きされて消える
+function pendLoad(){
+  var a = null;
+  try{ a = JSON.parse(localStorage.getItem(PEND_KEY) || localStorage.getItem('km_pending') || 'null'); }catch(e){}
+  if(!a) return [];
+  return Array.isArray(a) ? a : [a];      // 以前の1件の形も読む
+}
+function pendWrite(a){
+  try{
+    if(a.length) localStorage.setItem(PEND_KEY, JSON.stringify(a));
+    else localStorage.removeItem(PEND_KEY);
+    localStorage.removeItem('km_pending');
+  }catch(e){}
+}
+function pendSave(p){
+  var a = pendLoad().filter(function(x){ return x && x.token !== p.token; });
+  a.push(p); pendWrite(a);
+}
+function pendClear(tk){ pendWrite(pendLoad().filter(function(x){ return x && x.token !== tk; })); }
 function pendFlush(){
-  var p = pendLoad();
-  if(!p || !SRV) return;
-  google.script.run.withSuccessHandler(function(r){
-    if(r.ok){
-      if(r.practice){ PBEST[r.mode]=r.best; }
-      else { BEST[r.mode]=r.best; MEDAL[r.mode]=r.medal; if(r.star) STARS[r.mode]=r.star; floorAdd(r.mode, r.score); }
-      renderMenu(); pendClear();
-    }
-    else if(r.code==='gone' || r.code==='bad'){ pendClear(); }
-  }).withFailureHandler(function(){}).submitSession(p.token, p.items);
+  if(!SRV) return;
+  pendLoad().forEach(function(p, k){
+    if(!p || !p.token) return;
+    // ロックの取り合いを避けるため、1件ずつ間を空ける
+    setTimeout(function(){
+      google.script.run.withSuccessHandler(function(r){
+        if(r.ok){
+          if(r.practice){ PBEST[r.mode]=r.best; }
+          else { BEST[r.mode]=r.best; MEDAL[r.mode]=r.medal; if(r.star) STARS[r.mode]=r.star; floorAdd(r.mode, r.score); }
+          renderMenu(); pendClear(p.token);
+        }
+        else if(r.code==='gone' || r.code==='bad'){ pendClear(p.token); }
+      }).withFailureHandler(function(){}).submitSession(p.token, p.items);
+    }, k * 3000);
+  });
 }
 
 /** 学年の色を画面に入れる。値は Core.gs（GRADE_ACCENT_ 等）が正本で、ここは受け取るだけ */
@@ -3036,13 +3057,14 @@ function finishPractice(){
   pendSave(sent);
   google.script.run.withSuccessHandler(function(r){
     if(r.ok){
-      pendClear();
+      pendClear(sent.token);
+      pendFlush();                   // 前に送れなかった回が残っていれば、通ったこの機に送る
       PBEST[r.mode] = r.best;
       renderMenu();
       if(scr === 'result') $('best').textContent = r.best;
       $('saving').textContent = r.updated ? 'じこベスト こうしん！' : '';
     }else{
-      if(r.code==='gone'||r.code==='bad') pendClear();
+      if(r.code==='gone'||r.code==='bad') pendClear(sent.token);
       $('saving').textContent = r.msg || '';
     }
   }).withFailureHandler(function(){
@@ -3149,7 +3171,8 @@ function finish(){
   pendSave(sent);
   google.script.run.withSuccessHandler(function(r){
     if(r.ok){
-      pendClear();
+      pendClear(sent.token);
+      pendFlush();                   // 前に送れなかった回が残っていれば、通ったこの機に送る
       BEST[r.mode]=r.best; MEDAL[r.mode]=r.medal;
       if(r.star) STARS[r.mode] = r.star;
       floorAdd(r.mode, r.score);     // 記録できた本番の正答だけ床が育つ
@@ -3162,7 +3185,7 @@ function finish(){
       }
       $('saving').textContent = r.updated ? 'じこベスト こうしん！ ★'+r.star : '';
     }else{
-      if(r.code==='gone'||r.code==='bad') pendClear();
+      if(r.code==='gone'||r.code==='bad') pendClear(sent.token);
       $('saving').textContent = r.msg || '';
     }
   }).withFailureHandler(function(){

@@ -37,6 +37,7 @@ Sheet.prototype.getRange = function (r, c, nr, nc) {
   };
 };
 Sheet.prototype.clear = function () { this.values = []; };
+Sheet.prototype.clearContents = function () { this.values = []; };
 Sheet.prototype.getSheetId = function () { return 123; };
 Sheet.prototype.setName = function (n) { delete sheets[this.name]; this.name = n; sheets[n] = this; return this; };
 Sheet.prototype.setFrozenRows = function () {};
@@ -64,6 +65,11 @@ const ctx = {
     getScriptTimeZone: () => 'Asia/Tokyo'
   },
   Utilities: {
+    Charset: { UTF_8: 'UTF-8' },
+    base64EncodeWebSafe: (x) => Buffer.from(typeof x === 'string' ? Buffer.from(x, 'utf8') : Buffer.from(x.map(b => b & 255))).toString('base64url'),
+    base64DecodeWebSafe: (s) => Array.from(Buffer.from(s, 'base64url')).map(b => (b > 127 ? b - 256 : b)),
+    newBlob: (bytes) => ({ getDataAsString: () => Buffer.from(bytes.map(b => b & 255)).toString('utf8') }),
+    computeHmacSha256Signature: (v, k) => Array.from(require('crypto').createHmac('sha256', k).update(v, 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
     getUuid: () => 'xxxxxxxx-xxxx-4000-8000-xxxxxxxxxxxx'.replace(/x/g, () => (Math.random() * 16 | 0).toString(16)),
     formatDate: (d, tz, f) => {
       const pad = (n, w) => String(n).padStart(w, '0');
@@ -1066,6 +1072,52 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const x = ctx.typeStat_(cell);
   assert.equal(x.ntk, 2); assert.equal(x.tk, 1800); assert.equal(x.tk2, 800 * 800 + 1000 * 1000);
   assert.ok(Math.abs(x.ln - ln) < 0.001 && Math.abs(x.ln2 - ln2) < 0.001);
+  ctx.Session = teacherSession;
+}
+
+/* ---- 署名つき token：キャッシュが消えても採点でき、二重には記録しない ---- */
+{
+  sheets.used = new Sheet('used', ['token', 'ts']);
+  const kid = 'k02@kyoiku.edu.nishi.or.jp';
+  ctx.Session = { getActiveUser: () => ({ getEmail: () => kid }), getScriptTimeZone: () => 'Asia/Tokyo' };
+  sheets.class_config = new Sheet('class_config', ctx.classHead_());
+  const mode = ctx.modeIds_()[0];
+  sheets.class_config.values.push(['3-1'].concat(ctx.modeIds_().map(() => true)).concat([true]));
+  ['config', 'classcfg'].forEach(k => delete store[k]);
+  const st = ctx.startSession(mode, false);
+  assert.ok(st.ok && /^s2\./.test(st.token), JSON.stringify(st).slice(0, 200));
+  const q = st.qs;
+  const ans = it => [it[ctx.QI_.ANS]];
+  const items = [0, 1].map(i => ({ i, a: ans(q[i]), ms: 1000, tk: 500 }));
+
+  // 改竄した token は通らない（旧形式として扱われ、キャッシュに無いので gone）
+  const parts = st.token.split('.');
+  const forged = parts[0] + '.' + parts[1].slice(0, -2) + 'AA.' + parts[2];
+  assert.equal(ctx.submitSession(forged, items).code, 'gone');
+
+  // キャッシュの印を消しても採点できる
+  Object.keys(store).filter(k => k.indexOf('sess_') === 0).forEach(k => delete store[k]);
+  const logN = sheets.log.values.length;
+  const r1 = ctx.submitSession(st.token, items);
+  assert.ok(r1.ok && r1.score === 2, JSON.stringify(r1));
+  assert.equal(sheets.log.values.length, logN + 1);
+  assert.equal(sheets.used.values.length, 2);
+  // 同じ token をもう一度送っても二重に記録しない
+  const r2 = ctx.submitSession(st.token, items);
+  assert.equal(r2.code, 'gone');
+  assert.equal(sheets.log.values.length, logN + 1);
+
+  // 他人の token は使えない
+  const st2 = ctx.startSession(mode, false);
+  ctx.Session = { getActiveUser: () => ({ getEmail: () => 'k03@kyoiku.edu.nishi.or.jp' }), getScriptTimeZone: () => 'Asia/Tokyo' };
+  assert.equal(ctx.submitSession(st2.token, items).code, 'bad');
+
+  // 受付期限より古い行は resetDaily で消える
+  sheets.used.values.push(['old', new Date(Date.now() - (ctx.TOKEN_DAYS_ + 2) * 86400000)]);
+  sheets.daily.values = [['date']];
+  ctx.resetDaily();
+  assert.deepEqual(sheets.used.values.map(r => r[0]), ['token', sheets.used.values[1][0]]);
+  assert.equal(sheets.used.values.length, 2);
   ctx.Session = teacherSession;
 }
 
