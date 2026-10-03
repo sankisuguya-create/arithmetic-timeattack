@@ -285,6 +285,13 @@ body.coopPast #coop:active{background:#E1E4E8}
   overflow:hidden}
 #play.dial-mode #pad{height:calc(clamp(3rem,8vw,4.2rem) * 2)}
 .eq .op{color:#5C6480;margin:0 .22em}
+/* 筆算（col）：どの段も同じ幅の升目に並べ、位を縦にそろえる。答えの段の上に線 */
+.eq.col{gap:0}
+.eq.col .line,.eq.col:not(.oneline) .line{display:grid;grid-template-columns:repeat(var(--nc),1.25ch);
+  gap:0;justify-items:center;flex-wrap:nowrap}
+.eq.col .op{margin:0}
+.eq.col .slot{min-width:0;width:1.05ch;margin-top:.12em}
+.eq.col .line.rule{border-bottom:.07em solid var(--chalk);padding-bottom:.06em}
 .eq .slot{color:var(--chalk);border-bottom:.08em solid #3A4260;min-width:2.2ch;
   display:inline-block;text-align:center;cursor:pointer}
 /* 目立たせる欄。色（--slotc）と下線の太さの2つで示す。
@@ -326,6 +333,9 @@ body.coopPast #coop:active{background:#E1E4E8}
   cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
 .key.del{background:#39415C;font-size:clamp(1rem,2.6vw,1.4rem)}
 .key.down{background:#05070E}
+/* こたえあわせのキー。モードが enterKey を宣言したときだけ出す（欄が全部埋まらなくても答えが成り立つ形のため） */
+.key.ent{background:#39415C;font-size:clamp(.8rem,2vw,1.05rem);line-height:1.15;text-align:center}
+#play:not(.has-enter) .key.ent{display:none}
 
 /* テンキー配置（右利き=tr / 左利き=tl） */
 #play.layout-tr .stage,#play.layout-tl .stage{position:absolute;top:28px;bottom:0;width:66.6%}
@@ -461,6 +471,7 @@ body.practice-result .stats,body.practice-result .rank{display:none}
     <div class="key" data-key="9">9</div>
     <div class="key" data-key="0">0</div>
     <div class="key del" data-key="Backspace">⌫</div>
+    <div class="key ent" data-key="Enter">こたえ<br>あわせ</div>
   </div>
   <div id="missline"></div>
   <div id="countdown"></div>
@@ -522,7 +533,7 @@ var BOOTED = false;
    あえて手書きにする：スクリプレットで ENGINE_VER を埋めると稼働中の Core.gs の
    値が入り、応答の版と必ず一致して検知できなくなる。版を上げるときは
    Core.gs の ENGINE_VER と index.html・teacher.html の WANT_VER の3か所を一緒に上げる */
-var WANT_VER = 5;
+var WANT_VER = 7;
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -552,7 +563,7 @@ var OPS = {'+':'+', '-':'−', '×':'×', '÷':'÷', '=':'='};
 /* キュー項目（サーバーが packQueue_ で組み立てる1問の配列）の位置づけ。
    写し元は common/Core.gs の QI_ — contract.test.cjs が一致を検査する。
    添字はここから引く（x[QI.F] のように）。配列の並び自体は変えない */
-var QI = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8 };
+var QI = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8, COL:9 };
 
 var CFG = {limitSec:60, missLimit:3, guest:false, open:{}};
 var BEST = {}, MEDAL = {}, STARS = {}, PBEST = {};
@@ -915,7 +926,7 @@ function coopEmblem_(col, pat){
 /* ---- 図形の生成器 ----
    design リポジトリ growing-figures/generators.js の写し。図形を直すときは向こうを正本として直し、
    check.cjs を通してからここへ写す。ここでは window.GrowingFigures に入る。
-   写し元: sankisuguya-create/design growing-figures/generators.js @ b94681c
+   写し元: sankisuguya-create/design growing-figures/generators.js @ 6ca10d7
    （写し直すときはこのピンと tests/fixtures/generators.<コミット>.js の原本を一緒に進める。手順は docs/ARCHITECTURE.md）
    FLOOR_GEN_BEGIN と FLOOR_GEN_END の印（引用符で囲んだ何もしない文）の間は、教師画面の床のプレビューがサーバー側で切り出して使う（Core.gs の floorGenSource_）。
    写し直すときも印は残す。印と同じ字面（引用符とセミコロンまで）をコメントに書かない（生のファイルを読むとコメントの中で切れる）。 */
@@ -1414,6 +1425,77 @@ function coopEmblem_(col, pat){
     return out;
   }
 
+  /* ---------- くり上がりの六角（たし算）：パスカルの偶奇と同じ六角のマスと並び（中心から輪に数え、輪 n の各辺の k 番目）。
+     どのマスも k ＋（n − k）＝ n の筆算で、色2＝どこかの位で くり上がるマス。
+     一の位のくり上がりが10段ごとの階段を、十の位のくり上がりがその10倍の階段を作り、10ずつの入れ子が浮かぶ。
+     明暗の段（dir）は くり上がる位の数 ---------- */
+  function carry(g) {
+    var R = g.edge * 0.5, far = farthest(g) + R * 3, N = Math.ceil(far / (R * 1.5)) + 1, out = [];
+    var D = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+    function hex(q, r) {
+      var cx = g.ox + R * SQ3 * (q + r / 2), cy = g.oy + R * 1.5 * r, p = [];
+      for (var i = 0; i < 6; i++) { var a = Math.PI / 6 + i * Math.PI / 3; p.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]); }
+      return p;
+    }
+    function nc(a, b) { var c = 0; for (; a > 0 || b > 0; a = Math.floor(a / 10), b = Math.floor(b / 10)) if (a % 10 + b % 10 >= 10) c++; return c; }
+    out.push({ p: hex(0, 0), cls: 1, dir: 0 });
+    for (var n = 1; n <= N; n++) {
+      var q = D[4][0] * n, r = D[4][1] * n;
+      for (var s = 0; s < 6; s++) for (var k = 0; k < n; k++) {
+        var p = hex(q, r);
+        if (onScreen(g, p, 0)) { var c = nc(k, n - k); out.push({ p: p, cls: c ? 0 : 1, dir: Math.min(4, c * 2) }); }
+        q += D[s][0]; r += D[s][1];
+      }
+    }
+    return out;
+  }
+
+  /* 円周率の数字（Rabinowitz–Wagon の栓抜き）。くり下がりの三角の縁に流し込む */
+  var PI_DIGITS = null;
+  function piDigits(n) {
+    if (PI_DIGITS && PI_DIGITS.length >= n) return PI_DIGITS;
+    var len = Math.floor(n * 10 / 3) + 2, a = [], out = [], nines = 0, pre = -1, i, j;
+    for (i = 0; i < len; i++) a[i] = 2;
+    for (j = 0; j < n + 1; j++) {
+      var q = 0;
+      for (i = len - 1; i >= 0; i--) { var x = 10 * a[i] + q * (i + 1); a[i] = x % (2 * i + 1); q = Math.floor(x / (2 * i + 1)); }
+      a[0] = q % 10; q = Math.floor(q / 10);
+      if (q === 9) nines++;
+      else if (q === 10) { out.push(pre + 1); for (; nines > 0; nines--) out.push(0); pre = 0; }
+      else { if (pre >= 0) out.push(pre); pre = q; for (; nines > 0; nines--) out.push(9); }
+    }
+    PI_DIGITS = out;
+    return out;
+  }
+
+  /* ---------- くり下がりの三角（ひき算）：三角形のマスを6つの扇に並べる。扇の n 段目は 2n−1 枚の三角（外向き・内向きが交互）。
+     段の j 番目のマスは m − j の筆算で、色2＝どこかの位で くり下がるマス。ひかれる数 m は段ごとに2ずつ増える。
+     一の位のくり下がりが三角の帯を、十の位のくり下がりがその外の大きな三角を作る。
+     扇ごとに m の始まりをずらす（SHIFT）。そろえると6つの扇が同じ位相になり、大きな三角が市松に並んで周期的に見える。
+     明暗の段（dir）は くり下がる位の数 ---------- */
+  function borrow(g) {
+    var a = g.edge * 1.05, far = farthest(g) + a * 2, N = Math.ceil(far / (a * SQ3 / 2)) + 1, out = [];
+    var SHIFT = [0, 3, 7, 1, 5, 9];
+    function P(i, j, s) {                           // 扇 s の格子点 i·u + j·v（u, v は60°ずつ回した単位）
+      var t = s * Math.PI / 3, u = [Math.cos(t), Math.sin(t)], v = [Math.cos(t + Math.PI / 3), Math.sin(t + Math.PI / 3)];
+      return [g.ox + a * (i * u[0] + j * v[0]), g.oy + a * (i * u[1] + j * v[1])];
+    }
+    function nb(x, y) { var c = 0; for (; y > 0; x = Math.floor(x / 10), y = Math.floor(y / 10)) if (x % 10 < y % 10) c++; return c; }
+    function tile(p, m, j) { var c = nb(m, j); out.push({ p: p, cls: c ? 0 : 1, dir: Math.min(4, c * 2) }); }
+    for (var s = 0; s < 6; s++) for (var n = 1; n <= N; n++) {
+      var m = 2 * n - 2 + SHIFT[s];
+      for (var e = 0; e < n; e++) {
+        var i = n - 1 - e, p = [P(i, e, s), P(i + 1, e, s), P(i, e + 1, s)];     // 外向き（j＝2e）
+        if (onScreen(g, p, 0)) tile(p, m, 2 * e);
+        if (e < n - 1) {                                                           // 内向き（j＝2e+1）
+          var q = [P(i, e, s), P(i, e + 1, s), P(i - 1, e + 1, s)];
+          if (onScreen(g, q, 0)) tile(q, m, 2 * e + 1);
+        }
+      }
+    }
+    return out;
+  }
+
   /* ---------- 椅子のタイル：L字（2×2 の箱から1隅を欠いた形）を、半分の大きさのL字4つに分ける置き換え。
      o＝欠けた隅の向き（0..3、90°ずつ）。色は向きの組（0と2／1と3）で分ける ---------- */
   function chair(g) {
@@ -1824,7 +1906,9 @@ function coopEmblem_(col, pat){
     decimal:   { name: '十進の渦（1周で10倍）',                 make: decimal },
     scaleswirl: { name: '鱗のピル・渦（輪ごとに逆向き・渦の腕で染め分け）', make: makeScales('alt', 'arm') },
     scalefib:   { name: '鱗のピル・フィボナッチ（同じ向き・フィボナッチ語で染め分け）', make: makeScales('same', 'fib') },
-    circlesphere: { name: '円と球（起点2つ：鱗のピルの渦とフィボナッチ球）', make: circleSphere }
+    circlesphere: { name: '円と球（起点2つ：鱗のピルの渦とフィボナッチ球）', make: circleSphere },
+    carry:     { name: 'くり上がりの六角（たし算）',             make: carry },
+    borrow:    { name: 'くり下がりの三角（ひき算）',             make: borrow }
   };
 
   var api = { GENERATORS: GENERATORS, multigrid: multigrid };
@@ -2408,6 +2492,23 @@ function glyph_(unit, sv){
   return out;
 }
 
+/* rows の欄の印。'_' は f の順に消費し、'_0' '_1' … は f の何番目かを名指す。
+   名指すのは、打つ順（f の順）と画面の並びを分けたいとき。筆算は一の位から打つが、画面では右端に来る */
+function isSlotTok_(tok){ return /^_\d$/.test(tok); }
+function slotIdx_(tok){ return +tok.slice(1); }
+
+/* 筆算（col）の欄を画面の並び（左から）で返す */
+function colOrder_(q){
+  var out = [];
+  q.rows.forEach(function(row){ row.forEach(function(tok){ if(isSlotTok_(tok)) out.push(slotIdx_(tok)); }); });
+  return out;
+}
+/* 筆算の答えを、画面の並びの1つの数として読む（上の位の0は書かない）。値は f のキーで引く */
+function colNum_(q, vals){
+  var s = colOrder_(q).map(function(i){ return String(vals[q.f[i]] || 0); }).join('').replace(/^0+(?=\d)/, '');
+  return s;
+}
+
 /* 答えの欄ひとつ。既定の並べ方でも rows でも、欄はここだけで作る */
 function slotSpan_(q, i){
   var unit = q.f[i];
@@ -2426,6 +2527,7 @@ function slotSpan_(q, i){
  * 足すと「9かける63」と読めない字が流れる。draw() の分岐と同じ規準。
  */
 function ghostHtml_(q){
+  if(q.col) return '<span>'+colNum_(q, q.ans)+'</span>';
   return q.f.map(function(u){
     var v = glyph_(u, String(q.ans[u]));
     return '<span>'+v+'</span>' + (q.rows ? '' : unitSpan(u));
@@ -2560,16 +2662,26 @@ function draw(){
      * rows はその制約を外すためだけのもので、中身の意味は単元が持つ。
      */
     var si = 0;
-    eqEl.className = 'eq';
+    // 筆算（col）は位をそろえて縦に並べる。答えの段の1つ上の段の下に線を引く
+    var ncol = 0, ruleRow = -1;
+    if(q.col){
+      q.rows.forEach(function(row, ri){
+        ncol = Math.max(ncol, row.length);
+        if(ruleRow < 0 && row.some(isSlotTok_)) ruleRow = ri - 1;
+      });
+    }
+    eqEl.className = 'eq' + (q.col ? ' col' : '');
     eqEl.innerHTML = q.rows.map(function(row, ri){
       var inner = row.map(function(tok){
         if(tok === SLOT) return slotSpan_(q, si++);
+        if(isSlotTok_(tok)) return slotSpan_(q, slotIdx_(tok));
+        if(q.col && tok === '') return '<span></span>';
         if(UNITS.hasOwnProperty(tok)) return unitSpan(tok);
         if(OPS.hasOwnProperty(tok)) return '<span class="op">'+OPS[tok]+'</span>';
         return '<span>'+esc(tok)+'</span>';
       }).join('');
-      return '<span class="line'+(rowVeiled_(q, ri) ? ' veiled' : '')+'" data-row="'+ri+'">'+
-             inner+'</span>';
+      return '<span class="line'+(rowVeiled_(q, ri) ? ' veiled' : '')+(ri === ruleRow ? ' rule' : '')+
+             '" data-row="'+ri+'"'+(q.col ? ' style="--nc:'+ncol+'"' : '')+'>'+inner+'</span>';
     }).join('');
   }else{
     var lhs = '';
@@ -2726,11 +2838,14 @@ function submit(){
     var reveal = miss >= 2 || miss >= CFG.missLimit;
     if(reveal){
       q.f.forEach(function(u){ typed[u] = String(q.ans[u]); });
+      // 筆算は上の位の0を書かない（85 を 085 と見せない）
+      if(q.col){ var ord = colOrder_(q);
+        for(var k=0; k<ord.length-1 && q.ans[q.f[ord[k]]] === 0; k++) typed[q.f[ord[k]]] = ''; }
       fi = q.f.length - 1;
       paintSlots();
       eqEl.classList.add('reveal');
-      $('footnote').textContent = 'こたえは ' +
-        q.f.map(function(u){ return glyph_(u, String(q.ans[u])) + u; }).join(' ');
+      $('footnote').textContent = 'こたえは ' + (q.col ? colNum_(q, q.ans) :
+        q.f.map(function(u){ return glyph_(u, String(q.ans[u])) + u; }).join(' '));
     }
     setTimeout(function(){
       locked = false;
@@ -2818,9 +2933,9 @@ function handleInput(k){
   }else if(k === 'Enter'){
     submit();
   }else if(k === 'ArrowRight' || k === 'Tab'){
-    moveField(1);
+    moveField(q.col && k === 'ArrowRight' ? -1 : 1);   // 筆算は打つ順が右から左。矢印は画面の向きに合わせる
   }else if(k === 'ArrowLeft'){
-    moveField(-1);
+    moveField(q.col ? 1 : -1);
   }
 }
 
@@ -2855,15 +2970,23 @@ function getSize(){
 function setSize(v){ try{ localStorage.setItem('km_keysize', v); }catch(e){} applyLayout(); updateKeysetNow(); }
 
 /* めもりモードは巻き尺に横幅が要るので、テンキー設定でも横一列に切り替える。
-   テンキーだと表示域が画面の2/3に狭まり、目盛りが読めなくなるため。 */
+   テンキーだと表示域が画面の2/3に狭まり、目盛りが読めなくなるため。
+   どのモードがそうかは単元が modes の wide で宣言する（モード番号で決め打ちすると、
+   めもりの無い単元のモード5・6までテンキーが使えなくなっていた） */
 function needsWide(){
   var m = practice ? pMode : mode;
-  return (m === 5 || m === 6);
+  return !!(MODES[m] && MODES[m].wide);
+}
+/* こたえあわせのキーを出すか。単元が modes の enterKey で宣言する */
+function needsEnter(){
+  var m = practice ? pMode : mode;
+  return !!(MODES[m] && MODES[m].enterKey);
 }
 function applyLayout(){
   var v = getLayout(), play = $('play');
   if(needsWide()) v = 'row';
   play.classList.remove('layout-tr','layout-tl');
+  play.classList.toggle('has-enter', needsEnter());
   // 利き手そのものは残す。めもりモードは横一列に切り替わって layout-tl が外れるが、
   // 正答数をどちらの隅へ逃がすかは、キー配置ではなく利き手で決まる。
   play.classList.toggle('hand-left', getLayout() === 'tl');
@@ -2873,7 +2996,8 @@ function applyLayout(){
 }
 function layoutTenkey(){
   var pos = {'7':[0,0],'8':[1,0],'9':[2,0],'4':[0,1],'5':[1,1],'6':[2,1],
-             '1':[0,2],'2':[1,2],'3':[2,2],'0':[0,3],'Backspace':[2,3]};
+             '1':[0,2],'2':[1,2],'3':[2,2],'0':[0,3],'Backspace':[2,3],'Enter':[1,3]};
+  var ent = needsEnter();   // 出すときは 0 を1マスにして、空いたところに置く
   var sc = SIZE_SCALE[getSize()];
   var gapX = 3.5*sc, gapY = 2.6*sc, kw = 30*sc, kh = 20*sc;
   var gridW = kw*3 + gapX*2, gridH = kh*4 + gapY*3;
@@ -2883,7 +3007,7 @@ function layoutTenkey(){
     var el = keyEls[k], p = pos[k];
     el.style.left = (left0 + p[0]*(kw+gapX)) + '%';
     el.style.top = (top0 + p[1]*(kh+gapY)) + '%';
-    el.style.width = (k==='0' ? (kw*2+gapX) : kw) + '%';
+    el.style.width = (k==='0' && !ent ? (kw*2+gapX) : kw) + '%';
     el.style.height = kh + '%';
     el.style.bottom = 'auto';
   });
@@ -2953,7 +3077,7 @@ function pFetch(){
       r.f.forEach(function(u, i){ a[u] = r.ans[i]; });
       // キュー項目の形は packQueue_（Core.gs の QI_）と同じ。こちらはキーで届く
       pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
-              rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null};
+              rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null, col:!!r.col};
     }else{ pFail++; }
   }).withFailureHandler(function(){ pFetching = false; pFail++; })
     .nextPracticeItem(pMode, pType);
@@ -3005,7 +3129,8 @@ function beginPractice(timed){
         var a = {};
         x[QI.F].forEach(function(u, i){ a[u] = x[QI.ANS][i]; });
         return {q:x[QI.Q], f:x[QI.F], ans:a, ruler:x[QI.RULER]||null, t:x[QI.T]||null, dial:x[QI.DIAL]||null,
-                rows:x[QI.ROWS]||null, veil:(x[QI.VEIL] == null ? null : x[QI.VEIL]), fig:x[QI.FIG]||null};
+                rows:x[QI.ROWS]||null, veil:(x[QI.VEIL] == null ? null : x[QI.VEIL]), fig:x[QI.FIG]||null,
+                col:!!x[QI.COL]};
       });
       qi = 0; clearTyped(); ready = true;
       if(r.coop) COOP = r.coop;                    // 開いたまま協力モードが始まっても、次の本番で印が出る
@@ -3092,7 +3217,8 @@ function begin(m){
         var a = {};
         x[QI.F].forEach(function(u, i){ a[u] = x[QI.ANS][i]; });
         return {q:x[QI.Q], f:x[QI.F], ans:a, ruler:x[QI.RULER]||null, t:x[QI.T]||null, dial:x[QI.DIAL]||null,
-                rows:x[QI.ROWS]||null, veil:(x[QI.VEIL] == null ? null : x[QI.VEIL]), fig:x[QI.FIG]||null};
+                rows:x[QI.ROWS]||null, veil:(x[QI.VEIL] == null ? null : x[QI.VEIL]), fig:x[QI.FIG]||null,
+                col:!!x[QI.COL]};
       });
       ready = true; clearTyped();
       if(r.coop){ COOP = r.coop; coopBadge_(); }

@@ -44,8 +44,8 @@ var UNIT = {
     { id: 2, name: 'かんさん ぜんぶ',   desc: '1200g=□kg□g もあり' },
     { id: 3, name: 'けいさん たしざん', desc: '1kg300g + 500g' },
     { id: 4, name: 'けいさん ひきざん', desc: '2kg100g − 1kg700g' },
-    { id: 5, name: 'めもり きほん',     desc: '1kgのはかり（1目もり5g）' },
-    { id: 6, name: 'めもり ぜんぶ',     desc: '2kgのはかり（1目もり10g）' }
+    { id: 5, name: 'めもり きほん', wide: true,     desc: '1kgのはかり（1目もり5g）' },
+    { id: 6, name: 'めもり ぜんぶ', wide: true,     desc: '2kgのはかり（1目もり10g）' }
   ],
 
   types: {

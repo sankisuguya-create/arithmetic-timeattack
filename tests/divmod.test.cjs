@@ -168,10 +168,10 @@ assert.equal(unit.glyph[''], undefined, "欄キー '' に字形を宣言しな�
 
 // 配信の形。キュー項目の位置づけは Core.gs の QI_ が正本（ここでは namespaced で引く）
 const packed = ctx.packQueue_(ctx.genQueue_(7, 7, 3));
-packed.forEach(x => { assert.equal(x.length, 9); assert.ok(x[ctx.QI_.ROWS]); assert.equal(x[ctx.QI_.VEIL], 2); assert.equal(x[ctx.QI_.FIG], null); });
+packed.forEach(x => { assert.equal(x.length, 10); assert.ok(x[ctx.QI_.ROWS]); assert.equal(x[ctx.QI_.VEIL], 2); assert.equal(x[ctx.QI_.FIG], null); });
 // ①②も並べ方を持つ（欄が式の途中に入るため）が、覆いは要らない
 [5, 1].forEach(m => ctx.packQueue_(ctx.genQueue_(7, m, 3)).forEach(x => {
-  assert.equal(x.length, 9); assert.ok(x[ctx.QI_.ROWS]); assert.equal(x[ctx.QI_.VEIL], null);
+  assert.equal(x.length, 10); assert.ok(x[ctx.QI_.ROWS]); assert.equal(x[ctx.QI_.VEIL], null);
 }));
 ctx.packQueue_(ctx.genQueue_(7, 3, 3)).forEach(x => {
   assert.equal(x[ctx.QI_.ROWS], null); assert.equal(x[ctx.QI_.VEIL], null);

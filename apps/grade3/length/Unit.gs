@@ -58,8 +58,8 @@ var UNIT = {
     { id: 2, name: 'かんさん ぜんぶ',   desc: '1200m=□km□m もあり' },
     { id: 3, name: 'けいさん たしざん', desc: '1km700m + 600m' },
     { id: 4, name: 'けいさん ひきざん', desc: '2km100m − 1km700m' },
-    { id: 5, name: 'めもり きほん',     desc: 'まきじゃく 1mまで' },
-    { id: 6, name: 'めもり ぜんぶ',     desc: 'まきじゃく 1mより長い',
+    { id: 5, name: 'めもり きほん', wide: true,     desc: 'まきじゃく 1mまで' },
+    { id: 6, name: 'めもり ぜんぶ', wide: true,     desc: 'まきじゃく 1mより長い',
       help: 'Enter で こたえあわせ' }   // 答えの桁数が 1〜3 と変わり自動確定できない
   ],
 

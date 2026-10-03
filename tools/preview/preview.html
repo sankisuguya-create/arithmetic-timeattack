@@ -63,6 +63,7 @@
  * URL の ?unit= は id だけで指定する（学年をまたいで id は一意。tests/lib/kit.cjs が検査する）。
  */
 var KNOWN_UNITS = [
+  'grade2/tasu', 'grade2/hiku',
   'grade3/kuku', 'grade3/length', 'grade3/weight', 'grade3/divmod',
   'grade3/bignum', 'grade3/decimal', 'grade3/circle', 'grade3/bai',
   'grade5/volume'
@@ -208,7 +209,7 @@ async function main() {
     "  var it = UNIT.gen(Math.random, m);\n" +
     "  if(pType){ for(var i=0;i<60 && it.t!==pType;i++) it = UNIT.gen(Math.random, m); }\n" +
     "  return {q:it.q, f:it.f, ans:it.ans, ruler:it.ruler||null, t:it.t||null, dial:it.dial||null,\n" +
-    "          rows:it.rows||null, veil:(it.veil == null ? null : it.veil), fig:it.fig||null};\n" +
+    "          rows:it.rows||null, veil:(it.veil == null ? null : it.veil), fig:it.fig||null, col:!!it.col};\n" +
     "}";
 
   // Core.gs の boot() が名簿外の試用者（guest）に返すのと同じ形を作り、実機と同じ applyBoot に通す。

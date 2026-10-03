@@ -80,7 +80,7 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 6;   // 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
+var ENGINE_VER = 7;   // 7 = 筆算の並べ方（col） / 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
                       // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
                       // 4 = coopPeek（児童画面の定期確認。開いたままの画面に印をすぐ出す）
                       // 5 = getPastYears（教師画面の過年度タブ）
@@ -469,7 +469,7 @@ function genQueue_(seed, mode, n) {
  * 添字・キーを変えるときは両側を同じこの表で揃えること
  * （配列の並び自体は送信中データとの互換なので変えない）。
  */
-var QI_ = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8 };
+var QI_ = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8, COL:9 };
 
 /**
  * 送信用に切り詰める（配列の並びは QI_）。
@@ -490,6 +490,7 @@ function packQueue_(q) {
     it[QI_.ROWS] = x.rows || null;
     it[QI_.VEIL] = (x.veil == null ? null : x.veil);
     it[QI_.FIG] = x.fig || null;
+    it[QI_.COL] = x.col ? 1 : 0;
     return it;
   });
 }
@@ -626,7 +627,7 @@ function nextPracticeItem(mode, type) {
     ans: it.f.map(function (k) { return it.ans[k]; }),
     ruler: it.ruler || null, t: it.t || null, dial: it.dial || null,
     rows: it.rows || null, veil: (it.veil == null ? null : it.veil),
-    fig: it.fig || null
+    fig: it.fig || null, col: it.col ? 1 : 0
   };
 }
 
@@ -2367,8 +2368,10 @@ function aggregateCore_() {
  * UNIT.fieldsByType が無い単元（九九など、答えが単一値でよい単元）では素の値を返す。
  */
 function fmtByType_(type, joined) {
-  var fields = UNIT.fieldsByType && UNIT.fieldsByType[type];
   var vals = String(joined).split('/');
+  // 欄の順と読みの順が違う単元（筆算は一の位から打つ）は、単元が読める形に直す
+  if (typeof UNIT.fmtAnswer === 'function') { try { return String(UNIT.fmtAnswer(type, vals)); } catch (e) {} }
+  var fields = UNIT.fieldsByType && UNIT.fieldsByType[type];
   if (!fields || fields.length !== vals.length) return vals.join(' ');
   return vals.map(function (v, i) { return v + fields[i]; }).join('');
 }
@@ -3134,7 +3137,7 @@ function questionColor_() {
  * 学年の色と同じ色だけは禁止（2つの層が見分けられなくなる）。
  */
 /** 床の図形として選べる生成器（common/index.html に写した generators.js の id） */
-var FLOOR_PATTERNS_ = ['penrose','octagon','heptagon','dodecagon','sunflower','whirl','flower','mandala','decagon','petals','tape','clockstar','pascal','chair','fibgrid','farey','padovan','decimal','scaleswirl','scalefib','circlesphere'];
+var FLOOR_PATTERNS_ = ['penrose','octagon','heptagon','dodecagon','sunflower','whirl','flower','mandala','decagon','petals','tape','clockstar','pascal','chair','fibgrid','farey','padovan','decimal','scaleswirl','scalefib','circlesphere','carry','borrow'];
 
 var FLOOR_GEMS_ = {
   amethyst:   '#8A6CE5',   // すみれ
