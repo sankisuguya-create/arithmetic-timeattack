@@ -6,11 +6,19 @@ const assert = require('node:assert/strict');
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const src = fs.readFileSync(path.join(__dirname, '..', 'common', 'index.html'), 'utf8');
 
-// サーバーのテンプレートが単元の id を埋め込む箇所は1つだけ
-const SCRIPTLET = '<?!= JSON.stringify(String(UNIT.id)) ?>';
-assert.equal(src.split(SCRIPTLET).length - 1, 1);
+// サーバーのテンプレートが埋め込む箇所は2つだけ（単元の id と、Core.gs の版の番号）
+const SCRIPTLETS = ['<?!= JSON.stringify(String(UNIT.id)) ?>', '<?!= ENGINE_VER ?>'];
+for (const s of SCRIPTLETS) assert.equal(src.split(s).length - 1, 1, s + ' は1つだけ');
 // index.html には、ほかにテンプレートの記号が無い（あると GAS の評価で壊れる）
-assert.equal(src.split('<?').length - 1, 1);
+assert.equal(src.split('<?').length - 1, SCRIPTLETS.length);
+// 版は Core.gs の ENGINE_VER が唯一の宣言 — teacher.html もスクリプレットで受け取る
+{
+  const t = fs.readFileSync(path.join(__dirname, '..', 'common', 'teacher.html'), 'utf8');
+  assert.equal(t.split('var WANT_VER = <?!= ENGINE_VER ?>;').length - 1, 1, 'teacher.html の WANT_VER も scriptlet');
+  const core = fs.readFileSync(path.join(__dirname, '..', 'common', 'Core.gs'), 'utf8');
+  assert.equal(core.split('var ENGINE_VER = ').length - 1, 1, 'ENGINE_VER の宣言は Core.gs に1つだけ');
+  assert.ok(!/var WANT_VER = \d/.test(src) && !/var WANT_VER = \d/.test(t), 'WANT_VER の手書き数値が残っている');
+}
 
 function pick(name) {
   const m = src.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?^\\}', 'm'));
