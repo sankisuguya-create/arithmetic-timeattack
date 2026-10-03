@@ -11,7 +11,21 @@ var UNIT = {
   title: 'ひきざん あんざん タイムアタック！',
   teacherTitle: 'ひきざん（2けたの筆算） 設定・分析',
 
-  defaults: { limit_sec: 60 },
+  /**
+   * 教師が調整する設定。最初のメニューの背景に敷く「成長する図形」。このサイトはくり下がりの三角（三角のマスごとに m−j の筆算。くり下がるマスが第二の色）。
+   * 本番の正答を「標準の分数」に直して積み、無地 → 輪郭 → 学年の色 → 第二の色 と育つ。表示だけで、出題にも採点にも関わらない。
+   */
+  defaults: { limit_sec: 60, floor_on: 1, floor_per_answer: 0.75 },
+  settings: [
+    { key: 'floor_on', label: 'メニューの背景の図形', type: 'onoff',
+      note: '正答を重ねるほど育つ模様。表示しないと無地になる' },
+    { key: 'floor_per_answer', label: '1正答あたりの図形の育ち',
+      note: '1分に20問解ける速さの問題を1問正解したときに増えるタイルの枚数。解きにくい問題（1分で解ける数が少ない）ほど1問で多く育つ（速さはこのサイトの記録から自動で出す）',
+      min: 0.05, max: 10, step: 0.05 }
+  ],
+  /** 床の図形と第二の色（台帳は design リポジトリの growing-figures/COLORS.md） */
+  floorPattern: 'borrow',
+  floorColor: 'garnet',
 
   units: {},
   modes: [

@@ -3137,7 +3137,7 @@ function questionColor_() {
  * 学年の色と同じ色だけは禁止（2つの層が見分けられなくなる）。
  */
 /** 床の図形として選べる生成器（common/index.html に写した generators.js の id） */
-var FLOOR_PATTERNS_ = ['penrose','octagon','heptagon','dodecagon','sunflower','whirl','flower','mandala','decagon','petals','tape','clockstar','pascal','chair','fibgrid','farey','padovan','decimal','scaleswirl','scalefib','circlesphere'];
+var FLOOR_PATTERNS_ = ['penrose','octagon','heptagon','dodecagon','sunflower','whirl','flower','mandala','decagon','petals','tape','clockstar','pascal','chair','fibgrid','farey','padovan','decimal','scaleswirl','scalefib','circlesphere','carry','borrow'];
 
 var FLOOR_GEMS_ = {
   amethyst:   '#8A6CE5',   // すみれ
