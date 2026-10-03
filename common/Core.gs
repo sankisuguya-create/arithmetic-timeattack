@@ -3130,6 +3130,11 @@ function validateUnit_() {
             }
           });
         }
+        // 採点の合計判定は、児童側（index.html の isRight）が ruler/dial の有無、
+        // サーバー側（match_）が UNIT.byTotal で切り替える。両者がずれると
+        // 正しく答えた児童が「まちがい」になるので、一致をここで検査する
+        var wantsTotal = UNIT.byTotal ? !!UNIT.byTotal(it) : false;
+        if (wantsTotal !== !!(it.ruler || it.dial)) say('gen(モード' + mid + ') の型 ' + it.t + ': byTotal=' + wantsTotal + ' ですが ruler/dial 出題が ' + !!(it.ruler || it.dial) + ' です（児童側は ruler/dial で合計判定するため正答が誤採点になります）');
         if (it.rows !== undefined) {
           var us = String(it.rows).split('').filter(function (c) { return c === '_'; }).length;
           if (us !== (it.f || []).length) say('gen(モード' + mid + ') の rows の空欄数 ' + us + ' が f の数 ' + (it.f || []).length + ' と合いません');
