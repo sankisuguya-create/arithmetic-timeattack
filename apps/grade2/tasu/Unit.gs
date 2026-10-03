@@ -7,7 +7,7 @@
 var UNIT = {
   id: 'tasu',
   grade: 2,                 // 学習指導要領 2年 A(2) 2位数の加法。置き場 apps/grade2/ と一致させる
-  title: '暗算(たし算)',
+  title: '暗算(たし算) タイムアタック！',
   teacherTitle: '暗算(たし算) 設定・分析',
 
   /**

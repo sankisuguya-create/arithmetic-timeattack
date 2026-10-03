@@ -8,7 +8,7 @@
 var UNIT = {
   id: 'hiku',
   grade: 2,                 // 学習指導要領 2年 A(2) 2位数の加法の逆の減法。置き場 apps/grade2/ と一致させる
-  title: '暗算(ひき算)',
+  title: '暗算(ひき算) タイムアタック！',
   teacherTitle: '暗算(ひき算) 設定・分析',
 
   /**
