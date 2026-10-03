@@ -137,6 +137,16 @@ code{background:#EDEDE8;padding:.1rem .35rem;border-radius:4px;font-size:.86em}
 .chip{padding:.3rem .8rem;border-radius:999px;border:1.5px solid var(--line);
   font-size:.82rem;font-weight:700;cursor:pointer;background:#fff;color:var(--mute)}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* 過年度タブ */
+.pastH{font-size:.95rem;margin:1.1rem 0 .4rem}
+.pastCols{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+@media (max-width:900px){ .pastCols{grid-template-columns:1fr} }
+.pastCols h4{font-size:.85rem;margin:.2rem 0 .3rem}
+.pastT td,.pastT th{white-space:nowrap}
+.pastT td.num{text-align:right;font-variant-numeric:tabular-nums}
+.pastT td.hi{font-weight:800}
+.pastYr{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;font-size:.86rem;margin:.3rem 0}
+.pastYr .pii{color:#C0392B;font-weight:700}
 .sec{margin-top:1.6rem}
 .sec:first-child{margin-top:.4rem}
 h3.sec{font-size:.9rem;font-weight:800;color:var(--ink);letter-spacing:0}
@@ -414,6 +424,7 @@ details.more[open] summary{border-color:var(--ink)}
       <button class="tab" id="tabCoop" role="tab">協力プレイ</button>
       <button class="tab" id="tabSet" role="tab">全般設定</button>
       <button class="tab" id="tabAna" role="tab">分析</button>
+      <button class="tab" id="tabPast" role="tab">過年度</button>
     </nav>
     <div class="sub" id="sub"></div>
     <details id="cautions" class="cautions pop" style="display:none"><summary></summary><div class="popp" id="cautionList"></div></details>
@@ -527,6 +538,33 @@ details.more[open] summary{border-color:var(--ink)}
     </details>
   </div>
   </div><!-- /pageAna -->
+
+  <div id="pagePast" style="display:none">
+  <div class="box">
+    <h2>過年度のまとめ</h2>
+    <p class="lead">年度（4/1〜翌3/31）ごとに、<b>どの型・どの問題で誤答が多く、時間がかかったか</b>を出します。児童ごとの値は出しません。</p>
+    <div class="stat" id="pastStat">読み込み中…</div>
+    <div id="pastYears"></div>
+    <h3 class="pastH">型ごと（年度をならべて）</h3>
+    <div class="hscroll"><table class="pastT" id="pastTypes"></table></div>
+    <h3 class="pastH">問題ごと</h3>
+    <div class="chips" id="pastChips"></div>
+    <div class="pastCols">
+      <div><h4>誤答率が高い問題</h4><div class="hscroll"><table class="pastT" id="pastMiss"></table></div></div>
+      <div><h4>遅かった回数が多い問題</h4><div class="hscroll"><table class="pastT" id="pastSlow"></table></div></div>
+    </div>
+    <div class="bar">
+      <button class="bview sm" id="pastReload" type="button"><span class="ic" aria-hidden="true">↻</span>最新の記録で再表示</button>
+    </div>
+    <details class="help">
+      <summary>数値の読み方</summary>
+      <p><b>誤答率</b>＝誤答した問題 ÷（1回目で正答した問題＋誤答した問題）。<b>時間</b>＝最初のキーを押すまでの時間の幾何平均（遅い側に長く裾を引く反応時間の代表値。分析タブと同じ）。</p>
+      <p>問題ごとの出題数は記録に残っていないため、出題の仕組み（Unit.gs）から求めた出やすさ × 解いた数で<b>推定</b>しています。推定出題数が少ない問題（<span id="pastMin">20</span>回未満）は誤答率の順位に入れません。</p>
+      <p><b>遅かった回数</b>＝その回の同じ型の中で、とびぬけて時間がかかった問題として記録された回数です。</p>
+      <p>児童の氏名・メールアドレスの消去（児童001などへの置き換え）は、<b>ハブの教師画面の「過年度」タブ</b>で全単元まとめて行います。単元ごとに消すと、同じ児童が単元ごとに別の番号になるためです。</p>
+    </details>
+  </div>
+  </div><!-- /pagePast -->
 
   <div id="pageCoop" style="display:none">
   <!-- 左の操作欄は使う順に上から：①だれで（クラス） ②どう遊ぶ（時間・色づかい・グループ・起点） ③うつす・止める・残す（その下に今の状態）
@@ -806,8 +844,8 @@ function esc(t){
   });
 }
 
-/* ---- タブ（公開モード｜協力プレイ｜全般設定｜分析）。押したタブの区画だけを出す ---- */
-var PAGES = { mode: 'pageMode', coop: 'pageCoop', set: 'pageSet', ana: 'pageAna' };
+/* ---- タブ（公開モード｜協力プレイ｜全般設定｜分析｜過年度）。押したタブの区画だけを出す ---- */
+var PAGES = { mode: 'pageMode', coop: 'pageCoop', set: 'pageSet', ana: 'pageAna', past: 'pagePast' };
 function showPage(p){
   Object.keys(PAGES).forEach(function(k){
     var on = (p === k), tab = $('tab' + k[0].toUpperCase() + k.slice(1));
@@ -816,6 +854,7 @@ function showPage(p){
     $(PAGES[k]).style.display = on ? '' : 'none';
   });
   if(p === 'ana' && !anaAsked){ anaAsked = true; loadAnalysis(false); }
+  if(p === 'past' && !PAST.asked){ PAST.asked = true; loadPast(false); }
   // 床のプレビューは全般設定タブの中にある。隠れている間は枠の大きさが0なので、開いた時に描き直す
   if(p === 'set' && FP.on) fpDraw(FP.shown);
   if(p === 'coop'){ coopFit_(); coopTabShow_(); }
@@ -847,7 +886,7 @@ var KEYS = BASE_KEYS.slice();
 var SETTINGS = [];
 
 /* この画面が前提にする Core.gs の版。貼り替えを片方だけ忘れたときに検知する */
-var WANT_VER = 4;
+var WANT_VER = 5;
 
 /* 直すべきもの（版ずれ・Unit.gs の不具合）は赤で出す。「注意：」で始まる行は設計上許容されるものなので、
    件数だけの折りたたみにする（毎回赤で出すと、本当の警告が目に入らなくなる） */
@@ -1120,6 +1159,73 @@ $('clsBody').addEventListener('click', function(e){
 var ANA = null, anaScope = null, anaAsked = false;
 var anaFy = 0;   // 0 = 今年度。過去の年度を選ぶとその年の4月〜3月を集計する
 
+
+/* ---- 過年度。年度ごとの型・問題のまとめ（getPastYears）。個人は出さない ---- */
+var PAST = { r: null, asked: false, fy: 0 };   // fy: 0 = 過年度すべて
+function loadPast(fresh){
+  setStat('pastStat', '集計中…（記録が多いと数十秒かかります）');
+  google.script.run.withSuccessHandler(function(r){ PAST.r = r; renderPast(); })
+    .withFailureHandler(function(e){ setStat('pastStat', '読み込めません: ' + e.message, true); })
+    .getPastYears(!!fresh);
+}
+$('pastReload').onclick = function(){ loadPast(true); };
+$('pastChips').addEventListener('click', function(e){
+  if(e.target.dataset && e.target.dataset.fy !== undefined){ PAST.fy = Number(e.target.dataset.fy); renderPastItems(); }
+});
+function pastYrLabel(fy){ return fy === PAST.r.cur ? fy + '年度（今年度）' : fy + '年度'; }
+function pastSec(ms){ return ms == null ? '–' : (ms / 1000).toFixed(1) + '秒'; }
+function pastPct(v){ return v == null ? '–' : v.toFixed(1) + '%'; }
+function renderPast(){
+  var r = PAST.r, ys = r.years || [];
+  $('pastMin').textContent = r.itemMin;
+  if(!ys.length){ setStat('pastStat', 'まだ記録がありません。'); return; }
+  setStat('pastStat', '');
+  $('pastYears').innerHTML = ys.map(function(y){
+    var arch = r.rosters.indexOf('roster_' + y.fy) >= 0 ? '・名簿シート roster_' + y.fy + ' あり' : '';
+    var pii = y.fy === r.cur ? '' :
+      (y.pii ? '<span class="pii">氏名・メールが ' + y.pii + ' 人分 残っています</span>' : '<span>氏名・メールは消去済み</span>');
+    return '<div class="pastYr"><b>' + esc(pastYrLabel(y.fy)) + '</b><span>' + y.trials + ' 回・' + y.kids + ' 人' + esc(arch) + '</span>' + pii + '</div>';
+  }).join('');
+  // 型 × 年度。各年度で誤答率・時間が大きい側の3分の1（型が3つ以上ある年度だけ）を太字と▲で示す（色に頼らない）
+  var head = '<thead><tr><th>型</th>' + ys.map(function(y){ return '<th colspan="2">' + esc(pastYrLabel(y.fy)) + '</th>'; }).join('') +
+    '</tr><tr><th></th>' + ys.map(function(){ return '<th>誤答率</th><th>時間</th>'; }).join('') + '</tr></thead>';
+  function top3(y, key){
+    var ts = r.order.filter(function(t){ return y.types[t] && y.types[t][key] != null; });
+    if(ts.length < 3) return [];
+    return ts.sort(function(a, b){ return y.types[b][key] - y.types[a][key]; }).slice(0, Math.floor(ts.length / 3));
+  }
+  var hi = ys.map(function(y){ return { rate: top3(y, 'rate'), ms: top3(y, 'ms') }; });
+  var body = r.order.map(function(t){
+    return '<tr><td>' + esc(r.types[t] || t) + '</td>' + ys.map(function(y, i){
+      var o = y.types[t];
+      if(!o) return '<td class="num mute">–</td><td class="num mute">–</td>';
+      var hr = hi[i].rate.indexOf(t) >= 0, hm = hi[i].ms.indexOf(t) >= 0;
+      return '<td class="num' + (hr ? ' hi' : '') + '" title="' + o.miss + ' / ' + o.n + ' 問">' + (hr ? '▲' : '') + pastPct(o.rate) + '</td>' +
+             '<td class="num' + (hm ? ' hi' : '') + '">' + (hm ? '▲' : '') + pastSec(o.ms) + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+  $('pastTypes').innerHTML = head + '<tbody>' + body + '</tbody>';
+  if(PAST.fy && !ys.some(function(y){ return y.fy === PAST.fy; })) PAST.fy = 0;
+  renderPastItems();
+}
+/* 問題ごと。「過年度すべて」は今年度を除く全年度を足し合わせる */
+function renderPastItems(){
+  var r = PAST.r, ys = r.years || [];
+  if(!r.allPast && PAST.fy === 0 && ys.length) PAST.fy = ys[0].fy;   // 過年度が無い（今年度だけ）
+  $('pastChips').innerHTML = (r.allPast ? '<button class="chip' + (PAST.fy === 0 ? ' on' : '') + '" data-fy="0">過年度すべて</button>' : '') +
+    ys.map(function(y){ return '<button class="chip' + (PAST.fy === y.fy ? ' on' : '') + '" data-fy="' + y.fy + '">' + esc(pastYrLabel(y.fy)) + '</button>'; }).join('');
+  var y = PAST.fy === 0 ? r.allPast : ys.filter(function(x){ return x.fy === PAST.fy; })[0];
+  var miss = y ? y.missTop : [], slow = y ? y.slowTop : [];
+  function tname(t){ return esc(r.types[t] || t); }
+  $('pastMiss').innerHTML = miss.length
+    ? '<thead><tr><th>問題</th><th>型</th><th>誤答率</th><th>誤答</th><th>推定出題</th></tr></thead><tbody>' +
+      miss.map(function(o){ return '<tr><td><b>' + esc(o.tag) + '</b></td><td>' + tname(o.t) + '</td><td class="num">' + pastPct(o.rate) + '</td><td class="num">' + o.miss + '</td><td class="num">' + Math.round(o.est) + '</td></tr>'; }).join('') + '</tbody>'
+    : '<tbody><tr><td class="mute">該当なし（推定出題数が ' + r.itemMin + ' 回以上で誤答のある問題がありません）</td></tr></tbody>';
+  $('pastSlow').innerHTML = slow.length
+    ? '<thead><tr><th>問題</th><th>型</th><th>遅かった回数</th><th>誤答</th><th>推定出題</th></tr></thead><tbody>' +
+      slow.map(function(o){ return '<tr><td><b>' + esc(o.tag) + '</b></td><td>' + tname(o.t) + '</td><td class="num">' + o.slow + '</td><td class="num">' + o.miss + '</td><td class="num">' + Math.round(o.est) + '</td></tr>'; }).join('') + '</tbody>'
+    : '<tbody><tr><td class="mute">該当なし</td></tr></tbody>';
+}
 
 function loadAnalysis(fresh){
   $('anaStat').textContent = '集計中…';
