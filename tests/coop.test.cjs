@@ -1027,4 +1027,46 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes('#coopStage.prevEmpty #coopPrevTag,#coopStage.prevEmpty #coopReplay'), 'かくした時は「見本」の札と再生のつまみも出さない');
 }
 
+/* ---- 記録の体裁：type_stats の要素順は書き込み側の契約 ----
+ * "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2:Σln(初打鍵まで):Σln(初打鍵まで)^2"
+ * 読み側（typeStat_⇔anTypeStat_）は analysis.test.cjs が等価検査済み。ここでは
+ * submitSession が書き出す実際のセルの要素順を固定する（順を入れ替えると読み側すべてが同じ誤解で読み続ける） */
+{
+  sheets.log = new Sheet('log', ctx.LOG_HEAD_);
+  sheets.summary = sheets.summary || new Sheet('summary',
+    ['email', 'mode', 'name', 'limit_sec', 'kind', 'tries', 'total_correct', 'total_attempts', 'best', 'best_count']);
+  sheets.daily = new Sheet('daily', []);
+  ctx.Session = { getActiveUser: () => ({ getEmail: () => 'k01@kyoiku.edu.nishi.or.jp' }),
+                  getScriptTimeZone: () => 'Asia/Tokyo' };
+  const mode = ctx.modeIds_()[0];
+  const q = ctx.genQueue_(7, mode, ctx.QN);
+  const seen = {}, pair = [];
+  q.forEach((qq, i) => { if (seen[qq.t] !== undefined) pair.push(seen[qq.t], i); else seen[qq.t] = i; });
+  const sameT = pair.slice(0, 2);
+  assert.equal(q[sameT[0]].t, q[sameT[1]].t, '同じ型の2問が要る');
+  // 同じ型の2問を1回ずつ正解（初打鍵あり）：stat[t] の全要素が動く
+  const items = sameT.map((i, k) => ({ i: i, a: [q[i].f.map(u => q[i].ans[u])], ms: 1500 + k * 1000, tk: 800 + k * 200 }));
+  store.sess_TT = JSON.stringify({ seed: 7, mode: mode, mail: 'k01@kyoiku.edu.nishi.or.jp', t: Date.now(), lim: 60, p: false });
+  const sub = ctx.submitSession('TT', items);
+  assert.ok(sub.ok, JSON.stringify(sub));
+  const cell = sheets.log.values[sheets.log.values.length - 1][ctx.LOG_COL_.TSTAT];
+  const parts = String(cell).split(':');
+  // 位置の意味を固定する
+  assert.equal(parts[0], q[sameT[0]].t, '先頭は型');
+  assert.equal(parts[1], '2', '試行数');
+  assert.equal(parts[2], '4000', 'Σ送信まで（1500+2500）');
+  assert.equal(parts[3], '2', '初打鍵あり数');
+  assert.equal(parts[4], String(800 + 1000), 'Σ初打鍵まで');
+  assert.equal(parts[5], String(800 * 800 + 1000 * 1000), 'Σ(初打鍵まで)^2');
+  const ln = Math.round((Math.log(800) + Math.log(1000)) * 1000) / 1000;
+  const ln2 = Math.round((Math.log(800) * Math.log(800) + Math.log(1000) * Math.log(1000)) * 1000) / 1000;
+  assert.equal(parts[6], String(ln), 'Σln（小数3位に丸める）');
+  assert.equal(parts[7], String(ln2), 'Σln^2（小数3位に丸める）');
+  // 書いたセルが読み側の正本（typeStat_）で同じ意味に戻ること
+  const x = ctx.typeStat_(cell);
+  assert.equal(x.ntk, 2); assert.equal(x.tk, 1800); assert.equal(x.tk2, 800 * 800 + 1000 * 1000);
+  assert.ok(Math.abs(x.ln - ln) < 0.001 && Math.abs(x.ln2 - ln2) < 0.001);
+  ctx.Session = teacherSession;
+}
+
 console.log('coop.test.cjs: all assertions passed.');
