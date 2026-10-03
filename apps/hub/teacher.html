@@ -286,8 +286,11 @@ var FILT = 0;      // 一覧の学年絞り込み（0=すべて）
 var SEL = -1;      // 編集中のリンク（LINKS の添字）
 var DIRTY = false; // 保存していない変更があるか
 
-function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
-  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
 function $(id){ return document.getElementById(id); }
 /* 未保存の印はどの編集領域でも同じ型：枠を橙にし、保存ボタンの名前に「（未保存）」を足す。
    閉じる時の確認は DIRTY／TABDIRTY／CFGDIRTY のどれかが立っていれば出す */

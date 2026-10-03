@@ -189,7 +189,7 @@ function loadUi(extra) {
     paintSlots() {}, locked: false, ready: true, practice: false, firstKeyAt: 0
   }, extra));
   for (const name of ['digitCap_', 'valOf', 'currentAns', 'isRight', 'handleInput',
-                      'moveField', 'capField_', 'glyph_', 'slotSpan_', 'unitSpan', 'ghostHtml_']) {
+                      'moveField', 'capField_', 'esc', 'glyph_', 'slotSpan_', 'unitSpan', 'ghostHtml_']) {
     const m = ui.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?^\\}', 'm'));
     assert.ok(m, name); vm.runInContext(m[0], c);
   }

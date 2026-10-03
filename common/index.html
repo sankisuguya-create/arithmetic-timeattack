@@ -569,6 +569,16 @@ var TYPES={}, TYPES_BY_MODE={};
 var $ = function(id){ return document.getElementById(id); };
 var eqEl=$('eq'), barEl=$('bar'), countEl=$('count');
 
+/* サーバーから届く文字（モード名・型名・閉じている理由・URL 等）を innerHTML に流す時は esc に通す。
+   教師画面・ハブと同じ実装（どこか1箇所で直しても、ほかの画面の esc は置き換えないこと）。
+   例外：図（q.fig と rulerSVG/dialSVG の SVG）、unitSpan・slotSpan_・ghostHtml_ のように自分で要素を
+   組み立てる断片は生のHTMLを必要とするので素のまま。数値（回数・ベスト・星の数）はそのまま連結する。 */
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
+
 /* ============================================================
  *  未送信データの退避
  * ============================================================ */
@@ -772,7 +782,7 @@ function coopRvOpen(){
     coopRvMineLabel();
     $('coopRvMine').style.visibility = '';
     /* 「じぶん」は教師の設定（mine）で出さないこともできる。古い Core は mine を返さないので、そのときは出す */
-    $('coopRvTot').innerHTML = (d.mine === false ? '' : '<small>じぶん</small>' + coopRvMyTotal(d) + ' もん<i class="sep"></i>') + '<small>みんなで</small>' + d.total + ' もん';
+    $('coopRvTot').innerHTML = (d.mine === false ? '' : '<small>じぶん</small>' + coopRvMyTotal(d) + ' もん<i class="sep"></i>') + '<small>みんなで</small>' + esc(d.total) + ' もん';
     coopRvDraw();
   }).withFailureHandler(function(){ $('coopRvMsg').textContent = 'よみこめませんでした'; }).coopReview();
 }
@@ -2180,7 +2190,7 @@ function emptyBox(){
 /* 上段＝番号とモード名だけ。副題は出さない（児童が選ぶのに要らず、名前の幅を奪う） */
 function cardTop(m, idx){
   return '<div class="top"><div class="k">'+(idx+1)+'</div>'+
-         '<div class="t">'+MODES[m].name+'</div></div>';
+         '<div class="t">'+esc(MODES[m].name)+'</div></div>';
 }
 
 function renderMenu(){
@@ -2193,7 +2203,7 @@ function renderMenu(){
   $('modeGrid').innerHTML = vis.map(function(m, idx){
     if(isLocked(m)){
       return '<div class="card locked" data-mode="'+m+'">'+ cardTop(m, idx) +
-        '<div class="bot"><div class="lock">'+LOCKED[m]+'</div></div></div>';
+        '<div class="bot"><div class="lock">'+esc(LOCKED[m])+'</div></div></div>';
     }
     var hs = BEST[m];
     return '<div class="card" data-mode="'+m+'">'+ cardTop(m, idx) +
@@ -2227,7 +2237,7 @@ function openPractice(){
   $('poptGrid').innerHTML = vis.map(function(m, idx){
     return '<div class="card'+(isLocked(m)?' locked':'')+'" data-pmode="'+m+'">'+
       cardTop(m, idx) +
-      (isLocked(m) ? '<div class="bot"><div class="lock">'+LOCKED[m]+'</div></div>' : '')+
+      (isLocked(m) ? '<div class="bot"><div class="lock">'+esc(LOCKED[m])+'</div></div>' : '')+
       '</div>';
   }).join('');
   show('popt');
@@ -2250,8 +2260,8 @@ function openTypeSelect(){
   var cards = ['<div class="card" data-ptype=""><div class="k">1</div>' +
                '<div><div class="t">ぜんぶ</div><div class="s">いろいろ まざる</div></div></div>'];
   list.forEach(function(t, i){
-    cards.push('<div class="card" data-ptype="'+t+'"><div class="k">'+(i+2)+'</div>' +
-               '<div><div class="t">'+(TYPES[t] || t)+'</div></div></div>');
+    cards.push('<div class="card" data-ptype="'+esc(t)+'"><div class="k">'+(i+2)+'</div>' +
+               '<div><div class="t">'+esc(TYPES[t] || t)+'</div></div></div>');
   });
   $('ptypeGrid').innerHTML = cards.join('');
   show('ptype');
@@ -2567,7 +2577,7 @@ function capField_(q, i){
 
 function unitSpan(u){
   var c = UNITS[u];
-  return '<span class="u"'+(c ? ' style="color:'+c+'"' : '')+'>'+u+'</span>';
+  return '<span class="u"'+(c ? ' style="color:'+c+'"' : '')+'>'+esc(u)+'</span>';
 }
 
 function draw(){
@@ -2588,7 +2598,7 @@ function draw(){
      * 共通画面が単元を知ることになるため。問いには「＝」を付けない（式ではない）。
      */
     var ask = q.q.map(function(tok){
-      return UNITS.hasOwnProperty(tok) ? unitSpan(tok) : '<span>'+tok+'</span>';
+      return UNITS.hasOwnProperty(tok) ? unitSpan(tok) : '<span>'+esc(tok)+'</span>';
     }).join('');
     eqEl.className = 'eq';
     eqEl.innerHTML =
@@ -2631,7 +2641,7 @@ function draw(){
         if(tok === SLOT) return slotSpan_(q, si++);
         if(UNITS.hasOwnProperty(tok)) return unitSpan(tok);
         if(OPS.hasOwnProperty(tok)) return '<span class="op">'+OPS[tok]+'</span>';
-        return '<span>'+tok+'</span>';
+        return '<span>'+esc(tok)+'</span>';
       }).join('');
       return '<span class="line'+(rowVeiled_(q, ri) ? ' veiled' : '')+'" data-row="'+ri+'">'+
              inner+'</span>';
@@ -2641,7 +2651,7 @@ function draw(){
     q.q.forEach(function(tok){
       if(UNITS.hasOwnProperty(tok)) lhs += unitSpan(tok);
       else if(OPS.hasOwnProperty(tok)) lhs += '<span class="op">'+OPS[tok]+'</span>';
-      else lhs += '<span>'+tok+'</span>';
+      else lhs += '<span>'+esc(tok)+'</span>';
     });
     // 式が長いときは「＝」以下を2段目に落とす。
     var oneHtml = '<span class="line">'+lhs+'<span class="op">=</span>'+rhs+'</span>';
@@ -3430,7 +3440,7 @@ function applyBoot(r, live){
     // 教師のアカウントで児童画面を開いた時だけ、教師画面への導線を出す。
     // 判定はサーバー（isTeacher_）。児童には teacherUrl 自体が渡らない
     if(r.teacher && r.teacherUrl){
-      tl.innerHTML = '<a href="' + r.teacherUrl + '">せんせい用の ページ →</a>';
+      tl.innerHTML = '<a href="' + esc(r.teacherUrl) + '">せんせい用の ページ →</a>';
       tl.style.display = '';
     }else{
       tl.style.display = 'none';

@@ -838,8 +838,41 @@ function setStat(id, text, bad){
   el.classList.toggle('bad', !!bad);
 }
 
-function esc(t){
-  return String(t).replace(/[&<>"]/g, function(c){
+/* 未保存の印はどの編集領域でも同じ型：枠を橙にし、保存ボタンの名前に「（未保存）」を足す。
+   ハブの教師画面（apps/hub/teacher.html）と同じ仕組み。base はボタンの元の名前 */
+function markDirty_(boxId, btnId, base, v){
+  $(boxId).classList.toggle('dirty', v);
+  $(btnId).textContent = v ? base + '（未保存）' : base;
+}
+/* 保存ボタンの共通の型：押している間は押せなくし、状態の欄に「保存中…」→ 結果を出す。
+   （ハブの saveWith_ と同じ仕組み。こちらは悪い結果を赤で出せるよう stat を setStat で書く）
+   done(r) の返り値:
+   - 省略・文字列 … 出す文言（省略時は「保存しました」）
+   - { msg, bad, keep } … bad=true で赤。keep=true でボタンを押せないままにする
+   - false … ボタンだけ戻し、stat は呼び出し側が書く
+   opts.busy … 押している間の文言（「終了しています…」など保存でない処理用）
+   opts.fail … 失敗時に stat を書く前に呼ぶ（選び直しなど） */
+function saveWith_(btn, statId, call, done, opts){
+  opts = opts || {};
+  btn.disabled = true; setStat(statId, opts.busy || '保存中…', false);
+  call(google.script.run.withSuccessHandler(function(r){
+    var d = done ? done(r) : null;
+    if (d === false) { btn.disabled = false; return; }
+    var msg = '保存しました', bad = false, keep = false;
+    if (typeof d === 'string') msg = d;
+    else if (d) { if (d.msg !== undefined) msg = d.msg; bad = !!d.bad; keep = !!d.keep; }
+    btn.disabled = keep; setStat(statId, msg, bad);
+  }).withFailureHandler(function(e){
+    btn.disabled = false;
+    if (opts.fail) opts.fail(e);
+    setStat(statId, '保存できませんでした: ' + e.message, true);
+  }));
+}
+
+/* innerHTML に流す文字は esc に通す。ハブ・児童画面と同じ実装。
+   例外：u.tips と設定欄の label/note は Unit.gs が書く宣言（生のHTMLを許す） */
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
   });
 }
@@ -959,8 +992,7 @@ google.script.run.withSuccessHandler(function(r){
 }).getConfigForUI();
 
 $('save').onclick = function(){
-  var btn = this; btn.disabled = true;
-  setStat('saveStat', '保存中…', false);
+  var btn = this;
   var obj = {};
   var textKeys = { teachers: 1 };
   SETTINGS.forEach(function(s){ if(s.type === 'text') textKeys[s.key] = 1; });
@@ -970,14 +1002,11 @@ $('save').onclick = function(){
     obj[k] = textKeys[k] ? el.value : Number(el.value);
   });
   var gw = growCollect(); obj.grow_w = gw.str;
-  google.script.run.withSuccessHandler(function(){
-    btn.disabled = false; setSetDirty(false);
+  saveWith_(btn, 'saveStat', function(run){ run.saveConfig(obj); }, function(){
+    setSetDirty(false);
     GROW_SAVED = gw.map; if(CP.prev) coopPreviewSoon();   // 見本は保存した倍率で描き直す
-    setStat('saveStat', '保存しました（次に開いた児童から反映）', false);
-  }).withFailureHandler(function(e){
-    btn.disabled = false;
-    setStat('saveStat', '保存できませんでした: ' + e.message, true);
-  }).saveConfig(obj);
+    return '保存しました（次に開いた児童から反映）';
+  });
 };
 
 /* 全般設定タブの未保存も、公開モードと同じ型（橙枠＋ボタン名に「（未保存）」）で知らせる。
@@ -985,8 +1014,7 @@ $('save').onclick = function(){
 var setDirtyV = false;
 function setSetDirty(v){
   setDirtyV = v;
-  $('setBox').classList.toggle('dirty', v);
-  $('save').textContent = v ? '設定を保存して反映（未保存）' : '設定を保存して反映';
+  markDirty_('setBox', 'save', '設定を保存して反映', v);
 }
 $('setBox').addEventListener('input', function(){ setSetDirty(true); });
 $('setBox').addEventListener('change', function(){ setSetDirty(true); });
@@ -1020,24 +1048,24 @@ function renderClasses(){
 
   $('clsBody').innerHTML = CLS.classes.map(function(c){
     var cells = CLS.modes.map(function(m){
-      return '<td class="c"><input type="checkbox" data-cls="'+c.cls+
+      return '<td class="c"><input type="checkbox" data-cls="'+esc(c.cls)+
              '" data-m="'+m.id+'"'+(c.modes[m.id]?' checked':'')+'></td>';
     }).join('');
     if(CLS.hasNeeds){
-      cells += '<td class="c"><input type="checkbox" data-cls="'+c.cls+
+      cells += '<td class="c"><input type="checkbox" data-cls="'+esc(c.cls)+
                '" data-seq="1"'+(c.seqOff?' checked':'')+'></td>';
     }
     cells += '<td class="c nw">'+
       '<button type="button" class="bstep sm" data-b="1" data-c="'+esc(c.cls)+'">全オン</button> '+
       '<button type="button" class="bstep sm" data-b="0" data-c="'+esc(c.cls)+'">オフ</button></td>';
-    return '<tr><td class="b8">'+c.grade+'年 '+c.room+'組</td>'+
-      '<td class="mute">'+c.n+'</td>'+cells+'</tr>';
+    return '<tr><td class="b8">'+esc(c.grade)+'年 '+esc(c.room)+'組</td>'+
+      '<td class="mute">'+esc(c.n)+'</td>'+cells+'</tr>';
   }).join('');
 
   $('clsLegend').innerHTML =
     CLS.modes.map(function(m, i){
-      return '<div><span class="n">'+(i+1)+'</span><b>'+m.name+'</b>'+
-             (m.desc ? '　'+m.desc : '')+'</div>';
+      return '<div><span class="n">'+(i+1)+'</span><b>'+esc(m.name)+'</b>'+
+             (m.desc ? '　'+esc(m.desc) : '')+'</div>';
     }).join('') +
     (CLS.hasNeeds
       ? '<div class="mt4">「順序の解除」を入れると、前のモードの回数に関係なく'+
@@ -1065,9 +1093,7 @@ function showOrphans(list){
 var clsDirty = false;
 function setDirty(v){
   clsDirty = v;
-  $('clsBox').classList.toggle('dirty', v);
-  $('clsSave').textContent =
-    v ? 'クラス設定を保存して反映（未保存）' : 'クラス設定を保存して反映';
+  markDirty_('clsBox', 'clsSave', 'クラス設定を保存して反映', v);
 }
 
 /* 画面のチェックを CLS に取り込む。表を描き直す前に必ず呼ぶ（未保存の操作を失わない） */
@@ -1121,21 +1147,16 @@ $('clsReload').onclick = function(){
 };
 
 $('clsSave').onclick = function(){
-  var btn = this; btn.disabled = true;
-  setStat('clsStat', '保存中…', false);
+  var btn = this;
   collectClasses();
-  google.script.run.withSuccessHandler(function(r){
-    btn.disabled = false;
+  saveWith_(btn, 'clsStat', function(run){ run.saveClassConfig(CLS.classes); }, function(r){
     // サーバーは書いたあとに読み戻した内容を返す。画面はその読み戻しで描き直す。
     // 送った内容のまま描くと、書けていない時に「オンになっている画面」が残り、
     // 次に開いた時だけ元に戻っているように見える
     if(r && r.classes){ CLS.classes = r.classes; renderClasses(); }
     setDirty(false);
-    setStat('clsStat', ((r && r.msg) || r) + '（次に開いた児童から反映）', false);
-  }).withFailureHandler(function(e){
-    btn.disabled = false;
-    setStat('clsStat', '保存できませんでした: ' + e.message, true);
-  }).saveClassConfig(CLS.classes);
+    return ((r && r.msg) || r) + '（次に開いた児童から反映）';
+  });
 };
 
 /* 一括は押した行のクラスだけに効く。「すべてオン」が全クラスに効くと、
@@ -2562,22 +2583,20 @@ planBody.addEventListener('click', function(e){
 });
 
 $('coopPlanSave').onclick = function(){
-  var btn = this, dirty = $('coopPlanDirty'), gi = PLAN.gi.slice(), live = PLAN.live;
-  btn.disabled = true; dirty.textContent = '保存しています…';
-  var done = function(r){
-    if(!r || !r.ok){ btn.disabled = false; dirty.textContent = (r && r.msg) || '保存できませんでした。'; return; }
-    planSetDirty(false);
+  var btn = this, gi = PLAN.gi.slice(), live = PLAN.live;
+  saveWith_(btn, 'coopPlanDirty', function(run){
+    if(live) run.coopSetGroups(gi); else run.coopSavePlan(PLAN.cls, PLAN.gn, gi);
+  }, function(r){
+    if(!r || !r.ok) return { msg: (r && r.msg) || '保存できませんでした。', bad: true };
+    planSetDirty(false);   // ボタンは dirty の時だけ押せる（saveWith_ の keep で無効のままにする）
     if(live){
       // 映している回にもすぐ効かせる（3秒ごとの問い合わせを待たない）
       CP.gi = gi.slice(); if(CP.sess) CP.sess.gi = gi.slice(); CP.giVer++;
       coopRoster(); coopGiRedraw();
-      dirty.textContent = '保存しました。児童の画面の色は、その子が次に本番を始めた時に変わります。';
-    } else dirty.textContent = '保存しました（「グループ分け」シート）。次に開始した時、このグループで始まります。';
-  };
-  var run = google.script.run.withSuccessHandler(done).withFailureHandler(function(e){
-    btn.disabled = false; dirty.textContent = '保存できませんでした：' + (e.message || e);
+      return { msg: '保存しました。児童の画面の色は、その子が次に本番を始めた時に変わります。', keep: true };
+    }
+    return { msg: '保存しました（「グループ分け」シート）。次に開始した時、このグループで始まります。', keep: true };
   });
-  if(live) run.coopSetGroups(gi); else run.coopSavePlan(PLAN.cls, PLAN.gn, gi);
 };
 /* 番号順の等分にする（保存するまでは画面の中だけ） */
 $('coopPlanReset').onclick = function(){
@@ -2676,14 +2695,11 @@ $('coopStart').onclick = function(){
 // 左の操作欄の「開始」：ステージの開始（終わった回を映している時は「新しく開始」）と同じ
 $('coopStartL').onclick = function(){ $('coopStart').onclick(); };
 $('coopStop').onclick = function(){
-  var btn = this; btn.disabled = true; setStat('coopStat', '終了しています…');
-  google.script.run.withSuccessHandler(function(r){
-    setStat('coopStat', r && r.ok ? '' : (r && r.msg) || '終了できませんでした', !(r && r.ok));
-    if(r && r.ok) coopUseSession(r.session, r.session.ev || []);
-    else btn.disabled = false;
-  }).withFailureHandler(function(e){
-    btn.disabled = false; setStat('coopStat', '終了できませんでした: ' + e.message, true);
-  }).coopStop();
+  var btn = this;
+  saveWith_(btn, 'coopStat', function(run){ run.coopStop(); }, function(r){
+    if(r && r.ok){ coopUseSession(r.session, r.session.ev || []); return { msg: '', keep: true }; }
+    return { msg: (r && r.msg) || '終了できませんでした', bad: true };
+  }, { busy: '終了しています…', fail: null });
 };
 $('coopReset').onclick = function(){
   if(CP.begin) return;
@@ -2760,13 +2776,10 @@ $('coopRateAuto').onclick = function(){
 /* 児童の見返しに「じぶん」の正答数を出すか。児童全員の画面に効くので config に入れる
    （全般設定タブの「設定を保存」とは別に、変えたらすぐ保存する：児童は見返しを開くたびに最新を受け取る） */
 $('coopRvMine').onchange = function(){
-  var el = this, st = $('coopRvMineStat');
-  el.disabled = true; st.textContent = '保存中…';
-  google.script.run.withSuccessHandler(function(){
-    el.disabled = false; st.textContent = '保存しました';
-  }).withFailureHandler(function(e){
-    el.disabled = false; st.textContent = '保存できません: ' + e.message;
-  }).saveConfig({ coop_mine: Number(el.value) });
+  var el = this;
+  saveWith_(el, 'coopRvMineStat', function(run){
+    run.saveConfig({ coop_mine: Number(el.value) });
+  });
 };
 /* 下の名前（名札）の表示切り替え。モニターに名前を出したくない時に。見る人の端末ごとに覚える */
 function coopNamesSet(on){
@@ -2782,19 +2795,16 @@ $('coopSave').onclick = function(){
   // 名前は押した時に聞く（いつも出しておく入力欄をやめた）。空なら「3年1組 10/2 9:30」のような名前を自動で付ける
   var name = prompt('保存する名前（空のままなら日時の名前を付けます）', '');
   if(name === null) return;
-  var btn = this; btn.disabled = true; setStat('coopStat', '保存しています…');
-  google.script.run.withSuccessHandler(function(r){
-    btn.disabled = false;
+  var btn = this;
+  saveWith_(btn, 'coopStat', function(run){ run.coopSave(name); }, function(r){
     if(r && r.ok){
       var s = CP.sess, late = s && s.lateUntil ? s.lateUntil - (Date.now() + CP.off) : 0;
-      setStat('coopStat', '「' + r.name + '」を保存しました' +
-        (late > 0 ? '（この後に届く送り直しは入っていません。' + coopFmt(late) + ' 後にもう一度保存すると全部入ります）' : ''));
       coopRefreshSaves();
+      return '「' + r.name + '」を保存しました' +
+        (late > 0 ? '（この後に届く送り直しは入っていません。' + coopFmt(late) + ' 後にもう一度保存すると全部入ります）' : '');
     }
-    else setStat('coopStat', (r && r.msg) || '保存できませんでした', true);
-  }).withFailureHandler(function(e){
-    btn.disabled = false; setStat('coopStat', '保存できませんでした: ' + e.message, true);
-  }).coopSave(name);
+    return { msg: (r && r.msg) || '保存できませんでした', bad: true };
+  });
 };
 var CP_SAVES = [], CP_RV = {};   // 保存データの一覧（id・名前・クラス）と、クラスごとの「見返す回」（{ クラス: 保存ID }）
 function coopRefreshSaves(){
@@ -2823,15 +2833,11 @@ function coopRvPickRender(){
   CP_RV_CLS = cls;
 }
 $('coopRvPick').onchange = function(){
-  var el = this, st = $('coopRvPickStat'), cls = $('coopCls').value, id = el.value;
-  el.disabled = true; st.textContent = '保存中…';
-  google.script.run.withSuccessHandler(function(r){
-    el.disabled = false;
-    if(!r || !r.ok){ st.textContent = (r && r.msg) || '保存できません'; el.value = CP_RV[cls] || ''; return; }
-    CP_RV = r.rv || {}; st.textContent = '保存しました';
-  }).withFailureHandler(function(e){
-    el.disabled = false; el.value = CP_RV[cls] || ''; st.textContent = '保存できません: ' + e.message;
-  }).coopSetReview(cls, id);
+  var el = this, cls = $('coopCls').value, id = el.value;
+  saveWith_(el, 'coopRvPickStat', function(run){ run.coopSetReview(cls, id); }, function(r){
+    if(!r || !r.ok){ el.value = CP_RV[cls] || ''; return { msg: (r && r.msg) || '保存できません', bad: true }; }
+    CP_RV = r.rv || {}; return '保存しました';
+  }, { fail: function(){ el.value = CP_RV[cls] || ''; } });
 };
 
 $('coopLoad').onclick = function(){

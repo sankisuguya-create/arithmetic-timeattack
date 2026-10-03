@@ -45,4 +45,25 @@ const fixedStyles = src => (src.match(/style="[^"]*"/g) || []).filter(x => x !==
   assert.ok(s.includes('.split > .box{min-height:0;min-width:0;'), p);
 });
 
+/* ---- 単元の教師画面：未保存の印と保存ボタンはハブと同じ型（esc は5画面すべて同一実装） ---- */
+{
+  const t = read('common/teacher.html');
+  // 未保存の印は markDirty_、保存ボタンは saveWith_ に寄せる（ハブと同じ型）
+  assert.ok(t.includes('function markDirty_(boxId, btnId, base, v){'), 'common/teacher.html に markDirty_ がない');
+  assert.equal((t.match(/markDirty_\(/g) || []).length, 3, 'markDirty_ は定義+2箇所（全般設定・公開モード）');
+  assert.ok(t.includes('function saveWith_(btn, statId, call, done, opts){'), 'common/teacher.html に saveWith_ がない');
+  assert.equal((t.match(/saveWith_\(/g) || []).length, 8,
+    'saveWith_ は定義+7箇所（設定・公開モード・グループ分け・終了・じぶん出題・回の保存・見返す回）。agg は集計なので対象外');
+}
+{
+  // esc は5画面すべて同じ実装（コメントは違ってよいが、関数の中身は一字一句同じ）
+  const ESC = "function esc(s){\n" +
+    "  return String(s==null?'':s).replace(/[&<>\"]/g, function(c){\n" +
+    "    return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c];\n" +
+    "  });\n" +
+    "}";
+  ['common/index.html', 'common/teacher.html', 'apps/hub/teacher.html', 'apps/hub/analysis.html', 'apps/hub/links.html']
+    .forEach(p => assert.ok(read(p).includes(ESC), p + ' の esc が共通実装と違う'));
+}
+
 console.log('hub_ui.test.cjs: all assertions passed.');

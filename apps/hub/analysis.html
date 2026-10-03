@@ -205,7 +205,12 @@ details.guide .panel{position:absolute;right:0;top:2.2rem;z-index:5;width:min(56
  *   → 出力・記録 → 学級の切り替え・今すぐ集計 → 読み込み */
 var BOOT = null, DATA = null, KEY = '', SEL_KID = '', KFILT = 'flag', CUNIT = '', SFILT = 'open', SEL_TYPES = {};
 function $(id){ return document.getElementById(id); }
-function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+/* 教師画面・ハブ設定・児童画面と同じ実装（どこか1箇所で直しても、ほかの画面の esc は置き換えないこと） */
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 function pctTxt(x){ return x==null ? '—' : Math.round(x); }
