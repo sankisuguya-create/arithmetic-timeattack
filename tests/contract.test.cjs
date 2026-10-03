@@ -56,6 +56,19 @@ for (const name of unitNames()) {
 }
 console.log(`${unitNames().length} units passed the contract checks (warns: ${totalWarns}).`);
 
+// キュー項目の位置づけ。書き込み（Core.gs の QI_）と読み取り（index.html の QI）が
+// 同じ表で結ばれていること。ずれると miss_items / wrong_items / stat が静かに壊れる
+{
+  const vm = require('vm');
+  const src = require('./lib/kit.cjs').read('common/index.html');
+  const m = src.match(/var QI = (\{[^}]*\});/);
+  assert.ok(m, 'index.html に var QI が見つからない');
+  const qiClient = vm.runInContext('(' + m[1] + ')', vm.createContext({}));
+  assert.deepEqual(qiClient, loadUnit(unitNames()[0]).QI_,
+    'index.html の QI が Core.gs の QI_ と違う');
+}
+console.log('queue item schema (QI) shared.');
+
 // 単元が足す色は、別学年の色のうち使ってよいもの（GRADE_EXTRA_）に限る。
 // 3年にからし（5年）を足すと、ミントと1型の見え方で色差16になり弾かれること
 {

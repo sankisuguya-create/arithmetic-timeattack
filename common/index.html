@@ -546,6 +546,11 @@ var SLOTCOLOR = {};
 /* 演算子トークン → 表示記号。四則は全単元共通なのでここに置く */
 var OPS = {'+':'+', '-':'−', '×':'×', '÷':'÷', '=':'='};
 
+/* キュー項目（サーバーが packQueue_ で組み立てる1問の配列）の位置づけ。
+   写し元は common/Core.gs の QI_ — contract.test.cjs が一致を検査する。
+   添字はここから引く（x[QI.F] のように）。配列の並び自体は変えない */
+var QI = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8 };
+
 var CFG = {limitSec:60, missLimit:3, guest:false, open:{}};
 var BEST = {}, MEDAL = {}, STARS = {}, PBEST = {};
 
@@ -3010,6 +3015,7 @@ function pFetch(){
       pFail = 0;
       var a = {};
       r.f.forEach(function(u, i){ a[u] = r.ans[i]; });
+      // キュー項目の形は packQueue_（Core.gs の QI_）と同じ。こちらはキーで届く
       pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
               rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null};
     }else{ pFail++; }
@@ -3061,9 +3067,9 @@ function beginPractice(timed){
       CFG.limitSec = r.limitSec; CFG.missLimit = r.missLimit;
       queue = r.qs.map(function(x){
         var a = {};
-        x[1].forEach(function(u, i){ a[u] = x[2][i]; });
-        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null,
-                rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
+        x[QI.F].forEach(function(u, i){ a[u] = x[QI.ANS][i]; });
+        return {q:x[QI.Q], f:x[QI.F], ans:a, ruler:x[QI.RULER]||null, t:x[QI.T]||null, dial:x[QI.DIAL]||null,
+                rows:x[QI.ROWS]||null, veil:(x[QI.VEIL] == null ? null : x[QI.VEIL]), fig:x[QI.FIG]||null};
       });
       qi = 0; clearTyped(); ready = true;
       if(r.coop) COOP = r.coop;                    // 開いたまま協力モードが始まっても、次の本番で印が出る
@@ -3147,9 +3153,9 @@ function begin(m){
       CFG.limitSec = r.limitSec; CFG.missLimit = r.missLimit;
       queue = r.qs.map(function(x){
         var a = {};
-        x[1].forEach(function(u, i){ a[u] = x[2][i]; });
-        return {q:x[0], f:x[1], ans:a, ruler:x[3]||null, t:x[4]||null, dial:x[5]||null,
-                rows:x[6]||null, veil:(x[7] == null ? null : x[7]), fig:x[8]||null};
+        x[QI.F].forEach(function(u, i){ a[u] = x[QI.ANS][i]; });
+        return {q:x[QI.Q], f:x[QI.F], ans:a, ruler:x[QI.RULER]||null, t:x[QI.T]||null, dial:x[QI.DIAL]||null,
+                rows:x[QI.ROWS]||null, veil:(x[QI.VEIL] == null ? null : x[QI.VEIL]), fig:x[QI.FIG]||null};
       });
       ready = true; clearTyped();
       if(r.coop){ COOP = r.coop; coopBadge_(); }

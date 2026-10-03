@@ -437,8 +437,20 @@ function genQueue_(seed, mode, n) {
 }
 
 /**
- * 送信用に切り詰める:
- * [出題トークン, 欄, 答え, まきじゃく, 問題型, はかりの文字盤, 並べ方, 覆い, 図]
+ * キュー項目（1問分の送信用の配列）の位置づけ。
+ *   Q: 出題トークン, F: 欄, ANS: 答え（F の順）, RULER: まきじゃく,
+ *   T: 問題型, DIAL: はかりの文字盤, ROWS: 並べ方, VEIL: 覆い, FIG: 図
+ *
+ * 書き込みは packQueue_、読み取りは index.html の2箇所（begin/beginPractice）と
+ * tests/divmod.test.cjs。同じ1問をオブジェクトで組み立てるのが
+ * nextPracticeItem と index.html の pFetch（キーはここの小文字）。
+ * 添字・キーを変えるときは両側を同じこの表で揃えること
+ * （配列の並び自体は送信中データとの互換なので変えない）。
+ */
+var QI_ = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8 };
+
+/**
+ * 送信用に切り詰める（配列の並びは QI_）。
  *
  * 並べ方（rows）と覆い（veil）を問題ごとに載せるのは、まきじゃくや文字盤と同じ理由。
  * 単元が「この問題はこう並べる」と決められないと、共通画面が単元ごとの形を
@@ -446,9 +458,17 @@ function genQueue_(seed, mode, n) {
  */
 function packQueue_(q) {
   return q.map(function (x) {
-    return [x.q, x.f, x.f.map(function (k) { return x.ans[k]; }),
-            x.ruler || null, x.t, x.dial || null,
-            x.rows || null, (x.veil == null ? null : x.veil), x.fig || null];
+    var it = [];
+    it[QI_.Q] = x.q;
+    it[QI_.F] = x.f;
+    it[QI_.ANS] = x.f.map(function (k) { return x.ans[k]; });
+    it[QI_.RULER] = x.ruler || null;
+    it[QI_.T] = x.t;
+    it[QI_.DIAL] = x.dial || null;
+    it[QI_.ROWS] = x.rows || null;
+    it[QI_.VEIL] = (x.veil == null ? null : x.veil);
+    it[QI_.FIG] = x.fig || null;
+    return it;
   });
 }
 
@@ -578,6 +598,7 @@ function nextPracticeItem(mode, type) {
     for (var i = 0; i < 60 && it.t !== type; i++) it = UNIT.gen(rand, mode);
   }
 
+  // 返す形は packQueue_ の配列と同じ1問を、QI_ の小文字のキーで渡す
   return {
     ok: true, q: it.q, f: it.f,
     ans: it.f.map(function (k) { return it.ans[k]; }),
@@ -763,7 +784,8 @@ function submitSession(token, items) {
   };
 }
 
-/** 空欄は 0 とみなす。byTotal なら合計で、そうでなければ欄ごとに比べる */
+/** 空欄は 0 とみなす。byTotal なら合計で、そうでなければ欄ごとに比べる。
+ *  答え a[i] は qq.f[i] の順で届く（QI_.ANS と同じ並び。児童側は currentAns が f.map で作る） */
 function match_(a, qq, byTotal) {
   if (!a || a.length !== qq.f.length) return false;
   var got = 0, want = 0;
