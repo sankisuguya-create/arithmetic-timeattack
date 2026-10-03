@@ -10,8 +10,7 @@ var UNIT = {
   title: 'たしざん あんざん タイムアタック！',
   teacherTitle: 'たしざん（2けたの筆算） 設定・分析',
 
-  // 1回に解ける問題数が少ないので、既定を長めにする（根拠なし。記録を見て直す）
-  defaults: { limit_sec: 90 },
+  defaults: { limit_sec: 60 },
 
   units: {},
   modes: [

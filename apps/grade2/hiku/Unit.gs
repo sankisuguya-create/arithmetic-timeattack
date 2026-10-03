@@ -11,7 +11,7 @@ var UNIT = {
   title: 'ひきざん あんざん タイムアタック！',
   teacherTitle: 'ひきざん（2けたの筆算） 設定・分析',
 
-  defaults: { limit_sec: 90 },   // 根拠なし。記録を見て直す
+  defaults: { limit_sec: 60 },
 
   units: {},
   modes: [
