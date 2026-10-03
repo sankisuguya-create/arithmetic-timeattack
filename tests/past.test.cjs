@@ -115,6 +115,19 @@ const T = (y, m, d) => new Date(Date.UTC(y, m - 1, d, 3));
   assert.equal(sup[0][3], 'child:2024-児童002'); assert.equal(sup[1][3], 'class:3-1');
 }
 
+/* ---------- ハブの写しが Core と同じ結果になる（ハブには Core.gs が無いので写しを持つ） ---------- */
+{
+  const cases = [new Date(Date.UTC(2025, 3, 1)), '2025-04-01', '2025/03/31 23:59', '', null, 'x', 1717200000000];
+  for (const c of cases) assert.equal(ar.rowMs_(c), core.rowTime_(c), 'rowMs_: ' + c);
+  // 名簿を保存する年度：1〜3月はいまの年度、4〜12月は1つ前（4/1 の自動保存と同じ）
+  assert.equal(ar.arRosterFyAt_(2025, 3), 2025);
+  assert.equal(ar.arRosterFyAt_(2026, 4), 2025);
+  assert.equal(ar.arConfirmWord_(2025), '2025年度を消去');
+  // 画面は確認の語を自分で組み立てない（正本は arConfirmWord_）
+  const h = read('apps/hub/teacher.html');
+  assert.ok(!h.includes("fy + '年度を消去'") && h.includes('var want = y.confirm;'));
+}
+
 /* ---------- 画面と Core の取り決め ---------- */
 {
   const t = read('common/teacher.html'), h = read('apps/hub/teacher.html');

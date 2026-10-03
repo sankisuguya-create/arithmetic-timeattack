@@ -167,10 +167,14 @@ function isTeacher_(mail) {
 }
 
 /** いまの年度（4月始まり）を返す */
-function curSchoolYear_() {
-  var now = new Date(), tz = Session.getScriptTimeZone();
-  var cy = Number(Utilities.formatDate(now, tz, 'yyyy'));
-  return Number(Utilities.formatDate(now, tz, 'M')) >= 4 ? cy : cy - 1;
+function curSchoolYear_() { return fyOfTime_(Date.now()); }
+
+/** その時刻が属する年度（4月始まり。月の境目はスクリプトのタイムゾーンで見る）。読めなければ 0。年度の境目の正本 */
+function fyOfTime_(ts) {
+  if (!ts) return 0;
+  var d = new Date(ts), tz = Session.getScriptTimeZone();
+  var y = Number(Utilities.formatDate(d, tz, 'yyyy')), m = Number(Utilities.formatDate(d, tz, 'M'));
+  return m >= 4 ? y : y - 1;
 }
 
 /**
@@ -2429,14 +2433,6 @@ var PAST_FREQ_DRAWS_ = 3000;   // モードごとに gen を回す回数。1%の
 var PAST_ITEM_MIN_ = 20;       // 推定出題数がこれ未満の問題は誤答率の順位に入れない（an_min_trials と同じ値）
 var PAST_ITEM_TOP_ = 15;
 
-/** その時刻が属する年度（4月始まり）。読めなければ 0 */
-function fyOfTime_(ts) {
-  if (!ts) return 0;
-  var d = new Date(ts), tz = Session.getScriptTimeZone();
-  var y = Number(Utilities.formatDate(d, tz, 'yyyy')), m = Number(Utilities.formatDate(d, tz, 'M'));
-  return m >= 4 ? y : y - 1;
-}
-
 /** モードごとの各問題の出やすさ { mode: { 't|tag': 確率 } }。gen は決定的なのでシードを固定すれば毎回同じ */
 function tagFreq_() {
   var hit = cache_().get('tagfreq');
@@ -2894,10 +2890,7 @@ function buildAnalysis_(fyear) {
   // 年度選択肢: 最古の記録が属する年度から今年度まで（記録がなければ今年度のみ）
   var years = [curFy];
   if (minTs) {
-    var md = new Date(minTs);
-    var firstFy = Number(Utilities.formatDate(md, Session.getScriptTimeZone(), 'M')) >= 4
-      ? Number(Utilities.formatDate(md, Session.getScriptTimeZone(), 'yyyy'))
-      : Number(Utilities.formatDate(md, Session.getScriptTimeZone(), 'yyyy')) - 1;
+    var firstFy = fyOfTime_(minTs);
     for (var y = curFy - 1; y >= firstFy; y--) years.push(y);
   }
 

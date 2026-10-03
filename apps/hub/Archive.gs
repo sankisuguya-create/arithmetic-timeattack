@@ -34,13 +34,21 @@ var AR_TIME_BUDGET_MS = 270000;               // GAS の6分制限より手前�
  *  純粋な計算
  * ============================================================ */
 
-/** 年度の範囲 [4/1, 翌4/1) のミリ秒。月の境目はスクリプトのタイムゾーンで見る必要があるので fyOf を受け取る形にする */
+/** その時刻がその年度か。年度の境目はスクリプトのタイムゾーンで見るので、境目の関数 fyOf を受け取る（テストでは UTC の関数を渡す） */
 function arInFy_(ts, fy, fyOf) { return !!ts && fyOf(ts) === fy; }
 
 function arPad_(n) { var s = String(n); while (s.length < 3) s = '0' + s; return s; }
 function arName_(n) { return '児童' + arPad_(n); }
 function arToken_(fy, n) { return fy + '-' + arName_(n); }
 function arIsMail_(s) { return String(s || '').indexOf('@') >= 0; }
+/** 消去の確認で打たせる語。画面はこの関数の結果を arStatus から受け取って出す（文言の正本） */
+function arConfirmWord_(fy) { return fy + '年度を消去'; }
+
+/**
+ * 「いまの名簿を前年度の名簿として保存」の年度。1〜3月はいまの年度（もうすぐ終わる）、4〜12月は1つ前（終わった）。
+ * 4/1 の自動保存（rolloverHubRoster）と同じ年度になる
+ */
+function arRosterFyAt_(fy, month) { return month >= 4 ? fy - 1 : fy; }
 
 /**
  * 番号を振る。entries: [{ mail, grade, cls, no }]（同じ mail が複数あってよい。最初の所属を使う）
@@ -93,6 +101,7 @@ function arRosterEntries_(rows) {
   return out;
 }
 
+/** Core.gs の rowTime_ と同じ（ハブには Core.gs が無いので持つ。tests/past.test.cjs が同じ結果を確かめる）。読めなければ 0 */
 function rowMs_(x) {
   if (x instanceof Date) return x.getTime();
   if (x === '' || x == null) return 0;
@@ -242,6 +251,7 @@ function arScrubSupport_(rows, fy, fyOf, map) {
  *  シートを触る層
  * ============================================================ */
 
+/** Core.gs の fyOfTime_ と同じ（年度の境目。ハブ側の正本） */
 function arFyOf_(ts) {
   var d = new Date(ts), tz = Session.getScriptTimeZone();
   var y = Number(Utilities.formatDate(d, tz, 'yyyy')), m = Number(Utilities.formatDate(d, tz, 'M'));
@@ -375,13 +385,17 @@ function arStatus() {
   }
   var owner = false;
   try { owner = email_() === ss_().getOwner().getEmail().toLowerCase(); } catch (e) {}
+  var month = Number(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M'));
+  var rfy = arRosterFyAt_(cur, month);
   return {
     cur: cur, owner: owner, units: units, log: log,
+    rosterFy: rfy, rosterSaved: !!ss_().getSheetByName('roster_' + rfy),
     years: Object.keys(years).map(Number).sort(function (a, b) { return b - a; }).map(function (fy) {
       var o = years[fy];
       o.pii = 0;
       Object.keys(o.units).forEach(function (k) { o.pii += o.units[k]; });
       o.pending = !!ss_().getSheetByName(AR_WORK_PREFIX + fy);
+      o.confirm = arConfirmWord_(fy);
       return o;
     })
   };
@@ -395,7 +409,7 @@ function arAnonymize(fy, confirm) {
   arOwnerCheck_();
   fy = Number(fy);
   if (!(fy > 2000) || fy >= arCurFy_()) throw new Error('今年度とこれから先の年度は消せません');
-  if (String(confirm || '').trim() !== fy + '年度を消去') throw new Error('確認の文字が違います（「' + fy + '年度を消去」と入力）');
+  if (String(confirm || '').trim() !== arConfirmWord_(fy)) throw new Error('確認の文字が違います（「' + arConfirmWord_(fy) + '」と入力）');
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) throw new Error('別の処理が動いています。しばらくしてから押してください');
   try {
@@ -473,7 +487,7 @@ function rolloverHubRoster(now) {
   now = (now instanceof Date) ? now : new Date();   // トリガー呼び出しはイベントobjが来る
   var tz = Session.getScriptTimeZone();
   if (Utilities.formatDate(now, tz, 'MMdd') !== '0401') return;
-  arArchiveRoster_(Number(Utilities.formatDate(now, tz, 'yyyy')) - 1);
+  arArchiveRoster_(arRosterFyAt_(arFyOf_(now.getTime()), 4));   // 4/1 は新年度。保存するのは1つ前
 }
 
 /** roster を roster_<fy> に値で写す。済みなら何もしない。写したら true */
@@ -488,11 +502,13 @@ function arArchiveRoster_(fy) {
   return true;
 }
 
-/** 教師画面から：今の roster を前年度の名簿として今すぐ保存する（4/1 のトリガーを待たずに名簿を入れ替えたい時） */
-function arArchiveRosterNow(fy) {
+/**
+ * 教師画面から：今の roster を前年度の名簿として今すぐ保存する（4/1 のトリガーを待たずに名簿を入れ替えたい時）。
+ * 年度は画面に選ばせず、ここで決める（arRosterFyAt_）
+ */
+function arArchiveRosterNow() {
   arOwnerCheck_();
-  fy = Number(fy);
-  if (!(fy > 2000) || fy >= arCurFy_() + 1) throw new Error('年度が正しくありません');
+  var fy = arRosterFyAt_(arCurFy_(), Number(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M')));
   return arArchiveRoster_(fy) ? 'roster_' + fy + ' に保存しました。' : 'roster_' + fy + ' はすでにあるか、名簿が空です。';
 }
 

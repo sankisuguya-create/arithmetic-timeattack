@@ -222,7 +222,7 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
       </div>
       <div class="bar">
         <button id="arReload" class="bstep" type="button">↻ 読み込み直す</button>
-        <button id="arRoster" class="bkey" type="button">いまの名簿を前年度の名簿として保存</button>
+        <button id="arRoster" class="bkey" type="button" disabled>いまの名簿を前年度の名簿として保存</button>
         <span class="stat" id="arMsg"></span>
       </div>
       <details class="help">
@@ -329,19 +329,26 @@ $('maintabs').addEventListener('click', function(e){
 function arLoad(){
   $('arStat').textContent = '各単元の記録を読んでいます…（単元が多いと数十秒かかります）';
   google.script.run.withSuccessHandler(function(r){ AR = r; arRender(); })
-    .withFailureHandler(function(e){ $('arStat').textContent = '読み込めません: ' + e.message; })
+    .withFailureHandler(function(e){
+      // Archive.gs を貼り忘れると関数が無いと返る。何をすればよいかを出す
+      $('arStat').textContent = /arStatus/.test(e.message)
+        ? 'ハブに Archive.gs がありません。Apps Script に「Archive」を追加して apps/hub/Archive.gs を貼り、デプロイを更新してください。'
+        : '読み込めません: ' + e.message;
+    })
     .arStatus();
 }
 $('arReload').onclick = arLoad;
 function arRender(){
   var r = AR;
   $('arStat').textContent = r.owner ? '' : '消去と名簿の保存は、スプレッドシートの所有者だけが押せます。';
-  $('arRoster').disabled = !r.owner;
+  $('arRoster').disabled = !r.owner || r.rosterSaved;
+  $('arRoster').textContent = r.rosterSaved ? 'roster_' + r.rosterFy + ' は保存済み' : 'いまの名簿を roster_' + r.rosterFy + ' として保存';
   var head = '<thead><tr><th>年度</th><th>氏名・メールが残っている児童（単元ごとの合計）</th><th>名簿シート</th><th></th></tr></thead>';
   $('arYears').innerHTML = r.years.length ? head + '<tbody>' + r.years.map(function(y){
     var isCur = y.fy >= r.cur;
     var per = r.units.filter(function(u){ return y.units[u.id]; }).map(function(u){ return esc(u.title) + ' ' + y.units[u.id] + '人'; }).join('、');
-    var pii = y.pii ? '<span class="pii">' + y.pii + ' 人分</span><div class="note">' + per + '</div>' : '残っていません';
+    // 赤は「消すべきものが残っている」時だけ（今年度は使用中なので通常の色。原則3：意味色は役割に）
+    var pii = y.pii ? '<span class="' + (isCur ? '' : 'pii') + '">' + y.pii + ' 人分</span><div class="note">' + per + '</div>' : '残っていません';
     var btn = isCur ? '<span class="note">今年度は消せません</span>'
       : (y.pii || y.rosters.length || y.pending)
         ? '<button class="bkey stop" data-ar="' + y.fy + '"' + (r.owner ? '' : ' disabled') + '>' + (y.pending ? '続きから消去' : 'この年度を消去') + '</button>'
@@ -358,7 +365,9 @@ function arRender(){
 $('arYears').addEventListener('click', function(e){
   var fy = e.target && e.target.dataset ? e.target.dataset.ar : null;
   if(!fy) return;
-  var want = fy + '年度を消去';
+  var y = AR.years.filter(function(x){ return String(x.fy) === fy; })[0];
+  if(!y) return;
+  var want = y.confirm;
   var typed = window.prompt(fy + '年度の記録から、児童の氏名とメールアドレスを「児童001」などに置き換えます。元に戻せません。\n' +
     '続けるときは「' + want + '」と入力してください。');
   if(typed === null) return;
@@ -370,13 +379,10 @@ $('arYears').addEventListener('click', function(e){
     .arAnonymize(Number(fy), typed.trim());
 });
 $('arRoster').onclick = function(){
-  var fy = AR ? AR.cur - 1 : 0;
-  var m = new Date().getMonth() + 1;
-  if(m < 4 && AR) fy = AR.cur;   // 1〜3月に押した時は「今年度」の名簿を保存する（4月から前年度になる）
-  if(!window.confirm('いまの名簿（roster）を roster_' + fy + ' として保存します。よろしいですか？')) return;
+  if(!window.confirm('いまの名簿（roster）を roster_' + AR.rosterFy + ' として保存します。よろしいですか？')) return;
   google.script.run.withSuccessHandler(function(msg){ $('arMsg').textContent = msg; arLoad(); })
     .withFailureHandler(function(err){ $('arMsg').textContent = '保存できません: ' + err.message; })
-    .arArchiveRosterNow(fy);
+    .arArchiveRosterNow();
 };
 
 /* 単元の教師ページ URL。児童用 URL に page=teacher を足すだけ（各単元の doGet が同じ約束で分岐する） */
