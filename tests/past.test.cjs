@@ -18,7 +18,16 @@ const T = (y, m, d) => new Date(Date.UTC(y, m - 1, d, 3));
 /* ---------- pastStats_ ---------- */
 {
   const types = Object.keys(core.UNIT.types), A = types[0];
-  const head = ['ts', 'email', '学年', '組', '番号', '氏名', 'mode', 'モード名', 'limit_sec', 'correct', 'attempts', 'miss_items', 'slow_items', 'type_stats', 'wrong_items'];
+  // log のヘッダ・列位置・シート名の正本は Core.gs の LOG_DEF_ / SHEETS。ハブ側は写しを持つ
+  assert.deepEqual(JSON.parse(JSON.stringify(core.LOG_HEAD_)), ['ts', 'email', '学年', '組', '番号', '氏名', 'mode', 'モード名', 'limit_sec', 'correct', 'attempts', 'miss_items', 'slow_items', 'type_stats', 'wrong_items'], 'log のヘッダ宣言');
+  assert.equal(core.LOG_HEAD_.length, core.LOG_WIDTH_, 'LOG_HEAD_ と LOG_WIDTH_ のずれ');
+  assert.equal(core.SHEETS.MISTAKES, 'mistakes');
+  assert.deepEqual(JSON.parse(JSON.stringify(ar.AR_LOG_COL_)), JSON.parse(JSON.stringify(core.LOG_COL_)), 'Archive.gs の列位置が Core.gs と違う');
+  assert.deepEqual(JSON.parse(JSON.stringify(ar.AR_SHEETS_)), {
+    LOG: core.SHEETS.LOG, SUMMARY: core.SHEETS.SUMMARY, MISTAKES: core.SHEETS.MISTAKES,
+    COOP: core.SHEETS.COOP, COOPLOG: core.SHEETS.COOPLOG, COOPSAVE: core.SHEETS.COOPSAVE
+  }, 'Archive.gs のシート名が Core.gs と違う');
+  const head = core.LOG_HEAD_;
   const ln = Math.log(2000);
   const rows = [head,
     // 2024年度：A を 8 問1回目で正答・2 問誤答。7x8 が2回、遅いのが1回

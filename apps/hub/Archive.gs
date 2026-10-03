@@ -27,6 +27,12 @@
 
 var AR_LOG_SHEET = 'ar_log';
 var AR_LOG_HEAD = ['日時', '年度', '実行した人', '児童数', '単元数', '結果'];
+
+/** 各単元の log シートの列位置 — common/Core.gs の LOG_COL_ の写し（tests/past.test.cjs が一致を検査する） */
+var AR_LOG_COL_ = { TS:0, MAIL:1, GRADE:2, CLS:3, NO:4, NAME:5, MODE:6, MNAME:7, LIM:8,
+                  CORRECT:9, ATTEMPTS:10, MISS:11, SLOW:12, TSTAT:13, WRONG:14 };
+/** 各単元の記録シート名 — Core.gs の SHEETS の写し（同上。roster_<年度> は年度を付けるのでここには入れない） */
+var AR_SHEETS_ = { LOG: 'log', SUMMARY: 'summary', MISTAKES: 'mistakes', COOP: 'coop', COOPLOG: 'coop_log', COOPSAVE: 'coop_save' };
 var AR_WORK_PREFIX = 'ar_work_';              // 途中の番号の対応表（終わったら消す）
 var AR_TIME_BUDGET_MS = 270000;               // GAS の6分制限より手前で止める
 
@@ -86,8 +92,8 @@ function arLogEntries_(rows, fy, fyOf) {
   var out = [];
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
-    if (!arInFy_(rowMs_(r[0]), fy, fyOf) || !arIsMail_(r[1])) continue;
-    out.push({ mail: r[1], grade: r[2], cls: r[3], no: r[4] });
+    if (!arInFy_(rowMs_(r[AR_LOG_COL_.TS]), fy, fyOf) || !arIsMail_(r[AR_LOG_COL_.MAIL])) continue;
+    out.push({ mail: r[AR_LOG_COL_.MAIL], grade: r[AR_LOG_COL_.GRADE], cls: r[AR_LOG_COL_.CLS], no: r[AR_LOG_COL_.NO] });
   }
   return out;
 }
@@ -127,9 +133,9 @@ function arScrubLog_(rows, fy, fyOf, map) {
   var n = [];
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
-    if (!arInFy_(rowMs_(r[0]), fy, fyOf) || !arIsMail_(r[1])) continue;
-    r[5] = arNameOfMail_(r[1], map);
-    r[1] = arMailOf_(r[1], map, fy);
+    if (!arInFy_(rowMs_(r[AR_LOG_COL_.TS]), fy, fyOf) || !arIsMail_(r[AR_LOG_COL_.MAIL])) continue;
+    r[AR_LOG_COL_.NAME] = arNameOfMail_(r[AR_LOG_COL_.MAIL], map);
+    r[AR_LOG_COL_.MAIL] = arMailOf_(r[AR_LOG_COL_.MAIL], map, fy);
     n.push(i);
   }
   return n;
@@ -355,7 +361,7 @@ function arStatus() {
     units.push(rec);
     var ss;
     try { ss = SpreadsheetApp.openById(u.id); } catch (e) { rec.err = '開けません（共有を確認）'; return; }
-    var log = arValues_(ss, 'log');
+    var log = arValues_(ss, AR_SHEETS_.LOG);
     if (log) {
       var kids = {};
       for (var i = 1; i < log.v.length; i++) {
@@ -420,7 +426,7 @@ function arAnonymize(fy, confirm) {
     units.forEach(function (u) {
       var ss;
       try { ss = SpreadsheetApp.openById(u.id); } catch (e) { errs.push(u.title + '：開けません'); return; }
-      var log = arValues_(ss, 'log');
+      var log = arValues_(ss, AR_SHEETS_.LOG);
       if (log) entries = entries.concat(arLogEntries_(log.v, fy, arFyOf_));
       var ro = arValues_(ss, 'roster_' + fy);
       if (ro) entries = entries.concat(arRosterEntries_(ro.v));
@@ -443,11 +449,11 @@ function arAnonymize(fy, confirm) {
       }
       var o = opened[i], ss = o.ss, t;
       if (o.log) { var li = arScrubLog_(o.log.v, fy, arFyOf_, map); rowsN += li.length; arWriteRows_(o.log, li, [1, 2, 3, 4, 5]); }
-      if ((t = arValues_(ss, 'summary'))) arWriteRows_(t, arScrubSummary_(t.v, fy, map, current), [0]);
-      if ((t = arValues_(ss, 'mistakes'))) arWriteRows_(t, arScrubMistakes_(t.v, fy, arFyOf_, byKey), [4]);
-      if ((t = arValues_(ss, 'coop'))) arWriteRows_(t, arScrubCoop_(t.v, fy, arFyOf_, byKey), [7]);
-      if ((t = arValues_(ss, 'coop_log'))) arWriteRows_(t, arScrubCoopLog_(t.v, fy, arFyOf_, map), [2]);
-      if ((t = arValues_(ss, 'coop_save'))) arWriteRows_(t, arScrubCoopSave_(t.v, fy, arFyOf_, map, byKey), [4]);
+      if ((t = arValues_(ss, AR_SHEETS_.SUMMARY))) arWriteRows_(t, arScrubSummary_(t.v, fy, map, current), [0]);
+      if ((t = arValues_(ss, AR_SHEETS_.MISTAKES))) arWriteRows_(t, arScrubMistakes_(t.v, fy, arFyOf_, byKey), [4]);
+      if ((t = arValues_(ss, AR_SHEETS_.COOP))) arWriteRows_(t, arScrubCoop_(t.v, fy, arFyOf_, byKey), [7]);
+      if ((t = arValues_(ss, AR_SHEETS_.COOPLOG))) arWriteRows_(t, arScrubCoopLog_(t.v, fy, arFyOf_, map), [2]);
+      if ((t = arValues_(ss, AR_SHEETS_.COOPSAVE))) arWriteRows_(t, arScrubCoopSave_(t.v, fy, arFyOf_, map, byKey), [4]);
       var rs = ss.getSheetByName('roster_' + fy);
       if (rs) ss.deleteSheet(rs);
       SpreadsheetApp.flush();
