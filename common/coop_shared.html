@@ -1,0 +1,136 @@
+/* ============================================================
+ *  協力プレイの共有層
+ *
+ *  児童画面（index.html）と教師画面（teacher.html）の <script> の中に
+ *  <?!= include('coop_shared') ?> で同じものを挿入する。
+ *  ここにある関数・定数は各画面に写しを置かない（片方だけ直すと色・割当・枚数が食い違う）。
+ *  貼るファイルは1つ増えるが、協力プレイの振る舞いの正本はこのファイルだけになる。
+ *  GAS プロジェクトでは HTML ファイルとして貼る（名前: coop_shared）。
+ * ============================================================ */
+
+/* ---- 見返し・モニターの縮尺と自動枚数の見込み ---- */
+var CRV = { CVW: 3.6, CSMIN: 0.32, CZOOM_STEP: 0.72, CCOVER: 0.9, CAIM: 0.85, CPART: 0.9, CGAP: 25 };
+var CGHOST = '16,23,40';   // 輪郭・にじみの色（床の FLOOR_LINE と同じ値）
+
+/* ---- 色 ----
+ * 色の候補：OKLab（見た目の差がほぼ距離に比例する色空間）で、色相10°ごと×明るさ4段×鮮やかさ2段のうち
+ * 画面で出せるものを並べ、すでに選んだ色から最も遠い候補を順に取る（最遠点選択）。
+ * 金色の角度で色相だけを回す旧手順は、明るさ・鮮やかさが揃いやすく似た色が多かった。
+ * 明るさの差は色覚の型を問わず残るので、L に重み1.6をかけて明るさの違いを優先させる（重みは実測で調整、根拠は計算のみ）。
+ * 29色すべてを見分けられる配色は存在しない。見分けは「自分の色を目立たせる」（色以外の手がかり）で行う */
+function coopRng_(seed){ var s = seed >>> 0; return function(){ s = (s * 1103515245 + 12345) >>> 0; return (s >>> 8) / 16777216; }; }
+function coopOkToRgb_(L, C, h){
+  var a = C * Math.cos(h * Math.PI / 180), b = C * Math.sin(h * Math.PI / 180);
+  var l = Math.pow(L + 0.3963377774 * a + 0.2158037573 * b, 3), m = Math.pow(L - 0.1055613458 * a - 0.0638541728 * b, 3),
+      s = Math.pow(L - 0.0894841775 * a - 1.2914855480 * b, 3);
+  var lin = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+             -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+  for(var i = 0; i < 3; i++){ if(lin[i] < -1e-4 || lin[i] > 1.0001) return null; }
+  return lin.map(function(c){ c = Math.min(1, Math.max(0, c)); return Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055)); });
+}
+function coopPalette_(n, seed){
+  var rand = coopRng_(seed * 7919), h0 = rand() * 360, cand = [], i, j, h, L, C;
+  var LS = [0.50, 0.61, 0.72, 0.83], CS = [0.10, 0.16];
+  for(h = 0; h < 360; h += 10) for(i = 0; i < LS.length; i++) for(j = 0; j < CS.length; j++){
+    L = LS[i]; C = CS[j];
+    var rgb = coopOkToRgb_(L, C, h0 + h);
+    if(rgb) cand.push({ L: L * 1.6, a: C * Math.cos((h0 + h) * Math.PI / 180), b: C * Math.sin((h0 + h) * Math.PI / 180), rgb: rgb.join(',') });
+  }
+  var cols = [], md = cand.map(function(){ return 1e9; }), k = Math.floor(rand() * cand.length);
+  for(i = 0; i < n; i++){
+    if(i > 0){ k = 0; for(j = 1; j < cand.length; j++) if(md[j] > md[k]) k = j; }
+    var c = cand[k]; cols.push(c.rgb);
+    for(j = 0; j < cand.length; j++){
+      var d = (cand[j].L - c.L) * (cand[j].L - c.L) + (cand[j].a - c.a) * (cand[j].a - c.a) + (cand[j].b - c.b) * (cand[j].b - c.b);
+      if(d < md[j]) md[j] = d;
+    }
+  }
+  for(i = n - 1; i > 0; i--){ j = Math.floor(rand() * (i + 1)); var t = cols[i]; cols[i] = cols[j]; cols[j] = t; }
+  return cols;
+}
+/* 協力の色は "r,g,b" 文字列。floorFam_（16進）と同じ5段の明暗にする */
+function coopFam_(rgb){
+  var c = rgb.split(',').map(Number);
+  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
+    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
+  });
+}
+
+/* ---- 「1正答の枚数」の自動計算 ----
+ * 見込みの正答 ＝ 人数 × 参加の割合 × 遊べる回数（時間 ÷（1回の秒＋間の秒））× 1回の正答（1分の正答 × 1回の分）。
+ * 終わりに完成（最小の縮尺で9割）の CAIM まで育つ枚数にする。
+ * CPART（参加して遊ぶ割合）と CGAP（1回ごとの結果画面・次の開始までの秒）は根拠のない仮定。
+ * 保存した回の再生でだいたい合うことを確かめたもの */
+function coopAutoRate_(p){
+  var plays = p.minutes * 60 / (p.lim + CRV.CGAP);
+  // wm：育ちの倍率の平均（どのモードがどれだけ遊ばれるかは分からないので、モードの倍率を平均して見込む）
+  var expect = Math.max(1, p.n) * CRV.CPART * plays * p.pace * p.lim / 60 * (p.wm || 1);
+  // used：続きからの回で、前の回までに使った枚数。残りの余白で決め直す（前の回の枚数は前の回のまま）
+  return Math.max(0.5, Math.round((CRV.CAIM * p.tfin - (p.used || 0)) / expect * 10) / 10);
+}
+
+/* ---- 起点（児童画面と教師画面に同じものが挿入される。tests/coop.test.cjs が使う） ----
+ * 起点ごとに担当が決まり、児童 i（グループなら組 g）の正答は起点 (i mod 起点の数) から近い順に、空いているタイルへ貼る。
+ * 位置は最初の画面（縮尺1）の左上を (0, 0)、右下を (1, 1) とした割合 [u, v] で持つ（画面の大きさが違っても同じ所に来る）。
+ * 既定の位置（coopOriginsN）：起点1つなら育ち始める点（vx, vy）だけで今までと同じ形、2つ以上なら最初の画面の中に格子状。
+ * 教師が見本の上で動かした位置（pos）があればそれを使う。どの起点を誰が担当するかはシードで混ぜる（番号の若い児童がいつも同じ所、にならないように） */
+function coopOriginsN(k, ox, oy, w, h){
+  if(k <= 1) return [[ox / w, oy / h]];
+  var cols = Math.max(1, Math.min(k, Math.round(Math.sqrt(k * 0.8 * w / (0.76 * h))))), rows = Math.ceil(k / cols), pts = [], r, c;
+  for(r = 0; r < rows; r++){
+    var inRow = Math.min(cols, k - r * cols);
+    for(c = 0; c < inRow; c++) pts.push([0.1 + 0.8 * (c + 0.5 + (cols - inRow) / 2) / cols, 0.12 + 0.76 * (r + 0.5) / rows]);
+  }
+  return pts;
+}
+function coopOrigins(k, vx, vy, ox, oy, w, h, seed, pos){
+  var custom = pos && pos.length === k, i, j, t;
+  if(k <= 1 && !custom){ var a = [vx, vy]; a.anchor = true; return [a]; }   // 育ち始める点そのもの（並びを作り直さない）
+  var pts = (custom ? pos : coopOriginsN(k, ox, oy, w, h)).map(function(q){ return [vx - ox + q[0] * w, vy - oy + q[1] * h]; });
+  var sd = (seed * 131 + 7) >>> 0;
+  for(i = pts.length - 1; i > 0; i--){ sd = (sd * 1103515245 + 12345) >>> 0; j = (sd >>> 8) % (i + 1); t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
+  return pts;
+}
+/* 起点ごとのタイルの並び。tiles はすでに育ち始める点から近い順なので、起点が育ち始める点1つならそのまま使う。
+ * 起点が複数なら、まず自分の領域（いちばん近い起点が自分のタイル）を近い順に、埋まったら外のタイルを近い順に使う。
+ * 近い順だけにすると、正答の多い隣の島が先に起点のまわりを埋め、正答の少ない子の島が他の島の縁に細く押し出された */
+function coopOrders(tiles, pts){
+  var n = tiles.length, i, k;
+  if(pts.length === 1 && pts[0].anchor){ var id = new Int32Array(n); for(i = 0; i < n; i++) id[i] = i; return [id]; }
+  var own = new Int32Array(n);
+  for(i = 0; i < n; i++){
+    var best = 0, bd = Infinity;
+    for(k = 0; k < pts.length; k++){ var dd = Math.hypot(tiles[i].cx - pts[k][0], tiles[i].cy - pts[k][1]); if(dd < bd){ bd = dd; best = k; } }
+    own[i] = best;
+  }
+  // 領域の外か・距離（1/8 px）・番号を1つの数にまとめ、型付き配列の速い並べ替えを使う（OUT と M は 2 の累乗なので % M で番号に戻る）
+  var M = 2097152, OUT = 1099511627776, key = new Float64Array(n);
+  return pts.map(function(p, pk){
+    for(i = 0; i < n; i++) key[i] = (own[i] === pk ? 0 : OUT) + Math.floor(Math.hypot(tiles[i].cx - p[0], tiles[i].cy - p[1]) * 8) * M + i;
+    key.sort();
+    var o = new Int32Array(n); for(i = 0; i < n; i++) o[i] = key[i] % M;
+    return o;
+  });
+}
+function coopAlloc(ord){ return { ord: ord, ptr: new Int32Array(ord.length), used: new Uint8Array(ord.length ? ord[0].length : 0) }; }
+/* 起点 o の担当の正答を1枚貼る先：その起点から近い順で、まだ空いている最初のタイル。空きが無ければ -1 */
+function coopTake(A, o){
+  var k = o % A.ord.length, ord = A.ord[k], p = A.ptr[k];
+  while(p < ord.length && A.used[ord[p]]) p++;
+  A.ptr[k] = p;
+  if(p >= ord.length) return -1;
+  A.used[ord[p]] = 1; return ord[p];
+}
+/* 完成に要る枚数：起点を順に1枚ずつ貼り、最小の縮尺の画面に入るタイルの9割が塗れるまでの枚数（担当の偏りは見込まない）。
+ * 起点1つなら「近い順に並べて、画面に入るタイルの9割目まで」と同じ */
+function coopFinOf(tiles, ord, inFin, cover){
+  var tot = 0, i;
+  for(i = 0; i < tiles.length; i++) if(inFin(tiles[i])) tot++;
+  var need = Math.ceil(tot * cover), have = 0, placed = 0, A = coopAlloc(ord), o = 0;
+  while(have < need){
+    var j = coopTake(A, o); o = (o + 1) % ord.length;
+    if(j < 0) break;
+    placed++; if(inFin(tiles[j])) have++;
+  }
+  return need ? placed : 0;
+}

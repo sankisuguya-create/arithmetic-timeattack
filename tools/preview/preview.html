@@ -167,7 +167,8 @@ async function main() {
   var results = await Promise.allSettled([
     fetch(base + 'common/Core.gs', NOCACHE).then(function (r) { if (!r.ok) throw new Error('Core.gs: ' + r.status); return r.text(); }),
     fetch(base + 'apps/' + upath + '/Unit.gs', NOCACHE).then(function (r) { if (!r.ok) throw new Error('apps/' + upath + '/Unit.gs: ' + r.status); return r.text(); }),
-    fetch(base + 'common/index.html', NOCACHE).then(function (r) { if (!r.ok) throw new Error('index.html: ' + r.status); return r.text(); })
+    fetch(base + 'common/index.html', NOCACHE).then(function (r) { if (!r.ok) throw new Error('index.html: ' + r.status); return r.text(); }),
+    fetch(base + 'common/coop_shared.html', NOCACHE).then(function (r) { if (!r.ok) throw new Error('coop_shared.html: ' + r.status); return r.text(); })
   ]);
 
   var errs = results.filter(function (r) { return r.status === 'rejected'; }).map(function (r) { return r.reason.message; });
@@ -176,7 +177,7 @@ async function main() {
     fail('読み込みに失敗しました。静的サーバーがリポジトリのルートを配信しているか確認してください。\n\n' + errs.join('\n'));
     return;
   }
-  var coreText = results[0].value, unitText = results[1].value, uiText = results[2].value;
+  var coreText = results[0].value, unitText = results[1].value, uiText = results[2].value, coopShared = results[3].value;
   var tm = unitText.match(/title:\s*'([^']+)'/);
   buildBar(unit, tm ? tm[1] : unit);
 
@@ -238,7 +239,10 @@ async function main() {
   if (!appIdRe.test(uiText)) { fail('common/index.html の APP_ID の埋め込み（<?!= JSON.stringify(String(UNIT.id)) ?>）が見つかりませんでした。'); return; }
   var verRe = /<\?!= ENGINE_VER \?>/, verM = coreText.match(/var ENGINE_VER = (\d+)/);
   if (!verRe.test(uiText) || !verM) { fail('common/index.html の版の埋め込み（<?!= ENGINE_VER ?>）または Core.gs の ENGINE_VER が見つかりませんでした。'); return; }
-  var patchedUi = uiText.replace(appIdRe, JSON.stringify(unit)).replace(verRe, verM[1]).replace(previewItemRe, newPreviewItem).replace(elseBlockRe, newElseBlock);
+  // 共有層：実機は include() が coop_shared の中身を挿入する。プレビューも同じ場所に同じ中身を置く
+  var incRe = /<\?!= include\('coop_shared'\) \?>/;
+  if (!incRe.test(uiText)) { fail('common/index.html の共有層の挿入（<?!= include(\'coop_shared\') ?>）が見つかりませんでした。'); return; }
+  var patchedUi = uiText.replace(appIdRe, JSON.stringify(unit)).replace(verRe, verM[1]).replace(incRe, coopShared).replace(previewItemRe, newPreviewItem).replace(elseBlockRe, newElseBlock);
 
   var helperScript =
     '<script>\n' +
