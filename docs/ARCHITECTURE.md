@@ -294,6 +294,14 @@ span は目盛りの窓と答えの値域の両方を決めているので、表
   生成器は2つ目の写しを置かず、`index.html` の `'FLOOR_GEN_BEGIN';`〜`'FLOOR_GEN_END';`（何もしない文）の間を Core.gs の `floorGenForTeacher_` が切り出して
   `teacher.html` に埋め込む（このしくみ自体はファイルを増やさない）。design から写し直すときも印は残す。
   印をコメントにしてはいけない：GAS の include（HtmlService の getContent()）は JS のコメントを消して返すため、サーバーから見えなくなる
+
+  **写し直しの手順**（写し元のコミットは index.html の「写し元: … @ <sha>」ピンと `tests/fixtures/generators.<sha>.js` の原本で固定する）:
+  1. design リポジトリで `growing-figures/generators.js` を直し、`check.cjs` を通してコミットする
+  2. そのコミットの generators.js を `tests/fixtures/generators.<新sha>.js` に保存する（古い原本は捨て、常にピンの1つだけ）
+  3. `index.html` の `'FLOOR_GEN_BEGIN';`〜`'FLOOR_GEN_END';` の間を新しい原本で置きかえる。末尾の受け取りだけ `})(this);` を
+     `})(window);   // 写し元は (this)。この画面は strict なので window を渡す` に変える（印は残す）
+  4. index.html の「写し元: … @ <sha>」のコミットを新しいものに書きかえる
+  5. `node tests/floor.test.cjs`（ピン一致を含む）を通す
 - **文字の際**：タイトル・カード・ボタンから10pxの範囲で模様を薄める（菱形ごとに距離から濃さを決める）
 - 表示だけの仕組みで、出題にも採点にも関わらない
 

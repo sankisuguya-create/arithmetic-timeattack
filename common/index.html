@@ -890,8 +890,10 @@ function coopEmblem_(col, pat){
 
 
 /* ---- 図形の生成器 ----
-   design リポジトリ growing-figures/generators.js の写し（b94681c）。図形を直すときは向こうを正本として直し、
+   design リポジトリ growing-figures/generators.js の写し。図形を直すときは向こうを正本として直し、
    check.cjs を通してからここへ写す。ここでは window.GrowingFigures に入る。
+   写し元: sankisuguya-create/design growing-figures/generators.js @ b94681c
+   （写し直すときはこのピンと tests/fixtures/generators.<コミット>.js の原本を一緒に進める。手順は docs/ARCHITECTURE.md）
    FLOOR_GEN_BEGIN と FLOOR_GEN_END の印（引用符で囲んだ何もしない文）の間は、教師画面の床のプレビューがサーバー側で切り出して使う（Core.gs の floorGenSource_）。
    写し直すときも印は残す。印と同じ字面（引用符とセミコロンまで）をコメントに書かない（生のファイルを読むとコメントの中で切れる）。 */
 'FLOOR_GEN_BEGIN';   // 印はコメントにしない（GAS の include がコメントを消すため）

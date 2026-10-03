@@ -78,6 +78,19 @@ assert.deepEqual(Object.keys(win.GrowingFigures.GENERATORS).sort(), [...ctx.FLOO
 assert.equal(ctx.floorGenSource_('印の無い html'), '');
 // 印の字面は index.html に1回ずつだけ（コメントに同じ字面があると、生のファイルを読んだときにコメントの中から切り出す）
 for (const m of ["'FLOOR_GEN_BEGIN';", "'FLOOR_GEN_END';"]) assert.equal(ui.split(m).length - 1, 1, m + ' が複数ある');
+// 写しのピン：コメントが指すコミットの原本（tests/fixtures/generators.<sha>.js）と、印の間は一字一句一致する。
+// ずらせるのは末尾の受け取り側だけ（写し元の (this) → strict な画面の (window)）。コミットを進めるときはピンと原本を一緒に進める
+const pin = ui.match(/写し元: sankisuguya-create\/design growing-figures\/generators\.js @ ([0-9a-f]+)/);
+assert.ok(pin, 'index.html に写し元ピンが無い');
+const fxDir = path.join(__dirname, 'fixtures');
+assert.deepEqual(fs.readdirSync(fxDir).filter(f => /^generators\.[0-9a-f]+\.js$/.test(f)), ['generators.' + pin[1] + '.js'],
+  '原本はピンのコミットのもの1つだけ置く（古い原本は捨てる）');
+const orig = fs.readFileSync(path.join(fxDir, 'generators.' + pin[1] + '.js'), 'utf8').replace(/\s+$/, '').split('\n');
+assert.equal(orig[orig.length - 1], '})(this);', '原本の末尾は (this)');
+const seg = ui.split("'FLOOR_GEN_BEGIN';")[1].split("'FLOOR_GEN_END';")[0].replace(/^[^\n]*\n/, '').replace(/\s+$/, '').split('\n');
+assert.equal(seg[seg.length - 1], '})(window);   // 写し元は (this)。この画面は strict なので window を渡す', '写しの末尾は (window) を受け取る');
+seg[seg.length - 1] = '})(this);';
+assert.deepEqual(seg, orig, 'FLOOR_GEN の写しがピンの原本と食い違う（先頭の印の行と末尾の受け取り以外は一字一句同じ）');
 // コメントが消えない経路（生のファイル）でも同じ生成器を切り出せる
 const winRaw = {}; vm.runInNewContext(ctx.floorGenSource_(ui), { window: winRaw });
 assert.deepEqual(Object.keys(winRaw.GrowingFigures.GENERATORS).sort(), [...ctx.FLOOR_PATTERNS_].sort());
