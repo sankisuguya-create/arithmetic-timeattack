@@ -1192,14 +1192,20 @@ function getConfigForUI() {
  * 教師画面の床のプレビューに、児童の画面（index.html）と同じ生成器を渡す。
  * 生成器の写しは index.html の 'FLOOR_GEN_BEGIN';〜'FLOOR_GEN_END';（何もしない文）の間の1か所だけに置き、ここで切り出して埋め込む
  * （teacher.html に2つ目の写しを置くと、片方だけ直して図形が食い違う。貼るファイルも増やさない）。
+ * その直後の 'FLOOR_UI_BEGIN';〜'FLOOR_UI_END'; には、描画に使う定数・計算（色の系統・3層の進み・菱形のパス）を置く。
+ * こちらも同じものを埋め込み、教師画面に2つ目の実装を持たせない。
  * 印が見つからなければ空を返し、教師画面はプレビューの欄に「読み込めません」と出す。
  */
 function floorGenSource_(html) {
   // 印はコメントではなく「何もしない文」。HtmlService の getContent() は JS のコメントを消して返すため、
   // コメントの印（旧 /* FLOOR_GEN_BEGIN */）はサーバーからは見えなかった（len が約2.7万字減り、印が -1 になる）
-  var a = html.indexOf("'FLOOR_GEN_BEGIN';"), b = html.indexOf("'FLOOR_GEN_END';");
-  if (a < 0 || b < a) return '';
-  return html.slice(a, b).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
+  var seg_ = function (begin, end) {
+    var a = html.indexOf(begin), b = html.indexOf(end);
+    return (a < 0 || b < a) ? '' : html.slice(a, b);
+  };
+  var gen = seg_("'FLOOR_GEN_BEGIN';", "'FLOOR_GEN_END';"), ui = seg_("'FLOOR_UI_BEGIN';", "'FLOOR_UI_END';");
+  if (!gen || !ui) return '';
+  return (gen + ui).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
 }
 function floorGenForTeacher_() {
   // 失敗しても evaluate() ごと倒さず、埋め込み側の try/catch（teacher.html）が拾える断片を返す。
@@ -1207,7 +1213,7 @@ function floorGenForTeacher_() {
   try {
     var html = include('index');
     var src = floorGenSource_(html);
-    if (!src) return "throw new Error('index.html 内に FLOOR_GEN_BEGIN / FLOOR_GEN_END の印が見つかりません（index を最新の版に貼り直す。読めた長さ " + html.length + "）')";
+    if (!src) return "throw new Error('index.html 内に FLOOR_GEN_BEGIN / FLOOR_GEN_END / FLOOR_UI_BEGIN / FLOOR_UI_END の印が見つかりません（index を最新の版に貼り直す。読めた長さ " + html.length + "）')";
     return src;
   } catch (e) {
     return "throw new Error('index ファイルを読めません（" + String(e.message || e).replace(/'/g, '') + "）')";

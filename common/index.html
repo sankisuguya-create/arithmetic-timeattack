@@ -656,15 +656,6 @@ function floorAdd(mode, n){
   try{ var c = bootCacheLoad(); if(c && c.floor){ c.floor.min = FLOOR.min; bootCacheSave(c); } }catch(e){}
 }
 
-/* ---- 色：学年の色（--acc）と第二の色の「系統」。菱形の向き（5方向）ごとに明暗を少しずらし、宝石の切子面のように見せる ---- */
-function floorFam_(hex){
-  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'').trim());
-  var c = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [53,208,165];
-  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
-    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
-  });
-}
-
 /* ---- 協力モード：自分の色の印 ----
    boot() / startSession() が運んでくる coop で描く。
    色の割り当ては教師画面（teacher.html）と同じ決まった手順：
@@ -1928,6 +1919,31 @@ function coopFam_(rgb){
   else root.GrowingFigures = api;
 })(window);   // 写し元は (this)。この画面は strict なので window を渡す
 'FLOOR_GEN_END';
+'FLOOR_UI_BEGIN';   // 生成器とは別の区画：床の見え方の共有部品。教師画面のプレビューにも同じものが埋め込まれる
+
+/* ---- 色：学年の色（--acc）と第二の色の「系統」。菱形の向き（5方向）ごとに明暗を少しずらし、宝石の切子面のように見せる ---- */
+function floorFam_(hex){
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'').trim());
+  var c = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [53,208,165];
+  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
+    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
+  });
+}
+
+/* ---- 3つの層の進み。u 枚ぶん育った時、輪郭→色1（thick）→色2（thin）の順に何枚目まで描くか。
+   u の出し方は使う側ごと（児童は標準の分数 × 育ちの速さ、教師プレビューは正答数 × 1正答あたりの育ち） ---- */
+function floorProg_(u, N, K, T){
+  return { line: Math.min(u, N), thick: Math.max(0, Math.min(u - N, K)), thin: Math.max(0, Math.min(u - N - K, T)) };
+}
+
+/* ---- 描画の定数と菱形のパス。濃さは40段階に丸め、同じ色・同じ濃さの菱形を1本のパスに集めて1回で塗る ---- */
+var FLOOR_Q = 40, FLOOR_LINE = '16,23,40', FLOOR_A = { line: 0.18, thick: 0.30, thin: 0.26 };
+function floorPoly_(P, t){
+  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
+  // 穴（逆回り）があれば同じパスに足す。塗りは非ゼロ規則なので穴が抜ける（丸い渦格子の中心の輪など）
+  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); }
+}
+'FLOOR_UI_END';
 
 /* ---- 床を作る：単元が宣言した図形（UNIT.floorPattern。既定はペンローズ）の生成器を呼び、
    育ち始める点からの距離順に並べ、色を割り当てる ---- */
@@ -1988,19 +2004,13 @@ function floorMask_(){
   return true;
 }
 
-/** 標準の分数から、3つの層それぞれの進み（何枚目まで描くか）を出す */
-function floorProg_(min){
-  var F = FLOOR, u = Math.floor(min * floorRate_()), N = F.tiles.length, K = F.thick.length;
-  return { line: Math.min(u, N), thick: Math.max(0, Math.min(u - N, K)), thin: Math.max(0, Math.min(u - N - K, F.thin.length)) };
+/** 標準の分数から、3つの層それぞれの進み（何枚目まで描くか）を出す。層の数え方は FLOOR_UI 区画の floorProg_ が正本 */
+function floorProgMin_(min){
+  var F = FLOOR;
+  return floorProg_(Math.floor(min * floorRate_()), F.tiles.length, F.thick.length, F.thin.length);
 }
 
 /* ---- 描画。濃さを40段階に丸め、同じ色・同じ濃さの菱形を1本のパスに集めて1回で塗る ---- */
-var FLOOR_Q = 40, FLOOR_LINE = '16,23,40', FLOOR_A = { line: 0.18, thick: 0.30, thin: 0.26 };
-function floorPoly_(P, t){
-  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
-  // 穴（逆回り）があれば同じパスに足す。塗りは非ゼロ規則なので穴が抜ける（丸い渦格子の中心の輪など）
-  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); }
-}
 function floorQ_(a){ return Math.max(1, Math.round(a * FLOOR_Q)); }
 function floorBucket_(){
   var m = {};
@@ -2094,8 +2104,8 @@ function floorRender_(animate){
   $('floorBase').hidden = !on; $('floorGrow').hidden = !on;
   if(!on || scr !== 'start'){ $('floorReplay').hidden = true; return; }
   if(!F.tiles.length && !floorGen_()) return;
-  $('floorReplay').hidden = !(floorProg_(F.min).line > 0);   // まだ何も育っていなければ見返すものが無い
-  var moved = floorMask_(), g = floorProg_(F.replay >= 0 ? F.min * F.replay / 6 : F.min);
+  $('floorReplay').hidden = !(floorProgMin_(F.min).line > 0);   // まだ何も育っていなければ見返すものが無い
+  var moved = floorMask_(), g = floorProgMin_(F.replay >= 0 ? F.min * F.replay / 6 : F.min);
   if(!F.shown){ floorDraw_(g); F.grew = false; return; }   // 初めて描く時は演出しない
   var grow = (animate || F.grew) && !floorSame_(F.shown, g);
   F.grew = false;
@@ -2123,16 +2133,16 @@ function floorReplay(){
   var F = FLOOR;
   if(!floorOn_() || scr !== 'start' || !F.tiles.length) return;
   floorSettle_();
-  if(F.replay < 0 || F.replay >= 6){ F.replay = 0; floorDraw_(floorProg_(0)); return; }
+  if(F.replay < 0 || F.replay >= 6){ F.replay = 0; floorDraw_(floorProgMin_(0)); return; }
   F.replay++;
-  floorGrow_(F.shown, floorProg_(F.min * F.replay / 6));
+  floorGrow_(F.shown, floorProgMin_(F.min * F.replay / 6));
 }
 /* メニューを離れる時は見返しをやめ、今の育ちを黙って描いておく（戻った時に、見返しの途中から育つ演出にならないように） */
 function floorReplayEnd_(){
   var F = FLOOR;
   if(F.replay < 0) return;
   F.replay = -1; floorSettle_();
-  if(F.tiles.length) floorDraw_(floorProg_(F.min));
+  if(F.tiles.length) floorDraw_(floorProgMin_(F.min));
 }
 function floorOnShow(id){
   if(id !== 'start'){ floorReplayEnd_(); floorSettle_(); return; }   // メニューを離れたら演出は打ち切って焼き付ける

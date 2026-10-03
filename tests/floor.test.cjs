@@ -73,7 +73,7 @@ const vm = require('vm');
 const stripComments = h => h.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const src = ctx.floorGenSource_(stripComments(ui));
 assert.ok(src.length > 1000, '印（FLOOR_GEN_BEGIN / FLOOR_GEN_END）の間が見つからない');
-const win = {}; vm.runInNewContext(src, { window: win });
+const win = {}, genBox = { window: win }; vm.runInNewContext(src, genBox);
 assert.deepEqual(Object.keys(win.GrowingFigures.GENERATORS).sort(), [...ctx.FLOOR_PATTERNS_].sort());
 assert.equal(ctx.floorGenSource_('印の無い html'), '');
 // 印の字面は index.html に1回ずつだけ（コメントに同じ字面があると、生のファイルを読んだときにコメントの中から切り出す）
@@ -84,6 +84,24 @@ assert.deepEqual(Object.keys(winRaw.GrowingFigures.GENERATORS).sort(), [...ctx.F
 const th = fs.readFileSync(path.join(__dirname, '..', 'common', 'teacher.html'), 'utf8');
 assert.ok(th.includes('<?!= floorGenForTeacher_() ?>') && th.includes('floorPreviewInit(u.floor)'));
 assert.ok(/floor: \{ pattern: UNIT\.floorPattern/.test(fs.readFileSync(path.join(__dirname, '..', 'common', 'Core.gs'), 'utf8')));
+
+// 床の共有部品（色の系統・3層の進み・描画の定数・菱形のパス）は FLOOR_UI 区画に1か所だけ。
+// 教師画面は同じものを埋め込み側が受け取るので、自分の実装を持たない
+for (const m of ["'FLOOR_UI_BEGIN';", "'FLOOR_UI_END';"]) assert.equal(ui.split(m).length - 1, 1, m + ' が複数ある');
+['floorFam_', 'floorProg_', 'floorPoly_', 'FLOOR_Q', 'FLOOR_LINE', 'FLOOR_A'].forEach(name => {
+  assert.ok(src.includes(name), 'FLOOR_UI 区画に ' + name + ' が無い');
+  assert.ok(genBox[name] !== undefined, name + ' が共有区画から見えない');
+});
+assert.deepEqual(JSON.parse(JSON.stringify(genBox.floorProg_(45, 30, 10, 5))), { line: 30, thick: 10, thin: 5 }, '3層の進み');
+assert.deepEqual(JSON.parse(JSON.stringify(genBox.floorProg_(20, 30, 10, 5))), { line: 20, thick: 0, thin: 0 }, '輪郭の途中');
+assert.equal(genBox.floorFam_('#35D0A5').length, 5, '色の系統は5段');
+assert.equal(genBox.FLOOR_A.line, 0.18);
+// 教師画面のプレビューは共有部品を呼ぶだけ（写しの実装を持たない。旧 .22 の枠線逸脱は FLOOR_A.line に収束）
+assert.ok(!th.includes('function fpFam') && !th.includes('function fpPoly'), 'teacher.html に写しの実装が残っている');
+assert.ok(!th.includes('16,23,40,.22'), '枠線の .22 逸脱が残っている');
+assert.ok(th.includes('floorProg_(Math.floor(tc * fpPer())'), 'teacher 側も floorProg_ を呼ぶ');
+// 児童側も同じ正本を呼ぶ（標準の分数 → 枚数の変換だけ画面側で持つ）
+assert.ok(ui.includes('function floorProgMin_') && ui.includes('floorProg_(Math.floor(min * floorRate_())'), 'index 側の floorProgMin_ が正本を呼んでいない');
 
 // 児童の見返しボタン：左下に1つ。模様はその際で薄める（ボタンの上に模様が濃く重ならない）
 assert.ok(ui.includes('id="floorReplay"') && /FLOOR_MASK_SEL = '[^']*#floorReplay/.test(ui));

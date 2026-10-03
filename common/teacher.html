@@ -708,18 +708,13 @@ try{
 function $(id){ return document.getElementById(id); }
 
 /* ===== 背景の床のプレビュー =====
- * 児童の画面の床（index.html の floorGen_ / floorProg_ / floorDraw_）と同じ規則で、
+ * 児童の画面の床（index.html の floorGen_ / floorDraw_）と同じ規則で、
  * Chromebook の画面（1366×768）ぶんの床を作り、枠の大きさに縮めて描く。
+ * 色の系統（floorFam_）・3層の進み（floorProg_）・描画の定数（FLOOR_Q/FLOOR_LINE/FLOOR_A）・菱形のパス（floorPoly_）は
+ * index.html の FLOOR_UI 区画からサーバーが埋め込んだものを使う（ここにもう1つ実装を置かない）。
  * 文字やカードの際で薄める処理と、演出の細かい段取りは省く（教師が見たいのは図形と育ちの速さ）。
  * 進みは「標準の分数」ではなく「1分20問の速さで解いた正答数」で数える（標準の分数 × 20 と同じ）。 */
 var FP = { on: false, W: 1366, H: 768, tiles: [], thick: [], thin: [], tc: 0, shown: 0, anim: 0, ref: 20, per: 0.75 };
-function fpFam(hex){
-  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'').trim());
-  var c = m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [53,208,165];
-  return [0, -0.1, 0.14, -0.18, 0.24].map(function(k){
-    return c.map(function(v){ return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); }).join(',');
-  });
-}
 /* 図形の読み込み失敗。埋め込み側の catch が拾った本当のエラー（window.FLOOR_GEN_ERR）があればそれを出す */
 function floorGenErr_(){
   var e = window.FLOOR_GEN_ERR;
@@ -736,7 +731,7 @@ function floorPreviewInit(f){
   var gen = GF.GENERATORS[f.pattern] || GF.GENERATORS.penrose, W = FP.W, H = FP.H;
   var edge = Math.max(15, Math.min(28, Math.sqrt(W * H) / 40)), ox = W * 0.14, oy = H * 0.78;
   var raw = gen.make({ W: W, H: H, ox: ox, oy: oy, edge: edge, margin: edge * 2 });
-  var f1 = fpFam(f.c1), f2 = fpFam(f.c2), tiles = [];
+  var f1 = floorFam_(f.c1), f2 = floorFam_(f.c2), tiles = [];
   raw.forEach(function(t){
     var p = t.p, cx = 0, cy = 0, x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
     p.forEach(function(q){ cx += q[0]; cy += q[1]; x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); });
@@ -760,14 +755,9 @@ function fpPer(){
   var v = Number(($('floor_per_answer') || {}).value);
   return v > 0 ? v : 0.75;
 }
-/* 正答 tc 問（1分20問の速さ）での3つの層の進み。児童の画面の floorProg_ と同じ：枚数 ＝ 標準の分数 × 20 × 1正答あたりの育ち */
+/* 正答 tc 問（1分20問の速さ）での3つの層の進み。層の数え方は児童と同じ floorProg_：枚数 ＝ 正答数 × 1正答あたりの育ち */
 function fpProg(tc){
-  var u = Math.floor(tc * fpPer()), N = FP.tiles.length, K = FP.thick.length;
-  return { line: Math.min(u, N), thick: Math.max(0, Math.min(u - N, K)), thin: Math.max(0, Math.min(u - N - K, FP.thin.length)) };
-}
-function fpPoly(P, t){
-  var p = t.p, i; P.moveTo(p[0][0], p[0][1]); for(i = 1; i < p.length; i++) P.lineTo(p[i][0], p[i][1]); P.lineTo(p[0][0], p[0][1]); P.lineTo(p[1][0], p[1][1]);
-  if(t.h){ var h = t.h; P.moveTo(h[0][0], h[0][1]); for(i = 1; i < h.length; i++) P.lineTo(h[i][0], h[i][1]); P.lineTo(h[0][0], h[0][1]); P.lineTo(h[1][0], h[1][1]); }
+  return floorProg_(Math.floor(tc * fpPer()), FP.tiles.length, FP.thick.length, FP.thin.length);
 }
 function fpDraw(tc){
   if(!FP.on) return;
@@ -777,12 +767,12 @@ function fpDraw(tc){
   var ctx = cv.getContext('2d'), k = w / FP.W;
   ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0); ctx.clearRect(0, 0, FP.W, FP.H); ctx.lineJoin = 'round';
   var g = fpProg(tc), fills = {}, line = new Path2D(), i;
-  function add(t, a){ var key = t.rgb + '|' + a; (fills[key] = fills[key] || new Path2D()); fpPoly(fills[key], t); }
-  for(i = 0; i < g.thick; i++) add(FP.thick[i], 0.30);
-  for(i = 0; i < g.thin; i++) add(FP.thin[i], 0.26);
-  for(i = 0; i < g.line; i++) fpPoly(line, FP.tiles[i]);
+  function add(t, a){ var key = t.rgb + '|' + a; (fills[key] = fills[key] || new Path2D()); floorPoly_(fills[key], t); }
+  for(i = 0; i < g.thick; i++) add(FP.thick[i], FLOOR_A.thick);
+  for(i = 0; i < g.thin; i++) add(FP.thin[i], FLOOR_A.thin);
+  for(i = 0; i < g.line; i++) floorPoly_(line, FP.tiles[i]);
   for(var key in fills){ var s = key.split('|'); ctx.fillStyle = 'rgba(' + s[0] + ',' + s[1] + ')'; ctx.fill(fills[key]); }
-  ctx.lineWidth = 1 / k * 0.9; ctx.strokeStyle = 'rgba(16,23,40,.22)'; ctx.stroke(line);
+  ctx.lineWidth = 1 / k * 0.9; ctx.strokeStyle = 'rgba(' + FLOOR_LINE + ',' + FLOOR_A.line + ')'; ctx.stroke(line);
   FP.shown = tc;
 }
 function fpInfo(){
