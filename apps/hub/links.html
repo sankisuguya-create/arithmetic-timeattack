@@ -95,6 +95,31 @@ body{
   border-bottom:1.5px dotted var(--line);padding-bottom:.1rem}
 .tline a:hover{color:var(--ink)}
 
+/* 右下の「資料」。単元のタイルとは別の置き場。押すと上に一覧が開く */
+#docBtn{
+  position:fixed;right:1rem;bottom:1rem;z-index:10;
+  font:inherit;font-weight:800;font-size:1.1rem;
+  padding:.75rem 1.3rem;border-radius:999px;cursor:pointer;
+  border:2px solid var(--ink);background:var(--paper);color:var(--ink);
+  box-shadow:0 3px 0 rgba(0,0,0,.18);
+}
+#docBtn[aria-expanded="true"]{background:var(--ink);color:var(--paper)}
+#docBtn:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+#docPanel{
+  position:fixed;right:1rem;bottom:4.6rem;z-index:10;
+  width:min(340px,calc(100vw - 2rem));max-height:60vh;overflow:auto;
+  background:#fff;border:2px solid var(--ink);border-radius:16px;padding:.5rem;
+  box-shadow:0 6px 18px rgba(0,0,0,.18);
+}
+#docPanel a{
+  display:block;padding:.85rem 1rem;border-radius:10px;
+  color:var(--ink);text-decoration:none;font-weight:800;font-size:1.05rem;line-height:1.35;
+}
+#docPanel a+a{border-top:1px solid #E6DCC8}
+#docPanel a:hover,#docPanel a:focus-visible{background:var(--paper);outline:none}
+#docPanel a .s{display:block;font-size:.78rem;font-weight:600;color:var(--mute)}
+body.hasdoc{padding-bottom:5.5rem}   /* 右下のボタンが最後のタイルにかぶらない */
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -110,6 +135,9 @@ body{
 <div class="foot" id="foot"></div>
 <!-- 教師のアカウントで開いた時だけ出る。児童のアカウントには描かれない -->
 <div class="tline" id="teacherLink" style="display:none"></div>
+<!-- 資料が1件もなければ出さない -->
+<button id="docBtn" type="button" aria-expanded="false" aria-controls="docPanel" style="display:none">資料</button>
+<div id="docPanel" role="dialog" aria-label="資料" style="display:none"></div>
 
 <script>
 var $ = function(id){ return document.getElementById(id); };
@@ -179,7 +207,8 @@ function drawTabs(){
 }
 
 function drawGrid(){
-  var links = RESP.links.filter(function(l){ return !ACTIVE || inTab(l, ACTIVE); });
+  var links = RESP.links.filter(function(l){ return l.place !== 'doc' && (!ACTIVE || inTab(l, ACTIVE)); });
+  drawDocs();
   if(!links.length){
     $('grid').innerHTML =
       '<div class="empty">いま つかえる れんしゅうは ありません。<br>先生に きいてください。</div>';
@@ -200,6 +229,31 @@ function drawGrid(){
   /* 明朝が届くと字幅が変わるので測り直す */
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(fitAll);
 }
+
+/* 右下の「資料」。タブの絞り込みはタイルと同じ */
+function drawDocs(){
+  var docs = RESP.links.filter(function(l){ return l.place === 'doc' && (!ACTIVE || inTab(l, ACTIVE)); });
+  $('docBtn').style.display = docs.length ? '' : 'none';
+  document.body.classList.toggle('hasdoc', docs.length > 0);
+  if(!docs.length) openDocs(false);
+  $('docPanel').innerHTML = docs.map(function(l){
+    return '<a href="'+esc(l.url)+'" target="_blank" rel="noopener">'+esc(l.title)+
+      (l.subtitle ? '<span class="s">'+esc(l.subtitle)+'</span>' : '')+'</a>';
+  }).join('');
+}
+function openDocs(on){
+  $('docBtn').setAttribute('aria-expanded', on ? 'true' : 'false');
+  $('docPanel').style.display = on ? '' : 'none';
+}
+$('docBtn').addEventListener('click', function(e){
+  e.stopPropagation();
+  openDocs($('docBtn').getAttribute('aria-expanded') !== 'true');
+});
+/* 外を押す・Esc で閉じる */
+document.addEventListener('click', function(e){
+  if(!$('docPanel').contains(e.target)) openDocs(false);
+});
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') openDocs(false); });
 
 function render(r){
   RESP = r;
