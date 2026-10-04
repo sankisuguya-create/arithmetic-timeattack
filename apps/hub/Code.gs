@@ -126,6 +126,7 @@ function child_(mail) {
  * grades は "3,4" のようなカンマ区切り。空か "all" なら全学年。
  * sheet はその単元の記録スプレッドシート（URL か ID）。横断分析（Analysis.gs）の読み元。空でもよい。
  * sheet は児童の画面には渡さない（boot は使う欄だけを写す）。
+ * place は置き場。空＝単元のタイル、"doc"＝児童画面の右下「資料」の中。列が無い古いシートは全部タイル扱い。
  */
 function links_() {
   var hit = cache_().get('links');
@@ -144,12 +145,26 @@ function links_() {
       color: String(v[i][5] || 'mint').trim(),
       visible: toBool_(v[i][6]),
       order: Number(v[i][7]) || 0,
-      sheet: String(v[i][8] || '').trim()
+      sheet: String(v[i][8] || '').trim(),
+      place: placeOf_(v[i][9])
     });
   }
   out.sort(function (a, b) { return a.order - b.order; });
   cache_().put('links', JSON.stringify(out), TTL.links);
   return out;
+}
+
+function placeOf_(x) { return String(x || '').trim().toLowerCase() === 'doc' ? 'doc' : ''; }
+
+/** ハブ自身が配る資料のページ。?page=<name> で開き、教師画面から1押しで資料に足せる */
+var DOCS = [
+  { page: 'regroup', title: 'くり上がり/くり下がり解説', subtitle: '点で見る筆算' }
+];
+function docUrl_(page) {
+  try {
+    var u = ScriptApp.getService().getUrl();
+    return u ? (u + (u.indexOf('?') >= 0 ? '&' : '?') + 'page=' + page) : '';
+  } catch (e) { return ''; }
 }
 
 function forGrade_(list, grade) {
@@ -209,6 +224,13 @@ function doGet(e) {
       .setTitle('ハブ設定')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
+  for (var d = 0; d < DOCS.length; d++) {
+    if (page === DOCS[d].page) {
+      return HtmlService.createHtmlOutputFromFile(DOCS[d].page)
+        .setTitle(DOCS[d].title)
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    }
+  }
   if (page === 'analysis') {
     // 横断分析は教師ドメインの一致では開かない。所有者と config.analysts だけ（Analysis.gs の canAnalyze_）
     // Analysis.gs を貼っていない写しでも、ほかの画面が壊れないようにする
@@ -266,7 +288,7 @@ function boot() {
     tabs: tabs,          // null ならタブなし（従来どおりの一覧）
     colors: COLORS,
     links: links.map(function (l) {
-      return { title: l.title, subtitle: l.subtitle, url: l.url, color: l.color, grades: l.grades };
+      return { title: l.title, subtitle: l.subtitle, url: l.url, color: l.color, grades: l.grades, place: l.place };
     })
   };
 }
@@ -279,6 +301,7 @@ function getAllLinks() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var mail = email_();
   return { links: links_(), colors: COLORS, config: config_(), where: where_(),
+           docs: DOCS.map(function (d) { return { title: d.title, subtitle: d.subtitle, url: docUrl_(d.page) }; }),
            // 横断分析の入口は、開ける人にだけ渡す
            analysisUrl: (typeof canAnalyze_ === 'function' && canAnalyze_(mail)) ? analysisUrl_() : '' };
 }
@@ -288,7 +311,7 @@ function saveLinks(rows) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var sh = sh_(SHEETS.LINKS);
   sh.clear();
-  var head = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order', 'sheet'];
+  var head = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order', 'sheet', 'place'];
   var out = [head];
   (rows || []).forEach(function (r, i) {
     out.push([
@@ -296,7 +319,8 @@ function saveLinks(rows) {
       String(r.title || ''), String(r.subtitle || ''), String(r.url || ''),
       String(r.grades || ''), String(r.color || 'mint'),
       r.visible ? true : false, i + 1,
-      String(r.sheet || '').trim()
+      String(r.sheet || '').trim(),
+      placeOf_(r.place)
     ]);
   });
   sh.getRange(1, 1, out.length, head.length).setValues(out);
@@ -391,7 +415,7 @@ function ensureReady_() {
     var ss = ss_(), defs = {};
     defs[SHEETS.CONFIG] = ['key', 'value'];
     defs[SHEETS.ROSTER] = ['email', '学年', '組', '番号', '氏名'];
-    defs[SHEETS.LINKS] = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order', 'sheet'];
+    defs[SHEETS.LINKS] = ['id', 'title', 'subtitle', 'url', 'grades', 'color', 'visible', 'order', 'sheet', 'place'];
 
     for (var name in defs) {
       var sh = ss.getSheetByName(name) || ss.insertSheet(name);
