@@ -158,7 +158,7 @@ function placeOf_(x) { return String(x || '').trim().toLowerCase() === 'doc' ? '
 
 /** ハブ自身が配る資料のページ。?page=<name> で開き、教師画面から1押しで資料に足せる */
 var DOCS = [
-  { page: 'regroup', title: 'くり上がり・くり下がりの点', subtitle: '点で見る筆算' }
+  { page: 'regroup', title: 'くり上がり/くり下がり解説', subtitle: '点で見る筆算' }
 ];
 function docUrl_(page) {
   try {
