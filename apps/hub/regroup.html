@@ -1,30 +1,34 @@
+<meta charset="utf-8">
 <title>くり上がり/くり下がり解説</title>
 <style>
 /* 上に点の筆算（右から 一・十・百・千・万。左へスクロール）、下に説明と操作。サイトと同じ紺の地の1テーマ */
 :root{--bg:#101728;--panel:#182038;--fg:#E6ECF4;--mute:#97A0BC;--a:#49B9DF;--b:#35D0A5;--hi:#F2C230;--line:#3A4466;color-scheme:dark}
-body{background:var(--bg);color:var(--fg);font-family:"M PLUS Rounded 1c",system-ui,sans-serif;padding:20px 16px;margin:0}
-.wrap{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
-#scroller{overflow-x:auto;border-radius:10px;background:var(--panel);scrollbar-color:var(--line) transparent}
-canvas{display:block;image-rendering:pixelated}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:"M PLUS Rounded 1c",system-ui,sans-serif;padding:10px 16px;margin:0;
+  display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box}   /* ページ自体はスクロールしない（1画面に収める） */
+.wrap{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:6px;flex:1;min-height:0;width:100%}
+#scroller{overflow-x:auto;border-radius:10px;background:var(--panel);scrollbar-color:var(--line) transparent;
+  flex:1;min-height:0}   /* 残りの高さを全部canvasに。canvas側は縮尺で合わせる */
+canvas{display:block;image-rendering:pixelated;margin:0 auto}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-button,input,select{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+button,input,select{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
 button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 button.main{border-color:var(--hi)}
 .preset[aria-pressed="true"]{border-color:var(--a);box-shadow:0 0 0 1px var(--a)}
 input{width:7.5em;text-align:center;font-variant-numeric:tabular-nums}
-#eq{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.04em}
-#cap{font-size:20px;font-weight:700;min-height:2.6em;line-height:1.3;text-wrap:balance}
+#eq{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.04em}
+#cap{font-size:17px;font-weight:700;min-height:1.35em;line-height:1.3;text-wrap:balance}
 #step{color:var(--mute);font-size:13px}
-details{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px}
-details>summary{cursor:pointer;color:var(--mute);font-size:14px;padding:4px 0}
+details{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 12px}
+details>summary{cursor:pointer;color:var(--mute);font-size:14px;padding:2px 0}
 details[open]>summary{margin-bottom:8px}
-.entry{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px;border:2px solid var(--hi);border-radius:12px;background:var(--panel)}
+.entry{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px;border:2px solid var(--hi);border-radius:12px;background:var(--panel)}
 [hidden]{display:none!important}
-.entry input{font-size:30px;font-weight:800;width:calc(9ch + 28px);max-width:100%;box-sizing:border-box;padding:8px 10px;border-width:2px}
-#op{font-size:36px;font-weight:800;width:64px;height:64px;padding:0;border-width:2px;border-radius:50%;touch-action:manipulation}
-.entry #go{font-size:24px;font-weight:800;padding:12px 26px;background:var(--hi);color:#101728;border:none}
-.entry #rand{font-size:18px;padding:12px 16px}
-#empty{display:flex;align-items:center;justify-content:center;min-height:300px;font-size:120px;font-weight:800;color:var(--line);cursor:pointer;user-select:none}
+.entry input{font-size:24px;font-weight:800;width:calc(8ch + 24px);max-width:100%;box-sizing:border-box;padding:6px 8px;border-width:2px}
+#op{font-size:28px;font-weight:800;width:48px;height:48px;padding:0;border-width:2px;border-radius:50%;touch-action:manipulation}
+.entry #go{font-size:18px;font-weight:800;padding:8px 20px;background:var(--hi);color:#101728;border:none}
+.entry #rand{font-size:14px;padding:8px 12px}
+#empty{display:flex;align-items:center;justify-content:center;min-height:0;flex:1;font-size:120px;font-weight:800;color:var(--line);cursor:pointer;user-select:none}
 .help{position:relative}.help>summary{list-style:none;display:inline-block;width:32px;height:32px;line-height:32px;text-align:center;border-radius:50%;border:1px solid var(--line);font-weight:800;padding:0}
 .help>summary::-webkit-details-marker{display:none}.help{background:none;border:none;padding:0}
 .note{color:var(--mute);font-size:12px;line-height:1.6;max-width:60em;margin:0}
@@ -55,10 +59,15 @@ details[open]>summary{margin-bottom:8px}
     <button id="next">つぎへ</button>
     <button id="reset">はじめから</button>
     <button id="whole" aria-pressed="false">全体</button>
+    <label class="row" style="gap:6px">はやさ <select id="spd">
+      <option value="0.55">ゆっくり</option>
+      <option value="1">ふつう</option>
+      <option value="1.7">はやい</option>
+    </select></label>
     <label class="row" style="gap:6px"><input id="snd" type="checkbox" style="width:auto"> おと</label>
     <span id="step"></span>
+    <details class="help"><summary aria-label="せつめい">？</summary><p class="note">試作。点1つが1、縦に10つながった棒が10。百からは大きな点1つで表し、中に「百」「千」「万」と書く。右下の数は、その塊が表す数。<b style="color:var(--a)">水色</b>＝1つめの数、<b style="color:var(--b)">みどり</b>＝2つめの数、<b style="color:var(--hi)">黄色</b>＝くり上がり・くり下がりで動く10。位がふえたら、図を左へスクロールすると続きが見える。億の位まで（999999999 まで）の数を入れられる。</p></details>
   </div>
-  <details class="help"><summary aria-label="せつめい">？</summary><p class="note">試作。点1つが1、縦に10つながった棒が10。百からは大きな点1つで表し、中に「百」「千」「万」と書く。右下の数は、その塊が表す数。<b style="color:var(--a)">水色</b>＝1つめの数、<b style="color:var(--b)">みどり</b>＝2つめの数、<b style="color:var(--hi)">黄色</b>＝くり上がり・くり下がりで動く10。位がふえたら、図を左へスクロールすると続きが見える。億の位まで（999999999 まで）の数を入れられる。</p></details>
 </div>
 <script>
 (function(){
@@ -197,7 +206,8 @@ function reduced(){ return window.matchMedia&&matchMedia('(prefers-reduced-motio
 function animate(ms,done,curve){
   if(INSTANT){ cancelAnimationFrame(anim); items.forEach(function(d){ d.x=d.tx; d.y=d.ty; d.al=d.ta; }); cleanup(); if(done) done(); return; }
   var from=items.map(function(d){return [d.x,d.y,d.al];}), t0=null, cascade=items.some(function(d){return d.dl;});
-  var dur=cascade?Math.min(ms,520):ms, f=curve||(cascade?easeOut:ease);
+  ms=rt(ms);   /* 再生のはやさ（RATE）をアニメ時間にも掛ける */
+  var dur=cascade?Math.min(ms,rt(520)):ms, f=curve||(cascade?easeOut:ease);
   cancelAnimationFrame(anim);
   function tick(ts){ if(t0===null)t0=ts; var el=ts-t0, fin=true;
     items.forEach(function(d,i){ var t=reduced()?1:Math.max(0,Math.min(1,(el-(d.dl||0))/dur)); if(t<1) fin=false; var e=f(t);
@@ -218,7 +228,7 @@ function sparks(x,y,cs,n,sp){ for(var i=0;i<n;i++){ var a=Math.PI*2*i/n+Math.ran
 function collide(pairs,done,gap,travel){
   fx.groups=pairs.map(function(pr){ var a=pr[0], b=pr[1];
     return {a:a,b:b,bx:b.x,by:b.y,mx:a.x,my:a.y+a.s,hit:false}; });
-  fx.done=done; fx.t0=performance.now(); fx.gap=reduced()?40:(gap||240); fx.travel=reduced()?60:(travel||320); fx.small=(gap||240)<120; kick();
+  fx.done=done; fx.t0=performance.now(); fx.gap=reduced()?40:rt(gap||240); fx.travel=reduced()?60:rt(travel||320); fx.small=(gap||240)<120; kick();
 }
 function fxTick(now){
   var dt=Math.min(0.05,(now-(lastT||now))/1000); lastT=now;
@@ -271,8 +281,8 @@ function slam(pairs,done){
           sparks(a.x+a.s/2,a.y+a.s/2,[COL.a,COL.b,'#FFFFFF'],pairs.length>20?2:(a.s>1?10:6),9); });
         fx.rings.push({x:(x0+x1)/2,y:(y0+y1)/2,t:0,s:Math.max(2,Math.min(8,Math.max(x1-x0,y1-y0)*0.6))}); kick();
         slamSnd(); cleanup(); draw();
-        setTimeout(function(){ if(alive()){ slamCur=null; done(); } },650);
-      },750);
+        setTimeout(function(){ if(alive()){ slamCur=null; done(); } },rt(650));
+      },rt(750));
     },ease);
   },easeOut);
 }
@@ -319,13 +329,16 @@ function k3(){
   if(NP<=3) need=cv.width;
   return Math.min(1,(sc.clientWidth-2)/need);
 }
+/* 高さ方向の上限：scroller は残り高しか持たないので、それを超える縮尺は下げる（見切れ→ページスクロールを防ぐ） */
+function capH(k){ var hk=Math.max(0.12,(sc.clientHeight-4)/cv.height); return Math.min(k,hk); }
 function sizeTo(k,anim){ numMode=false; setTimeout(draw,0); cv.style.transition=(anim&&!reduced())?'width .5s cubic-bezier(.2,.8,.2,1),height .5s cubic-bezier(.2,.8,.2,1)':'';
+  k=capH(k);
   cv.style.width=Math.floor(cv.width*k)+'px'; cv.style.height=Math.floor(cv.height*k)+'px'; }
 function scale(){ return parseInt(cv.style.width,10)/cv.width; }
 function fullSize(){ sizeTo(k3(),true); }
-function isOverview(){ return scale()<k3()-0.01; }
+function isOverview(){ return scale()<capH(k3())-0.01; }   /* 実際に適用される縮尺（高さ上限込み）と比べる */
 function overview(now){
-  var k=Math.min(1,(sc.clientWidth-2)/cv.width);
+  var k=capH(Math.min(1,(sc.clientWidth-2)/cv.width));
   cv.style.transition=(reduced()||now)?'':'width .7s cubic-bezier(.2,.8,.2,1),height .7s cubic-bezier(.2,.8,.2,1)';
   cv.style.width=Math.floor(cv.width*k)+'px'; cv.style.height=Math.floor(cv.height*k)+'px';
   sc.scrollTo({left:0,behavior:(reduced()||now)?'auto':'smooth'});
@@ -334,7 +347,7 @@ function overview(now){
 /* その位が見えるように横へ動かす */
 /* その位と、となりの位を合わせた3つの位がまるごと見えるように横へ動かす */
 function follow(p){ if(p==null||p>=NP) return;
-  var k=isOverview()?scale():k3(), lo=Math.max(0,p-1), hi=Math.min(NP-1,lo+2); lo=Math.max(0,hi-2);
+  var k=isOverview()?scale():capH(k3()), lo=Math.max(0,p-1), hi=Math.min(NP-1,lo+2); lo=Math.max(0,hi-2);
   var l=(colX[hi]-1)*C*k, r=(colX[lo]+colW[lo]+(lo===0?6:1))*C*k;
   if(l>=sc.scrollLeft-1&&r<=sc.scrollLeft+sc.clientWidth+1) return;
   var to=(r-l<=sc.clientWidth)?(l<sc.scrollLeft?l:r-sc.clientWidth):l;
@@ -398,7 +411,7 @@ function build(a,op,b){
         if(total>10) steps.push({focus:p,cap:KANJI[p]+'の位に のこるのは '+(total-10),run:function(){ U('R'+p).forEach(function(u,i){ u.place(i,RY,i*(p===0?45:110)); }); }});
       }
     })(p);
-    steps.push({cap:'こたえ：'+a+' + '+b+' = '+res,run:function(){ setEq(a+' + '+b+' = '+res); setTimeout(overview,450); }});
+    steps.push({cap:'こたえ：'+a+' + '+b+' = '+res,run:function(){ setEq(a+' + '+b+' = '+res); setTimeout(overview,rt(450)); }});
   } else {
     // ひき算：先に くり下がりを たどって、ひく数の並べ方（くずした10の真下）を決める
     var cur=da.slice(), bor=[];
@@ -464,7 +477,7 @@ function build(a,op,b){
     })(p);
     steps.push({cap:'こたえ：'+a+' − '+b+' = '+res,run:function(){
       var base=0; for(var p=np-1;p>=0;p--){ U('A'+p).forEach(function(u,i){ u.place(i,RY,base+i*(p===0?40:70)); }); base+=U('A'+p).length*(p===0?40:70)+100; }
-      setEq(a+' − '+b+' = '+res); setTimeout(overview,base+500); }});   /* 流れ込み終わってから全体を見せる */
+      setEq(a+' − '+b+' = '+res); setTimeout(overview,rt(base+500)); }});   /* 流れ込み終わってから全体を見せる */
   }
   /* 位ごとに、計算が決まる手（その位を さわる最後の手）。それより後は 全体表示と同じ見せ方にする */
   fixedAt=[]; var last=[]; for(var q=0;q<NP;q++) last[q]=1;
@@ -493,7 +506,7 @@ function next(done){
   if(si===0&&!INSTANT&&numMode&&!isOverview()){ numMode=false; draw(); }
   if(si===0&&!INSTANT&&isOverview()){            // 最初は全体を見せている。元の大きさに戻してから始める
     fullSize(); setTimeout(function(){ sc.scrollTo({left:sc.scrollWidth,behavior:'auto'}); },20);
-    busy={wait:true}; setTimeout(function(){ if(busy&&busy.wait){ busy=null; next(done); } },reduced()?0:550); return;
+    busy={wait:true}; setTimeout(function(){ if(busy&&busy.wait){ busy=null; next(done); } },reduced()?0:rt(550)); return;
   }
   var st=steps[si++]; st.thenDone=false; busy=st; setFlash(st.flash); follow(st.focus); setCap(st.cap);
   if(st.custom){ st.custom(function(){ busy=null; draw(); if(done) done(); }); return; }
@@ -513,7 +526,17 @@ function back(){
   var st=steps[target-1]; setFlash(st.flash); follow(st.focus); setCap(st.cap); draw();
 }
 function play(){ if(playing||!started) return; playing=true;
-  (function loop(){ if(!playing) return; if(si>=steps.length){ playing=false; return; } next(function(){ setTimeout(loop,1000); }); })(); }
+  (function loop(){ if(!playing) return; if(si>=steps.length){ playing=false; return; } next(function(){ setTimeout(loop,rt(1000)); }); })(); }
+
+/* ---------- 再生のはやさ ---------- */
+/* RATE で 手と手のあいだの待ち・運び/合体/ぶつかりの時間をいっしょに割る。
+   「ゆっくり」が初期値（教室で見せるときは今より遅い方が追いやすい） */
+var RATE=+(localStorage.getItem('rg_speed')||0.55);
+if(!(RATE===0.55||RATE===1||RATE===1.7)) RATE=0.55;
+function rt(v){ return v/RATE; }
+(function(){ var s=document.getElementById('spd'); s.value=String(RATE);
+  s.onchange=function(){ RATE=+this.value; localStorage.setItem('rg_speed',String(RATE)); }; })();
+
 var cur=[47,'+',38], started=false;
 function load(a,op,b){
   var mx=999999999; a=Math.max(0,Math.min(mx,Math.floor(+a)||0)); b=Math.max(0,Math.min(mx,Math.floor(+b)||0));   // 答えが 億の位までの数どうし（たし算の答えは 十億の位まで）
