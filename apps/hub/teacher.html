@@ -429,6 +429,7 @@ function renderList(){
       '<span class="gr">'+esc(gradeLabel(l))+'</span>'+
       (l.place==='doc' ? '<span class="ptag">資料</span>' : '')+
       (tu ? '<a href="'+esc(tu)+'" target="_blank" rel="noopener">教師ページ↗</a>' : '')+
+      (tu ? '<a href="'+esc(tu.replace(/#.*$/, '')+'#coop')+'" target="_blank" rel="noopener">協力プレイ↗</a>' : '')+   // 単元の教師画面を協力プレイのタブで開く
       '<button type="button" class="pick'+(l.visible?' on':'')+'" data-vis="'+i+'" title="押すとすぐ児童の画面に反映されます">'+(l.visible?'公開中':'非公開')+'</button>'+
       '<span class="ptag">すぐ反映</span>'+
     '</div>';
