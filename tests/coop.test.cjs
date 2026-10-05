@@ -707,15 +707,15 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   // 設定は見出し｜操作の2列。クラスは3列の格子（6クラスまで2段）。全クラス同じ学年なら「1組」だけ
   assert.ok(tui.includes('.coopBox .cform{display:grid;grid-template-columns:5.8rem minmax(0,1fr);'));
   // 欄の名前は「起点」。起点の行の右端に、見本の印の表示⇄非表示（押すたびに文字も切り替わる）
-  assert.ok(tui.includes('<span class="ctl">起点</span>') && !tui.includes('育ち始める場所'));
+  assert.ok(tui.includes('<span class="ctl">起点の数</span>') && !tui.includes('育ち始める場所'));
   assert.ok(tui.includes("this.textContent = hide ? '非表示' : '表示';"));   // 文字は今の状態、表示中は選んでいる札の塗り
   // ボタンの役割ごとの見た目：実行＝立体のキー、映し方＝青の塗り、小さく変える＝灰色の丸、選ぶ＝平らな札
-  ['id="coopStartL" class="bkey go"', 'id="coopStop" class="bkey stop"', 'id="coopReset" class="bkey"', 'id="coopSave" class="bkey"',
+  ['id="coopStartL" class="bkey go"', 'id="coopStop" class="bkey stop"', 'id="coopReset" class="bkey"', 'id="coopSave" class="bkey go"',
    'id="coopFull" class="bview"', 'id="coopLoad" class="bview sm"', 'id="coopOrgShow" class="pick on"'].forEach(k => assert.ok(tui.includes(k), k));
   assert.ok(tui.includes('.bkey{') && tui.includes('box-shadow:0 3px 0 #101728') && tui.includes('.coopBox .step{width:2rem;height:2rem;'));
   // 左の「開始」はステージの開始と同じ。進行中・数えている間は押せない
   assert.ok(tui.includes("$('coopStartL').onclick = function(){ $('coopStart').onclick(); };"));
-  assert.ok(tui.includes("$('coopStartL').disabled = !!busy;"));
+  assert.ok(tui.includes("$('coopStartL').disabled = !!busy || wait;"));   // 終わった回の保存を選ぶまでも押せない
   assert.ok(tui.includes('#coopStage.preview:not(.nomarks) #coopOrgMarks{display:block}'));
   // 設定の見本：設定を変えると右に描き直す。見本の間は終わった回で上書きせず、開始の扱いは「まだ始めていない」
   assert.ok(tui.includes("if(CP.polling || CP.loaded || CP.prev === 'user') return;"));
@@ -882,7 +882,7 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   delete sheets['グループ分け']; if (gNew) sheets['グループ分け'] = gNew;
   // 画面の呼び方も「グループ」にそろえる（クラスの「1組」は別）
   const tui = read('common/teacher.html'), ui = read('common/index.html');
-  ['グループ数', 'グループを編集…', "'グループ' + COOP_LETTERS[g]", "('グループ' + 'ABCDEFGHIJ'[grpOf(i)] + ' ')"].forEach(k => assert.ok(tui.includes(k), k));
+  ['グループ数', 'グループ編成を確認・編集…', "'グループ' + COOP_LETTERS[g]", "('グループ' + 'ABCDEFGHIJ'[grpOf(i)] + ' ')"].forEach(k => assert.ok(tui.includes(k), k));
   ['組数', '組を編集', '組分け', "'組<small>'", "+ '組 ')"].forEach(k => assert.ok(!tui.includes(k), k));
   assert.ok(ui.includes("'じぶんの グループを 目立たせる'") && ui.includes("'あなたのグループの色'") && !ui.includes('くみを') && !ui.includes('あなたの組'));
   // タブは「公開モード｜協力プレイ｜全般設定｜分析｜過年度」の順
@@ -1122,3 +1122,18 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
 }
 
 console.log('coop.test.cjs: all assertions passed.');
+
+/* ---- 教師画面の3段（①準備 ②投影・開始 ③終了後） ---- */
+{
+  const tui = read('common/teacher.html');
+  ['id="cs1"', 'id="cs2"', 'id="cs3"', 'id="coopNext1"', 'id="coopBack2"', 'id="coopAgain"', 'id="coopQuit"',
+   'id="coopEndBox"', 'id="coopEndStage"', 'id="coopDrop"', 'name="coopHow" value="save"', 'id="coopContPick"'].forEach(k => assert.ok(tui.includes(k), k));
+  assert.ok(tui.indexOf('id="coopEndStage"') > tui.indexOf('<div id="coopStage"'), '保存の選択はステージの上にも出す（投影中でも選べる）');
+  assert.ok(!tui.includes("prompt('保存する名前"), '保存の名前は欄から（ダイアログで聞かない）');
+  // 終わった回の保存を選ぶまでは次の回を始めない。①の「保存した回から再開」は保存データの続きから始める
+  assert.ok(tui.includes('if(CP.begin || coopNeedDecide_()) return;'));
+  assert.ok(tui.includes("coopBegin(false, id ? 'save:' + id : undefined);"));
+  // ハブの「協力プレイ↗」（#coop）から開いた時は協力プレイのタブ
+  assert.ok(tui.includes("if(l && l.hash === 'coop') showPage('coop');"));
+  assert.ok(read('apps/hub/teacher.html').includes("+'#coop')+'\" target=\"_blank\" rel=\"noopener\">協力プレイ↗</a>'"));
+}

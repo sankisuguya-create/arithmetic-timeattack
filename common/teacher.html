@@ -284,13 +284,49 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 #pageCoop{display:grid;grid-template-columns:minmax(340px,380px) minmax(0,1fr);gap:1rem;align-items:start}
 #pageCoop > .coopBox{grid-column:1;grid-row:1;margin-bottom:0;overflow-y:auto;overscroll-behavior:contain}
 /* 欄の中を送る時に切れないよう、協力の「詳細」は画面に固定して開く（位置は開いた時に summary から決める） */
-#coopMore .morePanel{position:fixed;bottom:auto}
 #pageCoop > #coopStage{grid-column:2;grid-row:1;justify-self:start}
 @media (max-width:900px){
   #pageCoop{grid-template-columns:minmax(0,1fr)}
   #pageCoop > #coopStage{grid-column:1;grid-row:2;justify-self:center}
 }
 .coopBox{padding:.85rem 1rem}
+/* ---- 3段（①準備 ②投影・開始 ③終了後）。いまの段（.now）だけ中身を出し、ほかは見出しと要約の1行 ---- */
+.coopBox .cwhere{font-size:.78rem;color:var(--mute);line-height:1.6;margin:0 0 .6rem;padding:.45rem .6rem;background:#EEF3F9;border-radius:8px}
+.cstep{border:2px solid var(--line);border-radius:12px;padding:.55rem .7rem;margin-bottom:.55rem;background:#fff}
+.cstep.now{border-color:var(--ink);box-shadow:0 2px 0 rgba(16,23,40,.12)}
+.cstep .csh{display:flex;align-items:center;gap:.45rem}
+.cstep .csh .no{display:inline-grid;place-items:center;width:1.5rem;height:1.5rem;border-radius:50%;background:var(--mute);color:#fff;font-weight:800;font-size:.8rem;flex:none}
+.cstep.now .csh .no{background:var(--ink)}
+.cstep .csh b{font-size:1rem;white-space:nowrap}
+.cstep .csum{flex:1;min-width:0;font-size:.78rem;color:var(--mute);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cstep .cgo{flex:none}
+.cstep.now .cgo{display:none}
+.cstep .csb{display:none;flex-direction:column;gap:.55rem;margin-top:.55rem}
+.cstep.now .csb{display:flex}
+.cstep .cnav{display:flex;gap:.5rem;align-items:center;border-top:1px solid var(--line);padding-top:.55rem;margin-top:.1rem}
+.cstep .cnav .bkey{flex:1}
+.cstep .cnav[hidden]{display:none}
+.cstep .chint{margin:0;font-size:.76rem;line-height:1.5}
+.coopBox .chow{flex-direction:column;align-items:flex-start;gap:.25rem}
+.coopBox .chow label{display:flex;align-items:center;gap:.35rem;font-size:.86rem;font-weight:700;cursor:pointer}
+.coopBox .chow select{max-width:100%}
+details.cadv summary{cursor:pointer;font-size:.84rem;font-weight:700;padding:.2rem 0}
+details.cadv .cform{margin-top:.45rem}
+details.cadv .chg{margin-left:.5rem;font-size:.74rem;color:#0F5EA8;background:#EEF3F9;border-radius:6px;padding:.05rem .4rem}
+details.cadv .chg:empty{display:none}
+.coopBox .cwhy{font-size:.74rem;margin:0}
+.cend{display:flex;flex-direction:column;gap:.45rem;padding:.6rem;border:2px solid #C0330A;border-radius:10px;background:#FFF6F2}
+.cend[hidden]{display:none}
+.cend .cendh{font-weight:800;font-size:.9rem;color:#C0330A}
+.cend input,#coopEndStage input{width:100%;box-sizing:border-box;text-align:left}
+.cend2{display:flex;gap:.5rem}
+.cend2 .bkey{flex:1}
+#coopEndStage{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;display:flex;flex-direction:column;gap:1.2vmin;
+  width:min(46vmin + 12rem,90%);background:#fff;border:2px solid var(--ink);border-radius:16px;padding:2.4vmin 3vmin;box-shadow:0 8px 30px rgba(16,23,40,.3)}
+#coopEndStage[hidden]{display:none}
+#coopEndStage .ceh{font-size:clamp(1.2rem,5vmin,3rem);text-align:center}
+#coopEndStage .cen{text-align:center;font-size:clamp(.9rem,2.6vmin,1.6rem);font-weight:700}
+#coopEndStage .bkey,#coopEndStage .bstep{font-size:clamp(.9rem,2.4vmin,1.5rem);padding:1vmin 1.6vmin}
 .coopBox .crow{display:flex;flex-direction:column;gap:.35rem;align-items:stretch;padding:.42rem 0;border-top:1px solid var(--line)}
 .coopBox .crow:first-child{border-top:none;padding-top:0}
 /* 設定の2列：見出しの列は「クラス（3年）」が1行に入る幅でそろえる */
@@ -567,75 +603,98 @@ details.more[open] summary{border-color:var(--ink)}
   </div><!-- /pagePast -->
 
   <div id="pageCoop" style="display:none">
-  <!-- 左の操作欄は使う順に上から：①だれで（クラス） ②どう遊ぶ（時間・色づかい・グループ・起点） ③うつす・止める・残す（その下に今の状態）
-       ④保存した回の再生。めったに触らない図形と「1正答の枚数」と説明は、いちばん下の「図形と表示の設定」の中にしまう。
+  <!-- 左の操作欄は授業の流れの3段：①準備 → ②投影・開始 → ③終了後。いまの段だけ開き、ほかは1行の要約に畳む（cstep_）。
+       ②へは「次へ」、③へは回が終わると自動で、①へは③の「もう1回」「終わる」で戻る。右のステージが投影する画面そのもの。
        画面の高さが足りない時は、ページではなくこの欄の中を送る（右のステージは動かない） -->
   <div class="box coopBox">
-    <!-- 設定は「見出し｜操作」の2列にそろえる。クラスは3列の格子（6クラスまで2段）、数の欄は36人でも同じ幅 -->
-    <div class="crow cform">
-      <div class="frow"><span class="ctl" id="coopClsLab">クラス</span><div class="clsPick" id="coopClsPick"></div></div>
-      <select id="coopCls" style="display:none" aria-hidden="true"></select>
-      <div class="frow"><span class="ctl">時間</span>
-        <span class="grp"><button id="coopMinDn" class="ghost step" type="button" aria-label="1分へらす">−</button>
-        <input id="coopMin" type="number" min="1" max="30" step="1" value="10" class="minIn" aria-label="分">
-        <button id="coopMinUp" class="ghost step" type="button" aria-label="1分ふやす">＋</button>
-        <span class="unit">分</span></span></div>
-      <div class="frow"><span class="ctl">色づかい</span>
-        <span class="grp"><span class="seg" id="coopModeSeg"><button type="button" data-v="child">児童ごと</button><button type="button" data-v="group">グループ</button></span>
-        <select id="coopMode" style="display:none" aria-hidden="true"><option value="child">児童ごと</option><option value="group">グループ</option></select></span></div>
-      <div class="frow" id="coopGnRow" style="display:none"><span class="ctl">グループ数</span>
-        <span class="grp"><select id="coopGn"></select>
-        <button id="coopPlanBtn" class="ghost" type="button">グループを編集…</button></span></div>
-      <div class="frow"><span class="ctl">起点</span>
-        <span class="grp"><button id="coopOrgDn" class="ghost step" type="button" aria-label="起点を1つへらす">−</button>
-        <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="起点の数">
-        <button id="coopOrgUp" class="ghost step" type="button" aria-label="起点を1つふやす">＋</button>
-        <span class="unit" id="coopOrgMax"></span>
-        <button id="coopOrgShow" class="pick on" type="button" aria-pressed="true" title="見本の上の起点の印を出す・かくす（押すたびに切り替え）">表示</button></span></div>
-    </div>
+    <p class="cwhere">この単元の問題で、クラス全員の本番の正答により図形を育てます。ほかの単元で実施する時は、ハブの先生用ページからその単元を開きます。</p>
     <!-- ボタンは役割で見た目を分ける（色だけでなく形と記号でも）：
          選ぶ＝平らな札（選んでいる物は濃紺の塗り）／大きな操作を実行する＝立体のキー（▶ ■ ↺ ⤓）／
          小さく変える＝灰色の丸（−＋）／映し方を大きく変える＝青の塗り（⛶ ▷） -->
-    <div class="crow act">
-      <button id="coopFull" class="bview" type="button"><span class="ic" aria-hidden="true">⛶</span>全画面でうつす</button>
-      <span class="keys"><button id="coopStartL" class="bkey go" type="button"><span class="ic" aria-hidden="true">▶</span>開始</button>
-        <button id="coopStop" class="bkey stop" disabled><span class="ic" aria-hidden="true">■</span>終了</button>
-        <button id="coopReset" class="bkey" disabled><span class="ic" aria-hidden="true">↺</span>リセット</button></span>
-      <div class="stat" id="coopStat"></div>
-      <div class="note" id="coopGuide"></div>
-    </div>
-    <div class="crow act">
-      <span class="grp"><button id="coopSave" class="bkey" type="button" title="映している回を名前を付けて保存する"><span class="ic" aria-hidden="true">⤓</span>保存…</button>
-        <select id="coopSaves" aria-label="保存データ"></select>
-        <button id="coopLoad" class="bview sm" type="button" title="選んだ保存データを映す"><span class="ic" aria-hidden="true">▷</span>再生</button></span>
-    </div>
-    <div class="crow">
-      <span class="grp"><details class="more" id="coopMore"><summary>図形と表示の設定</summary>
-        <div class="morePanel">
-          <div class="mrow"><span class="ctl">図形</span> <select id="coopPat"></select></div>
-          <div class="mrow"><span class="ctl">1正答の枚数</span>
-            <input id="coopRate" type="number" min="0.5" step="0.5" placeholder="自動"> 枚
-            <span id="coopRateTag" class="note">自動</span>
-            <button id="coopRateAuto" class="bstep sm" type="button" style="display:none">自動にもどす</button></div>
-          <div class="mrow"><span class="ctl">見返す回</span>
-            <select id="coopRvPick" aria-label="児童の「前回の協力プレイ」に出す回"></select>
-            <span class="ptag">すぐ反映</span>
-            <span id="coopRvPickStat" class="note"></span></div>
-          <div class="mrow"><span class="ctl">児童の見返し</span>
-            <select id="coopRvMine"><option value="0">「みんなで」だけ出す</option><option value="1">「じぶん」の正答数も出す</option></select>
-            <span class="ptag">すぐ反映</span>
-            <span id="coopRvMineStat" class="note"></span></div>
-          <p class="note">
-            クラス全員の<b>本番の正答</b>で図形がいっしょに育ちます（れんしゅうは数えません）。
-            「全画面でうつす」でモニターに図形だけを映し、画面の「開始」を押すと「よーい、3、2、1」でスタート、時間が来たら自動で打ち切りです。
-            終わった図形を映している間は、画面の「続きから」で同じ図形を育て続けられます。<br>
-            <b>起点</b>は図形が育ち始める点の数です。2以上にすると、児童（色づかいがグループならグループ）ごとに担当の起点が決まり、そこから育ちます。
-            児童数にすると島の大きさがその子の正答数になり、モニターと児童の見返しで見えます。<br>
-            <b>見返す回</b>は、選んでいるクラスの児童が「前回の協力プレイ」で見る回です。保存データから選びます。選ばなければそのクラスの直前の回で、正答が1つも無い回（試しに開始して終えた回など）と、協力プレイをまだしていないクラスでは何も出しません。
-            <b>児童の見返し</b>は、児童画面の「前回の協力プレイ」で「じぶん ○もん」を出すかどうかです（既定は出さない。変えるとすぐ保存されます）。</p>
+    <section class="cstep" id="cs1" aria-labelledby="cs1h">
+      <div class="csh"><span class="no">1</span><b id="cs1h">準備</b><span class="csum" id="cs1sum"></span><button class="bstep sm cgo" type="button" data-cgo="1">変更</button></div>
+      <div class="csb">
+        <!-- 設定は「見出し｜操作」の2列にそろえる。クラスは3列の格子（6クラスまで2段）、数の欄は36人でも同じ幅 -->
+        <div class="cform">
+          <div class="frow"><span class="ctl" id="coopClsLab">クラス</span><div class="clsPick" id="coopClsPick"></div></div>
+          <select id="coopCls" style="display:none" aria-hidden="true"></select>
+          <div class="frow"><span class="ctl">時間</span>
+            <span class="grp"><button id="coopMinDn" class="ghost step" type="button" aria-label="1分減らす">−</button>
+            <input id="coopMin" type="number" min="1" max="30" step="1" value="10" class="minIn" aria-label="分">
+            <button id="coopMinUp" class="ghost step" type="button" aria-label="1分増やす">＋</button>
+            <span class="unit">分</span></span></div>
+          <div class="frow"><span class="ctl">開始方法</span>
+            <span class="grp chow" id="coopHow">
+              <label><input type="radio" name="coopHow" value="new" checked> 新規に開始</label>
+              <label><input type="radio" name="coopHow" value="save"> 保存した回から再開</label>
+              <select id="coopContPick" aria-label="再開する保存データ" hidden></select></span></div>
         </div>
-      </details></span>
-    </div>
+        <details class="cadv" id="coopAdv"><summary>詳細設定<span class="chg" id="coopAdvChg"></span></summary>
+          <div class="cform">
+            <div class="frow"><span class="ctl">色分け</span>
+              <span class="grp"><span class="seg" id="coopModeSeg"><button type="button" data-v="child">児童ごと</button><button type="button" data-v="group">グループ</button></span>
+              <select id="coopMode" style="display:none" aria-hidden="true"><option value="child">児童ごと</option><option value="group">グループ</option></select></span></div>
+            <div class="frow" id="coopGnRow" style="display:none"><span class="ctl">グループ数</span>
+              <span class="grp"><select id="coopGn"></select>
+              <button id="coopPlanBtn" class="ghost" type="button">グループ編成を確認・編集…</button></span></div>
+            <div class="frow"><span class="ctl">起点の数</span>
+              <span class="grp"><button id="coopOrgDn" class="ghost step" type="button" aria-label="起点を1つ減らす">−</button>
+              <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="起点の数">
+              <button id="coopOrgUp" class="ghost step" type="button" aria-label="起点を1つ増やす">＋</button>
+              <span class="unit" id="coopOrgMax"></span>
+              <button id="coopOrgShow" class="pick on" type="button" aria-pressed="true" title="見本の上の起点の印を出す・隠す（押すたびに切り替え）">表示</button></span></div>
+            <div class="frow"><span class="ctl"></span><span class="note cwhy" id="coopOrgWhy"></span></div>
+            <div class="frow"><span class="ctl">図形</span><span class="grp"><select id="coopPat"></select></span></div>
+            <div class="frow"><span class="ctl">1正答の量</span>
+              <span class="grp"><input id="coopRate" type="number" min="0.5" step="0.5" placeholder="自動"> 枚
+              <span id="coopRateTag" class="note">自動</span>
+              <button id="coopRateAuto" class="bstep sm" type="button" style="display:none">自動に戻す</button></span></div>
+          </div>
+        </details>
+        <div class="cnav"><button id="coopNext1" class="bkey go" type="button">次へ：投影・開始 →</button></div>
+      </div>
+    </section>
+
+    <section class="cstep" id="cs2" aria-labelledby="cs2h">
+      <div class="csh"><span class="no">2</span><b id="cs2h">投影・開始</b><span class="csum" id="cs2sum"></span><button class="bstep sm cgo" type="button" data-cgo="2">開く</button></div>
+      <div class="csb">
+        <p class="note chint">「モニターに投影」で右の画面を全画面にし、「開始」でカウントダウン後に始まります。制限時間で自動終了します。</p>
+        <button id="coopFull" class="bview" type="button"><span class="ic" aria-hidden="true">⛶</span>モニターに投影</button>
+        <span class="keys"><button id="coopStartL" class="bkey go" type="button"><span class="ic" aria-hidden="true">▶</span>開始</button>
+          <button id="coopStop" class="bkey stop" disabled><span class="ic" aria-hidden="true">■</span>終了</button>
+          <button id="coopReset" class="bkey" disabled><span class="ic" aria-hidden="true">↺</span>やり直し</button></span>
+        <div class="stat" id="coopStat"></div>
+        <div class="note" id="coopGuide"></div>
+        <div class="cnav"><button id="coopBack2" class="ghost" type="button">← 準備に戻る</button></div>
+      </div>
+    </section>
+
+    <section class="cstep" id="cs3" aria-labelledby="cs3h">
+      <div class="csh"><span class="no">3</span><b id="cs3h">終了後</b><span class="csum" id="cs3sum"></span><button class="bstep sm cgo" type="button" data-cgo="3">開く</button></div>
+      <div class="csb">
+        <!-- 終わった回を保存するかは、終わった時に必ず選ばせる（ステージの上にも同じ選択を出す。coopEndShow_） -->
+        <div class="cend" id="coopEndBox" hidden>
+          <span class="cendh">この回は未保存です（正答 <b id="coopEndN">0</b>）</span>
+          <input id="coopSaveName" type="text" placeholder="名前（空欄なら日時の名前）" aria-label="保存する名前">
+          <div class="cend2"><button id="coopSave" class="bkey go" type="button"><span class="ic" aria-hidden="true">⤓</span>保存する</button>
+            <button id="coopDrop" class="bstep" type="button">保存せずに終了</button></div>
+        </div>
+        <div class="cform">
+          <div class="frow"><span class="ctl">児童への提示</span>
+            <span class="grp"><select id="coopRvPick" aria-label="児童の「前回の協力プレイ」に出す回"></select>
+            <span class="ptag">すぐ反映</span><span id="coopRvPickStat" class="note"></span></span></div>
+          <div class="frow"><span class="ctl">個人の正答数</span>
+            <span class="grp"><select id="coopRvMine"><option value="0">児童の振り返りに表示しない</option><option value="1">児童の振り返りに表示する</option></select>
+            <span class="ptag">すぐ反映</span><span id="coopRvMineStat" class="note"></span></span></div>
+          <div class="frow"><span class="ctl">保存データ</span>
+            <span class="grp"><select id="coopSaves" aria-label="保存データ"></select>
+            <button id="coopLoad" class="bview sm" type="button" title="選んだ保存データを右の画面で再生する"><span class="ic" aria-hidden="true">▷</span>再生</button></span></div>
+        </div>
+        <div class="stat" id="coopStat3"></div>
+        <div class="cnav" id="coopNav3"><button id="coopAgain" class="bkey go" type="button">もう1回（準備へ）</button>
+          <button id="coopQuit" class="bstep" type="button">終わる</button></div>
+      </div>
+    </section>
   </div>
 
   <!-- グループの編集はポップアップ。開始前の予定（「グループ分け」シート）も、映している回のグループも、ここで直して「保存」 -->
@@ -686,6 +745,13 @@ details.more[open] summary{border-color:var(--ink)}
       <div class="tag"><span class="n" id="coopScore">0</span><div class="l">せいかい</div></div>
     </div>
     <div id="coopNote"></div>
+    <!-- 終わった時の保存の選択。モニターに映したままでも選べるよう、ステージの上にも出す（左の③と同じ働き） -->
+    <div id="coopEndStage" hidden>
+      <b class="ceh">終了</b><span class="cen">正答 <b id="coopEndN2">0</b></span>
+      <input id="coopSaveName2" type="text" placeholder="名前（空欄なら日時の名前）" aria-label="保存する名前">
+      <div class="cend2"><button class="bkey go" type="button" data-cend="save"><span class="ic" aria-hidden="true">⤓</span>保存する</button>
+        <button class="bstep" type="button" data-cend="drop">保存せずに終了</button></div>
+    </div>
     <div id="coopRoster"></div>
   </div>
   </div><!-- /pageCoop -->
@@ -2289,18 +2355,9 @@ function coopOrgSet(v){
   el.max = mx;
   $('coopOrgMax').textContent = '／' + mx; $('coopOrgMax').title = '最大 ' + mx;
 }
-/* 協力の「詳細」：summary の上に開く（上に入らなければ下）。画面の左右からはみ出さない */
-$('coopMore').addEventListener('toggle', function(){
-  if(!this.open) return;
-  var pn = this.querySelector('.morePanel'), r = this.querySelector('summary').getBoundingClientRect();
-  var w = pn.offsetWidth, h = pn.offsetHeight;
-  pn.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
-  pn.style.top = (r.top - h - 6 >= 8 ? r.top - h - 6 : Math.min(r.bottom + 6, innerHeight - h - 8)) + 'px';
-});
-addEventListener('resize', function(){ var m = $('coopMore'); if(m) m.open = false; });
-/* 小窓（見出しの段の写し・注意、協力プレイの「図形と表示の設定」）は外を押したら閉じる */
+/* 小窓（見出しの段の写し・注意）は外を押したら閉じる */
 document.addEventListener('click', function(e){
-  [].forEach.call(document.querySelectorAll('.topbar details.pop[open], #coopMore[open]'), function(d){ if(!d.contains(e.target)) d.open = false; });
+  [].forEach.call(document.querySelectorAll('.topbar details.pop[open]'), function(d){ if(!d.contains(e.target)) d.open = false; });
 });
 $('coopModeSeg').onclick = function(e){
   var b = e.target.closest('button[data-v]'); if(!b || b.disabled) return;
@@ -2549,8 +2606,10 @@ function coopGoShow(){                        // 開始ボタン：進行中・�
   b.classList.toggle('small', !busy && (!!s || !!CP.prev));   // 終わった図形・保存データ・見本の間は、時計の下に小さく（見本では起点の印を隠さない）
   // 終わった図形を映している時は「新しく開始」と「続きから」の2つを出す（どちらで始めるかを取り違えないよう名前を分ける）
   b.textContent = (!busy && s) ? '新しく開始' : '開始';
-  $('coopStartL').disabled = !!busy;     // 進行中・数えている間は押せない
-  var canCont = !busy && !!s && s.status !== 'run' && (!CP.loaded || !!CP.saveId);
+  var wait = coopNeedDecide_();          // 終わった回を保存するか選ぶまでは、次の回を始めない
+  if(wait) b.classList.add('off');
+  $('coopStartL').disabled = !!busy || wait;     // 進行中・数えている間は押せない
+  var canCont = !busy && !wait && !!s && s.status !== 'run' && (!CP.loaded || !!CP.saveId);
   $('coopCont').classList.toggle('off', !canCont);
 }
 $('coopCont').onclick = function(){
@@ -2561,8 +2620,9 @@ $('coopCont').onclick = function(){
 };
 setInterval(coopCountShow, 100);
 $('coopStart').onclick = function(){
-  if(CP.begin) return;
-  coopBegin(false);
+  if(CP.begin || coopNeedDecide_()) return;
+  var id = coopHow_() === 'save' ? $('coopContPick').value : '';
+  coopBegin(false, id ? 'save:' + id : undefined);   // ①で「保存した回から再開」を選んだ時は、その保存データの続きから
 };
 // 左の操作欄の「開始」：ステージの開始（終わった回を映している時は「新しく開始」）と同じ
 $('coopStartL').onclick = function(){ $('coopStart').onclick(); };
@@ -2663,20 +2723,25 @@ $('coopNames').onclick = function(){
   coopNamesSet($('coopStage').classList.contains('nonames'));
 };
 (function(){ var v = null; try { v = localStorage.getItem('coopNames'); } catch(e){} coopNamesSet(v !== '0'); })();
-$('coopSave').onclick = function(){
-  // 名前は押した時に聞く（いつも出しておく入力欄をやめた）。空なら「3年1組 10/2 9:30」のような名前を自動で付ける
-  var name = prompt('保存する名前（空のままなら日時の名前を付けます）', '');
-  if(name === null) return;
-  var btn = this;
-  saveWith_(btn, 'coopStat', function(run){ run.coopSave(name); }, function(r){
+/* 保存：名前は③（またはステージの上）の欄から。空なら「3年1組 10/2 9:30」のような名前をサーバーが付ける */
+function coopSaveRun_(btn, name){
+  saveWith_(btn, 'coopStat3', function(run){ run.coopSave(name); }, function(r){
     if(r && r.ok){
       var s = CP.sess, late = s && s.lateUntil ? s.lateUntil - (Date.now() + CP.off) : 0;
       coopRefreshSaves();
+      coopDecide_('「' + r.name + '」を保存済み');
       return '「' + r.name + '」を保存しました' +
         (late > 0 ? '（この後に届く送り直しは入っていません。' + coopFmt(late) + ' 後にもう一度保存すると全部入ります）' : '');
     }
     return { msg: (r && r.msg) || '保存できませんでした', bad: true };
   });
+}
+$('coopSave').onclick = function(){ coopSaveRun_(this, $('coopSaveName').value.trim()); };
+$('coopDrop').onclick = function(){ coopDecide_('保存せずに終了'); setStat('coopStat3', '保存せずに終了しました'); };
+$('coopEndStage').onclick = function(e){
+  var b = e.target.closest('button[data-cend]'); if(!b) return;
+  if(b.dataset.cend === 'save') coopSaveRun_(b, $('coopSaveName2').value.trim());
+  else $('coopDrop').onclick();
 };
 var CP_SAVES = [], CP_RV = {};   // 保存データの一覧（id・名前・クラス）と、クラスごとの「見返す回」（{ クラス: 保存ID }）
 function coopRefreshSaves(){
@@ -2703,6 +2768,7 @@ function coopRvPickRender(){
   if(sel.value !== cur) sel.value = '';     // 選んでいた保存データが一覧から消えた
   if(CP_RV_CLS !== cls) $('coopRvPickStat').textContent = '';
   CP_RV_CLS = cls;
+  coopContRender_();
 }
 $('coopRvPick').onchange = function(){
   var el = this, cls = $('coopCls').value, id = el.value;
@@ -2715,10 +2781,10 @@ $('coopRvPick').onchange = function(){
 $('coopLoad').onclick = function(){
   var id = $('coopSaves').value;
   if(!id) return;
-  setStat('coopStat', '読み込んでいます…');
+  setStat('coopStat3', '読み込んでいます…');
   google.script.run.withSuccessHandler(function(r){
-    if(!r || !r.ok){ setStat('coopStat', (r && r.msg) || '読み込めませんでした', true); return; }
-    setStat('coopStat', '「' + r.name + '」を再生中');
+    if(!r || !r.ok){ setStat('coopStat3', (r && r.msg) || '読み込めませんでした', true); return; }
+    setStat('coopStat3', '「' + r.name + '」を再生中');
     var p = r.payload;
     coopUseSession({ id: 'save', cls: p.cls, pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn, org: p.org || 1, orgPts: p.orgPts || null, gw: p.gw || null,
       start: p.start, end: p.end, status: 'done', total: p.total,
@@ -2730,9 +2796,91 @@ $('coopLoad').onclick = function(){
     // リセット・保存は進行中のセッションに効く操作なので、保存データを見ている間は押せなくする
     $('coopReset').disabled = true;
     $('coopSave').disabled = true;
-  }).withFailureHandler(function(e){ setStat('coopStat', '読み込めませんでした: ' + e.message, true); })
+  }).withFailureHandler(function(e){ setStat('coopStat3', '読み込めませんでした: ' + e.message, true); })
   .coopLoad(id);
 };
+/* ---- 3段の進み方 ----
+ * ①→②は「次へ」、②→③は回が終わると自動、③→①は「もう1回」「終わる」。見出しの「変更」「開く」でも行き来できる。
+ * 実施中は②、終わった回の保存を選ぶまでは③に固定する（ほかの段へ行けない）。
+ * 保存したか・保存せずに終えたかは回の id ごとにこの端末へ覚える（開き直しても同じ回で何度も聞かない） */
+CP.step = 1;
+function coopDecidedMap_(){ try { return JSON.parse(localStorage.getItem('coopDecided') || '{}') || {}; } catch(e){ return {}; } }
+function coopDecided_(id){ return coopDecidedMap_()[id]; }
+function coopDecide_(text){
+  var s = CP.sess; if(!s) return;
+  var m = coopDecidedMap_(); m[s.id] = text;
+  var keys = Object.keys(m); if(keys.length > 50) delete m[keys[0]];   // 古いものから捨てる
+  try { localStorage.setItem('coopDecided', JSON.stringify(m)); } catch(e){}
+  CP.decidedMem = CP.decidedMem || {}; CP.decidedMem[s.id] = text;   // 端末に覚えられない時もこの画面の間は覚える
+  coopStepTick_();
+}
+function coopRunning_(){ var s = CP.sess; return !!CP.begin || (!!s && !CP.prev && !CP.loaded && s.id !== 'save' && s.status === 'run' && Date.now() + CP.off < s.end); }
+function coopNeedDecide_(){
+  var s = CP.sess;
+  if(!s || CP.prev || CP.loaded || s.id === 'save' || coopRunning_()) return false;
+  if((CP.decidedMem && CP.decidedMem[s.id]) || coopDecided_(s.id)) return false;
+  return Date.now() + CP.off - s.end < 3 * 3600000;   // 3時間より前に終わった回は聞かない（翌日に開いた時など）
+}
+function coopHow_(){ var r = document.querySelector('input[name=coopHow]:checked'); return r ? r.value : 'new'; }
+function coopStepSet_(n){
+  if(coopRunning_()) n = 2; else if(coopNeedDecide_()) n = 3;
+  CP.step = n;
+  ['cs1', 'cs2', 'cs3'].forEach(function(id, i){ $(id).classList.toggle('now', i + 1 === n); });
+  coopStepTick_();
+  coopFit_();
+}
+function coopStepTick_(){
+  var run = coopRunning_(), need = coopNeedDecide_(), s = CP.sess;
+  if(run && CP.step !== 2) return coopStepSet_(2);
+  if(need && CP.step !== 3) return coopStepSet_(3);
+  var lab = $('coopCls').selectedOptions && $('coopCls').selectedOptions[0];
+  var how = coopHow_() === 'save' ? '保存した回から再開' : '新規';
+  $('cs1sum').textContent = (lab ? lab.textContent : '') + '・' + coopMinVal() + '分・' + how;
+  $('cs2sum').textContent = run ? '実施中' : (s && !CP.prev && !CP.loaded && s.id !== 'save' ? '終了' : '未開始');
+  $('cs3sum').textContent = need ? '未保存（保存するか選んでください）' : (s && ((CP.decidedMem || {})[s.id] || coopDecided_(s.id))) || '';
+  $('coopBack2').disabled = run;
+  $('coopEndBox').hidden = !need;
+  $('coopEndStage').hidden = !need;
+  $('coopNav3').hidden = need;
+  if(need){ var n = String(CP.total || (s && s.total) || 0); $('coopEndN').textContent = n; $('coopEndN2').textContent = n; }
+  [].forEach.call(document.querySelectorAll('.cstep .cgo'), function(b){ b.disabled = run || need; });
+  // 詳細設定：既定から変えている項目を、閉じた見出しにも出す
+  var chg = [];
+  if($('coopMode').value === 'group') chg.push('グループ' + $('coopGn').value);
+  if(coopOrgVal() > 1) chg.push('起点' + coopOrgVal());
+  $('coopAdvChg').textContent = chg.join('・');
+  var who = $('coopMode').value === 'group' ? 'グループ' : '児童';
+  $('coopOrgWhy').textContent = coopOrgVal() > 1 ? who + 'ごとに担当の起点から育ちます' : 'クラス全体で1つの図形を育てます';
+}
+/* ①の「保存した回から再開」：選んでいるクラスの保存データだけを並べる。無ければ選べない */
+function coopContRender_(){
+  var cls = $('coopCls').value, sel = $('coopContPick'), cur = sel.value;
+  var mine = (CP_SAVES || []).filter(function(s){ return s.cls === cls; });
+  sel.innerHTML = mine.map(function(s){ return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
+  if(cur) sel.value = cur;
+  var rb = document.querySelector('input[name=coopHow][value=save]');
+  rb.disabled = !mine.length;
+  rb.parentNode.title = mine.length ? '' : 'このクラスの保存データはありません';
+  if(!mine.length && rb.checked) document.querySelector('input[name=coopHow][value=new]').checked = true;
+  sel.hidden = coopHow_() !== 'save';
+}
+$('coopHow').onchange = function(){ coopContRender_(); coopStepTick_(); };
+document.addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('.cstep .cgo'); if(b && !b.disabled) coopStepSet_(Number(b.dataset.cgo));
+});
+$('coopNext1').onclick = function(){ coopStepSet_(2); };
+$('coopBack2').onclick = function(){ coopStepSet_(1); };
+$('coopAgain').onclick = function(){ setStat('coopStat3', ''); coopStepSet_(1); };
+$('coopQuit').onclick = function(){
+  document.querySelector('input[name=coopHow][value=new]').checked = true; coopContRender_();
+  setStat('coopStat3', ''); coopStepSet_(1);
+  $('cs1sum').textContent = '協力プレイを終えました';
+};
+setInterval(coopStepTick_, 500);
+coopStepSet_(1);
+/* ハブの「協力プレイ」から来た時（URL の末尾が #coop）は、協力プレイのタブを開く */
+try { google.script.url.getLocation(function(l){ if(l && l.hash === 'coop') showPage('coop'); }); } catch(e){}
+
 var coopRt = 0;
 addEventListener('resize', function(){
   clearTimeout(coopRt);
