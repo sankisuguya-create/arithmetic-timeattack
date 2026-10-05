@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>くり上がり/くり下がり解説</title>
 <style>
 /* 上に点の筆算（右から 一・十・百・千・万。左へスクロール）、下に説明と操作。サイトと同じ紺の地の1テーマ */
@@ -335,7 +336,7 @@ function sizeTo(k,anim){ numMode=false; setTimeout(draw,0); cv.style.transition=
   cv.style.width=Math.floor(cv.width*k)+'px'; cv.style.height=Math.floor(cv.height*k)+'px'; }
 function scale(){ return parseInt(cv.style.width,10)/cv.width; }
 function fullSize(){ sizeTo(k3(),true); }
-function isOverview(){ return scale()<k3()-0.01; }
+function isOverview(){ return scale()<capH(k3())-0.01; }   /* 実際に適用される縮尺（高さ上限込み）と比べる */
 function overview(now){
   var k=capH(Math.min(1,(sc.clientWidth-2)/cv.width));
   cv.style.transition=(reduced()||now)?'':'width .7s cubic-bezier(.2,.8,.2,1),height .7s cubic-bezier(.2,.8,.2,1)';
@@ -346,7 +347,7 @@ function overview(now){
 /* その位が見えるように横へ動かす */
 /* その位と、となりの位を合わせた3つの位がまるごと見えるように横へ動かす */
 function follow(p){ if(p==null||p>=NP) return;
-  var k=isOverview()?scale():k3(), lo=Math.max(0,p-1), hi=Math.min(NP-1,lo+2); lo=Math.max(0,hi-2);
+  var k=isOverview()?scale():capH(k3()), lo=Math.max(0,p-1), hi=Math.min(NP-1,lo+2); lo=Math.max(0,hi-2);
   var l=(colX[hi]-1)*C*k, r=(colX[lo]+colW[lo]+(lo===0?6:1))*C*k;
   if(l>=sc.scrollLeft-1&&r<=sc.scrollLeft+sc.clientWidth+1) return;
   var to=(r-l<=sc.clientWidth)?(l<sc.scrollLeft?l:r-sc.clientWidth):l;
@@ -527,14 +528,14 @@ function back(){
 function play(){ if(playing||!started) return; playing=true;
   (function loop(){ if(!playing) return; if(si>=steps.length){ playing=false; return; } next(function(){ setTimeout(loop,rt(1000)); }); })(); }
 
-(function(){ var s=document.getElementById('spd'); s.value=String(RATE);
-  s.onchange=function(){ RATE=+this.value; localStorage.setItem('rg_speed',String(RATE)); }; })();
 /* ---------- 再生のはやさ ---------- */
 /* RATE で 手と手のあいだの待ち・運び/合体/ぶつかりの時間をいっしょに割る。
    「ゆっくり」が初期値（教室で見せるときは今より遅い方が追いやすい） */
 var RATE=+(localStorage.getItem('rg_speed')||0.55);
 if(!(RATE===0.55||RATE===1||RATE===1.7)) RATE=0.55;
 function rt(v){ return v/RATE; }
+(function(){ var s=document.getElementById('spd'); s.value=String(RATE);
+  s.onchange=function(){ RATE=+this.value; localStorage.setItem('rg_speed',String(RATE)); }; })();
 
 var cur=[47,'+',38], started=false;
 function load(a,op,b){
