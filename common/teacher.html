@@ -228,9 +228,10 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 /* 設定の見本：名札・正答数は出さず、「見本」の札を出す（実際の回と取り違えないように）。再生のつまみは使える */
 #coopPrevTag{display:none;background:#101728;color:#fff;border-radius:9px;padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem);font-weight:700}
 #coopStage.preview #coopPrevTag{display:inline-block}
-/* 見本の表示⇄非表示（この端末だけ）。回が無い間だけ出す。かくした時は正答の無い見本（図形の輪郭と起点の印だけ）にする */
-#coopPrevOn{display:none;background:rgba(255,255,255,.9);border:1.5px solid var(--line);border-radius:9px;color:var(--ink);
-  padding:.4vmin 1.2vmin;font-size:clamp(.7rem,1.8vmin,1rem)}
+/* 「プレビューを見る」（押すたびに入⇄切、この端末だけ、既定は切）。回が無い間だけ出す。切の時は正答の無い見本（図形の輪郭と起点の印だけ）にする */
+#coopPrevOn{display:none;background:#fff;border:2px solid #0F5EA8;border-radius:10px;color:#0F5EA8;font-weight:800;
+  padding:.7vmin 1.8vmin;font-size:clamp(.85rem,2.4vmin,1.25rem);box-shadow:0 2px 8px rgba(16,23,40,.18)}
+#coopPrevOn[aria-pressed="true"]{background:#0F5EA8;color:#fff}   /* 押している間（プレビュー中）は青の塗り */
 #coopStage.preview #coopPrevOn{display:inline-block}
 #coopStage.prevEmpty #coopPrevTag,#coopStage.prevEmpty #coopReplay,#coopStage.prevEmpty #coopHud{display:none}
 #coopStage.preview #coopRoster,#coopStage.preview #coopNames,
@@ -724,7 +725,7 @@ details.more[open] summary{border-color:var(--ink)}
     <div id="coopTL">
     <button id="coopClose" class="ghost" type="button">× もどる</button>
     <span id="coopPrevTag">見本</span>
-    <button id="coopPrevOn" type="button">見本をかくす <span class="ptag">この端末だけ</span></button>
+    <button id="coopPrevOn" type="button" aria-pressed="false">プレビューを見る</button>
     <button id="coopPrevBack" type="button" hidden>終わった回にもどる</button>
     <button id="coopOrgReset" type="button" hidden>起点の位置をもとにもどす</button>
     <button id="coopNames" type="button">名前をかくす <span class="ptag">この端末だけ</span></button>
@@ -2044,7 +2045,7 @@ function coopTabShow_(){
  */
 function coopGuideText(){
   var s = CP.sess;
-  if(CP.prev && !CP.ev.length) return { note: '', guide: '見本をかくしています（図形の輪郭と起点だけ）。右の図の左上「見本を出す」で出せます。' };
+  if(CP.prev && !CP.ev.length) return { note: '', guide: '右は図形の輪郭と起点だけです。右の図の左上「プレビューを見る」で、育つ様子の見本を出せます。' };
   if(CP.prev) return { note: '', guide: '右は見本です（正答はつくりもの。色は開始のたびに変わります）。設定を変えると描き直します。' };
   if(!s || CP.loaded || s.id === 'save') return { note: '', guide: '' };
   var now = Date.now() + CP.off, lim = (s.lim || 60) * 1000, slack = s.slack || 10000;
@@ -2246,9 +2247,9 @@ $('coopOrgShow').onclick = function(){
   this.setAttribute('aria-pressed', hide ? 'false' : 'true');
 };
 /* 見本の表示⇄非表示。見る人の端末ごとに覚える（既定は出す）。かくしても起点の印は残し、つまんで動かせる */
-function coopPrevOn_(){ var v = null; try { v = localStorage.getItem('coopPrevOn'); } catch(e){} return v !== '0'; }
+function coopPrevOn_(){ var v = null; try { v = localStorage.getItem('coopPrevOn'); } catch(e){} return v === '1'; }   // 既定は切
 function coopPrevOnLabel_(){
-  $('coopPrevOn').innerHTML = (coopPrevOn_() ? '見本をかくす' : '見本を出す') + ' <span class="ptag">この端末だけ</span>';
+  $('coopPrevOn').setAttribute('aria-pressed', coopPrevOn_() ? 'true' : 'false');   // 文字は変えず、押している間は塗りで示す
 }
 $('coopPrevOn').onclick = function(){
   try { localStorage.setItem('coopPrevOn', coopPrevOn_() ? '0' : '1'); } catch(e){}
