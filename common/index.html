@@ -161,7 +161,8 @@ body.coopPast #coop:active{background:#E1E4E8}
 #coopRv .me{display:inline-block;width:1em;height:1em;border-radius:50%;vertical-align:-.12em;margin-right:.35em;border:1.5px solid rgba(16,23,40,.35)}
 #coop.off .b .dot{display:none}
 #play.coopOn .hud,#play.coopOn.dial-mode .hud{padding-left:160px}
-.stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;padding-bottom:2vh}
+.stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;padding-bottom:2vh;
+  min-height:0}   /* 中身に合わせて伸びない。伸びると下の数字キーが押しつぶされる（まきじゃく系と同じ理由） */
 
 /* 正答数は式の左上、Enterと同じミント */
 .cntbox{position:absolute;left:12.7%;top:calc(50% - clamp(3rem,8vw,4.2rem));
@@ -325,7 +326,9 @@ body.coopPast #coop:active{background:#E1E4E8}
 
 /* 画面キー：横一列の縦長柱。数字は上端、当たり判定は画面下端まで */
 #pad{display:flex;gap:.5rem;justify-content:center;align-items:stretch;
-  padding:0 1rem;flex-wrap:nowrap;height:calc(clamp(3rem,8vw,4.2rem) * 3)}
+  padding:0 1rem;flex-wrap:wrap;height:calc(clamp(3rem,8vw,4.2rem) * 3)}
+/* 幅が足りなければ1列のまま両端を切るより、2段に折り返す。キーの大きさは保てる。
+   収まる幅では今までどおり1列なので、通常の画面で見た目は変わらない。 */
 .key{flex:0 0 auto;width:clamp(3rem,8vw,4.2rem);
   display:flex;align-items:flex-start;justify-content:center;padding-top:.55rem;
   background:#232B44;color:var(--chalk);border-radius:12px 12px 0 0;
