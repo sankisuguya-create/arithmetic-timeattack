@@ -2879,8 +2879,9 @@ $('coopQuit').onclick = function(){
 };
 setInterval(coopStepTick_, 500);
 coopStepSet_(1);
-/* ハブの「協力プレイ」から来た時（URL の末尾が #coop）は、協力プレイのタブを開く */
-try { google.script.url.getLocation(function(l){ if(l && l.hash === 'coop') showPage('coop'); }); } catch(e){}
+/* ハブの「協力プレイ↗」から来た時（?tab=coop）は、協力プレイのタブを開く。値はサーバーが既知のタブ名だけに絞って渡す */
+var START_TAB = '<?= typeof startTab === "string" ? startTab : "" ?>';
+if(START_TAB && PAGES[START_TAB]) showPage(START_TAB);
 
 var coopRt = 0;
 addEventListener('resize', function(){

@@ -1133,7 +1133,8 @@ console.log('coop.test.cjs: all assertions passed.');
   // 終わった回の保存を選ぶまでは次の回を始めない。①の「保存した回から再開」は保存データの続きから始める
   assert.ok(tui.includes('if(CP.begin || coopNeedDecide_()) return;'));
   assert.ok(tui.includes("coopBegin(false, id ? 'save:' + id : undefined);"));
-  // ハブの「協力プレイ↗」（#coop）から開いた時は協力プレイのタブ
-  assert.ok(tui.includes("if(l && l.hash === 'coop') showPage('coop');"));
-  assert.ok(read('apps/hub/teacher.html').includes("+'#coop')+'\" target=\"_blank\" rel=\"noopener\">協力プレイ↗</a>'"));
+  // ハブの「協力プレイ↗」（?page=teacher&tab=coop）から開いた時は協力プレイのタブ。サーバーは既知のタブ名だけを渡す
+  assert.ok(tui.includes('if(START_TAB && PAGES[START_TAB]) showPage(START_TAB);'));
+  assert.ok(read('common/Core.gs').includes("t.startTab = ['mode', 'coop', 'set', 'ana', 'past'].indexOf(e.parameter.tab) >= 0 ? e.parameter.tab : '';"));
+  assert.ok(read('apps/hub/teacher.html').includes("+'&tab=coop')+'"));
 }
