@@ -510,7 +510,10 @@ function doGet(e) {
     if (!isTeacher_(email_())) {
       return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">この画面を開く権限がありません。</p>');
     }
-    return HtmlService.createTemplateFromFile('teacher').evaluate()
+    var t = HtmlService.createTemplateFromFile('teacher');
+    // ハブの「協力プレイ↗」は ?page=teacher&tab=coop で来る。最初に開くタブ（知らない値は既定のタブ）
+    t.startTab = ['mode', 'coop', 'set', 'ana', 'past'].indexOf(e.parameter.tab) >= 0 ? e.parameter.tab : '';
+    return t.evaluate()
       .setTitle(UNIT.teacherTitle)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
