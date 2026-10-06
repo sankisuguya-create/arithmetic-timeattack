@@ -88,6 +88,10 @@ button{font:inherit;font-weight:700;padding:.5rem 1rem;border:none;border-radius
 button:disabled{opacity:.45;cursor:default}
 .bar{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.8rem}
 .stat{font-size:.8rem;color:var(--mute)}
+/* 色の見本（30色）。選んでいる色は濃紺の太枠 */
+.swatches{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:.3rem;max-width:24rem}   /* 30色＝10列×3段（端が1つだけ余らない） */
+.sw{width:100%;aspect-ratio:1;padding:0;border-radius:8px;border:2px solid rgba(16,23,40,.15);font-size:1rem;font-weight:800;line-height:1}
+.sw.on{border:3px solid var(--ink);box-shadow:0 0 0 2px #fff inset}
 .note{font-size:.76rem;color:var(--mute)}
 .dirty{font-size:.8rem;font-weight:700}
 details.help{margin-top:.7rem;font-size:.8rem;color:var(--mute);line-height:1.8}
@@ -444,8 +448,13 @@ function renderEditor(){
   var chips = GRADES.map(function(g){
     return '<span class="chip'+(sel.indexOf(String(g))>=0?' on':'')+'" data-g="'+g+'">'+g+'年</span>';
   }).join('');
+  // 色は30色の見本から押して選ぶ（名前だけの一覧では色が分からない）。ほかの行で使っている色には印を付ける
+  var used = {};
+  LINKS.forEach(function(x, i){ if(i !== SEL) used[x.color] = true; });
   var colorOpts = Object.keys(COLORS).map(function(k){
-    return '<option value="'+k+'"'+(l.color===k?' selected':'')+'>'+k+'</option>';
+    var c = COLORS[k];
+    return '<button type="button" class="sw'+(l.color===k?' on':'')+'" data-pickc="'+k+'" title="'+esc(c.label||k)+(used[k]?'（ほかの単元で使用中）':'')+'"'+
+      ' aria-label="'+esc(c.label||k)+'" aria-pressed="'+(l.color===k)+'" style="background:'+c.bg+';color:'+c.fg+'">'+(used[k]?'•':'')+'</button>';
   }).join('');
   $('editor').innerHTML =
     '<div class="fields">'+
@@ -457,7 +466,7 @@ function renderEditor(){
       '<div><label>置き場</label><select data-f="place">'+
         '<option value=""'+(l.place==='doc'?'':' selected')+'>単元のタイル</option>'+
         '<option value="doc"'+(l.place==='doc'?' selected':'')+'>右下の「資料」</option></select></div>'+
-      '<div><label>色</label><select data-f="color">'+colorOpts+'</select></div>'+
+      '<div class="full"><label>色（<span id="swName">'+esc((COLORS[l.color]||{}).label||l.color)+'</span>・• はほかの単元で使用中）</label><div class="swatches">'+colorOpts+'</div></div>'+
       '<div><label>並び順</label><button type="button" class="bstep sm" data-mv="up">↑ 上へ</button> <button type="button" class="bstep sm" data-mv="down">↓ 下へ</button></div>'+
     '</div>'+
     '<div class="bar"><button type="button" class="bstep sm" data-del="1">この単元を削除</button></div>';
@@ -511,6 +520,7 @@ function toggleVisible(i){
 document.addEventListener('click', function(e){
   var t = e.target, d = t.dataset || {};
   if(d.fg !== undefined){ FILT = +d.fg; renderList(); return; }
+  if(d.pickc !== undefined && LINKS[SEL]){ LINKS[SEL].color = d.pickc; setDirty(true); renderEditor(); renderList(); return; }
   if(d.vis !== undefined){ toggleVisible(+d.vis); return; }
   if(t.tagName === 'A') return;
   if(d.tg !== undefined){                       // 表示するタブの設定
@@ -546,7 +556,9 @@ document.addEventListener('click', function(e){
 });
 
 $('add').onclick = function(){
-  LINKS.push({ id:'', title:'', subtitle:'', url:'', grades: FILT ? String(FILT) : '', color:'mint', visible:true, sheet:'', place:'' });
+  var used = {}; LINKS.forEach(function(x){ used[x.color] = true; });
+  var free = Object.keys(COLORS).filter(function(k){ return !used[k]; })[0] || 'mint';   // まだ使っていない色を先に
+  LINKS.push({ id:'', title:'', subtitle:'', url:'', grades: FILT ? String(FILT) : '', color:free, visible:true, sheet:'', place:'' });
   SEL = LINKS.length-1; setDirty(true); renderList(); renderEditor();
   var f = document.querySelector('#editor input[data-f="title"]'); if(f) f.focus();
 };

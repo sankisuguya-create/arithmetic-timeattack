@@ -17,17 +17,43 @@ var TTL = { links: 60, roster: 300 };
  */
 var TEACHER_DOMAIN = 'edu.nishi.or.jp';
 
-/* 各リンクの色。児童が見分けやすいよう6色から選ぶ。
- * fg は bg に対して 36px 太字（WCAG の大きい文字 3:1）を満たす値を選んである。
- * キー名を変えると links シートの color 列が総崩れになるので、増やすことはあっても
- * 既存キーの名前は変えないこと。 */
+/* 各リンクの色（30色）。児童はタイルを表示名で見分ける。色は探す手がかりを足すもので、色だけで見分けさせない。
+ * 選び方：既存の6色を固定し、残り24色を「すでに選んだ色との色差（ΔE2000・一般色覚）の最小値が最大になる色」から順に選んだ。
+ *   候補は OKLCH の明度7段×色相6°刻みで、彩度は0.17まで（目に強すぎる蛍光色を避ける）。紙色 #FBF4E6 とはΔE20以上離す。
+ *   30色どうしの最小の色差は約14（一般色覚）。色覚の型によっては近く見える組が残る（だから色だけで見分けさせない）。
+ * fg は bg の上の文字色で、どれも 4.5:1 以上（36px 太字の基準 3:1 より余裕を取る）。label は教師画面に出す名前。
+ * キー名を変えると links シートの color 列が総崩れになるので、増やすことはあっても既存キーの名前は変えないこと。 */
 var COLORS = {
-  mint:   { bg: '#12C48B', fg: '#052A1F' },
-  blue:   { bg: '#2B4CF2', fg: '#F0F3FF' },
-  amber:  { bg: '#FFC400', fg: '#2E2200' },
-  red:    { bg: '#FF5C38', fg: '#2C0A02' },
-  purple: { bg: '#6D4AE0', fg: '#F3EEFF' },
-  gray:   { bg: '#4A5568', fg: '#EEF1F6' }
+  mint:      { bg: '#12C48B', fg: '#052A1F', label: 'ミント' },
+  blue:      { bg: '#2B4CF2', fg: '#F0F3FF', label: '青' },
+  amber:     { bg: '#FFC400', fg: '#2E2200', label: '黄' },
+  red:       { bg: '#FF5C38', fg: '#2C0A02', label: '朱' },
+  purple:    { bg: '#6D4AE0', fg: '#F3EEFF', label: '紫' },
+  gray:      { bg: '#4A5568', fg: '#EEF1F6', label: '灰' },
+  lavender:  { bg: '#D3C9FB', fg: '#1C152F', label: 'ラベンダー' },
+  olive:     { bg: '#696713', fg: '#F6F6EB', label: 'オリーブ' },
+  wine:      { bg: '#900D2A', fg: '#F7F7F7', label: 'ワイン' },
+  cyan:      { bg: '#0DA2C6', fg: '#1A1A1A', label: 'シアン' },
+  rose:      { bg: '#DE5F99', fg: '#2C101C', label: 'ローズ' },
+  teal:      { bg: '#13745F', fg: '#EBF9F4', label: '青緑' },
+  brown:     { bg: '#964D0C', fg: '#FEF3EC', label: '茶' },
+  peach:     { bg: '#FCC1B6', fg: '#2E100C', label: 'ピーチ' },
+  lime:      { bg: '#9EB919', fg: '#181E01', label: '黄緑' },
+  aqua:      { bg: '#2CECF2', fg: '#1A1A1A', label: 'アクア' },
+  plum:      { bg: '#80146F', fg: '#FCF1F9', label: '赤紫' },
+  periwinkle:{ bg: '#6B89F9', fg: '#121932', label: '青紫' },
+  ochre:     { bg: '#CB7E19', fg: '#1A1A1A', label: '黄土' },
+  sky:       { bg: '#A8D8FB', fg: '#001D2F', label: '空色' },
+  orchid:    { bg: '#CE88F7', fg: '#22132B', label: '藤' },
+  peacock:   { bg: '#1C6E80', fg: '#EBF8FC', label: 'ピーコック' },
+  green:     { bg: '#057918', fg: '#EFF8EF', label: '緑' },
+  pink:      { bg: '#FEA4D2', fg: '#2B101F', label: 'ピンク' },
+  mustard:   { bg: '#AA9117', fg: '#1A1A1A', label: 'からし' },
+  leaf:      { bg: '#97EB79', fg: '#0E2007', label: '若葉' },
+  apricot:   { bg: '#FDB171', fg: '#2B1401', label: 'アプリコット' },
+  coral:     { bg: '#FB8087', fg: '#2E1012', label: 'コーラル' },
+  turquoise: { bg: '#16A7A3', fg: '#1A1A1A', label: 'ターコイズ' },
+  cobalt:    { bg: '#1468A3', fg: '#EDF6FF', label: 'コバルト' }
 };
 
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
