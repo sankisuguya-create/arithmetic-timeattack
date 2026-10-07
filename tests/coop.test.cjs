@@ -244,7 +244,7 @@ assert.ok(/try \{ coopNote_\(c, s\.mode, correct, s\); \} catch/.test(read('comm
 
 /* ---- 児童の画面：れんしゅうでは協力の印を出さない（数えないので） ---- */
 const ui = read('common/index.html');
-assert.ok(/function beginPractice\(timed\)\{\n  practice = true; pTimed = !!timed;\n  coopBadge_\(true\);/.test(ui));
+assert.ok(/function beginPractice\(timed\)\{\n(  primeReset_\(\);\n)?  practice = true; pTimed = !!timed;\n  coopBadge_\(true\);/.test(ui));
 assert.ok(/var on = !practice && !!\(COOP\.active/.test(ui));
 
 /* ---- 混雑対策 A：提出はシートに書かず、教師画面の問い合わせでまとめて書く（二重に書かれても1件と数える） ---- */
