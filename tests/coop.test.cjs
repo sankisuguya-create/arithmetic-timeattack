@@ -244,7 +244,7 @@ assert.ok(/try \{ coopNote_\(c, s\.mode, correct, s\); \} catch/.test(read('comm
 
 /* ---- 児童の画面：れんしゅうでは協力の印を出さない（数えないので） ---- */
 const ui = read('common/index.html');
-assert.ok(/function beginPractice\(timed\)\{\n  practice = true; pTimed = !!timed;\n  coopBadge_\(true\);/.test(ui));
+assert.ok(/function beginPractice\(timed\)\{\n(  primeReset_\(\);\n)?  practice = true; pTimed = !!timed;\n(  primeReset_\(\);\n)?  coopBadge_\(true\);/.test(ui));
 assert.ok(/var on = !practice && !!\(COOP\.active/.test(ui));
 
 /* ---- 混雑対策 A：提出はシートに書かず、教師画面の問い合わせでまとめて書く（二重に書かれても1件と数える） ---- */
@@ -1137,4 +1137,15 @@ console.log('coop.test.cjs: all assertions passed.');
   assert.ok(tui.includes('if(START_TAB && PAGES[START_TAB]) showPage(START_TAB);'));
   assert.ok(read('common/Core.gs').includes("t.startTab = ['mode', 'coop', 'set', 'ana', 'past'].indexOf(e.parameter.tab) >= 0 ? e.parameter.tab : '';"));
   assert.ok(read('apps/hub/teacher.html').includes("+'&tab=coop')+'"));
+}
+
+/* ---- 正答回数の図（素因数分解のメニュー。UNIT.menuFigure） ---- */
+{
+  const ui = read('common/index.html'), core = read('common/Core.gs');
+  assert.ok(read('apps/special/factor/Unit.gs').includes("menuFigure: 'factor',"));
+  assert.ok(core.includes("menuFigure: UNIT.menuFigure || ''") && core.includes('tcm: e.tcm || {}, gw: growWeights_()'));
+  // 正答回数＝モードごとの正答×倍率を切り捨てて合計。図は10000で止める。図を出す単元は背景の床を描かない
+  assert.ok(ui.includes('n += Math.floor((Number(FLOOR.tcm[m]) || 0) * (Number((FLOOR.gw || {})[m]) || 1));'));
+  assert.ok(ui.includes('var MENUFIG_MAX = 10000;') && ui.includes("function floorOn_(){ return !MENUFIG && "));
+  assert.ok(ui.includes('FLOOR.tcm[mode] = (Number(FLOOR.tcm[mode]) || 0) + n;'), '本番を終えた時点で図も増える');
 }

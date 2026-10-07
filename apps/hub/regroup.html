@@ -202,7 +202,9 @@ var anim=null;
 function ease(t){ return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2; }
 function easeOut(t){ return 1-Math.pow(1-t,3); }
 function easeIn(t){ return t*t*t; }
-function reduced(){ return window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches; }
+/* 「視差効果を減らす」設定（OS のアニメーションを切った端末）でも動きは止めない。
+   この資料はドットが動く様子そのものが中身で、止めると繰り上がり・繰り下がりが一瞬で入れ替わって見えなくなる */
+function reduced(){ return false; }
 function animate(ms,done,curve){
   if(INSTANT){ cancelAnimationFrame(anim); items.forEach(function(d){ d.x=d.tx; d.y=d.ty; d.al=d.ta; }); cleanup(); if(done) done(); return; }
   var from=items.map(function(d){return [d.x,d.y,d.al];}), t0=null, cascade=items.some(function(d){return d.dl;});
@@ -341,17 +343,29 @@ function overview(now){
   var k=capH(Math.min(1,(sc.clientWidth-2)/cv.width));
   cv.style.transition=(reduced()||now)?'':'width .7s cubic-bezier(.2,.8,.2,1),height .7s cubic-bezier(.2,.8,.2,1)';
   cv.style.width=Math.floor(cv.width*k)+'px'; cv.style.height=Math.floor(cv.height*k)+'px';
-  sc.scrollTo({left:0,behavior:(reduced()||now)?'auto':'smooth'});
+  if(now) sc.scrollLeft=0; else scrollToX(0,rt(900));
   numMode=true; draw();
 }
 /* その位が見えるように横へ動かす */
-/* その位と、となりの位を合わせた3つの位がまるごと見えるように横へ動かす */
-function follow(p){ if(p==null||p>=NP) return;
+/* その位と、となりの位を合わせた3つの位がまるごと見えるように横へ動かす。
+   ゆっくり横に送って、どこからどこへ移ったかを見せる（瞬間移動しない）。送り終えてから cb を呼ぶ */
+var scrollAnim=0;
+function scrollToX(to,ms,cb){
+  cancelAnimationFrame(scrollAnim);
+  var from=sc.scrollLeft; to=Math.max(0,Math.min(to,sc.scrollWidth-sc.clientWidth));
+  if(INSTANT||Math.abs(to-from)<2){ sc.scrollLeft=to; if(cb) cb(); return; }
+  var t0=null; ms=Math.max(rt(450),Math.min(rt(1200),ms*Math.abs(to-from)/sc.clientWidth));   /* 遠いほど長く。ただし上限あり */
+  function tick(ts){ if(t0===null) t0=ts; var t=Math.min(1,(ts-t0)/ms);
+    sc.scrollLeft=from+(to-from)*ease(t);
+    if(t<1) scrollAnim=requestAnimationFrame(tick); else if(cb) cb(); }
+  scrollAnim=requestAnimationFrame(tick);
+}
+function follow(p,cb){ if(p==null||p>=NP){ if(cb) cb(); return; }
   var k=isOverview()?scale():capH(k3()), lo=Math.max(0,p-1), hi=Math.min(NP-1,lo+2); lo=Math.max(0,hi-2);
   var l=(colX[hi]-1)*C*k, r=(colX[lo]+colW[lo]+(lo===0?6:1))*C*k;
-  if(l>=sc.scrollLeft-1&&r<=sc.scrollLeft+sc.clientWidth+1) return;
+  if(l>=sc.scrollLeft-1&&r<=sc.scrollLeft+sc.clientWidth+1){ if(cb) cb(); return; }
   var to=(r-l<=sc.clientWidth)?(l<sc.scrollLeft?l:r-sc.clientWidth):l;
-  sc.scrollTo({left:Math.max(0,to),behavior:reduced()?'auto':'smooth'}); }
+  scrollToX(to,rt(900),cb); }
 
 /* ---------- 手順を組む ---------- */
 function digits(n,np){ var d=[]; for(var i=0;i<np;i++){ d.push(n%10); n=Math.floor(n/10); } return d; }
@@ -492,6 +506,13 @@ function setEq(s){ document.getElementById('eq').textContent=s; }
 function setCap(s){ document.getElementById('cap').textContent=s; document.getElementById('step').textContent=si+' / '+steps.length; }
 function settle(){
   cancelAnimationFrame(anim);
+  var pend=busy;
+  if(pend&&!pend.wait&&!pend.started){   /* 視点を送っている途中：送りを打ち切り、その手を一瞬で済ませる */
+    cancelAnimationFrame(scrollAnim); busy=null;
+    INSTANT=true; try{ pend.started=true; follow(pend.focus);
+      if(pend.custom) pend.custom(function(){}); else { pend.run.call(pend); if(pend.then){ pend.thenDone=true; pend.then.call(pend); } animate(0); }
+    } finally { INSTANT=false; }
+    items.forEach(function(d){ d.pop=0; }); draw(); return; }
   if(fx.groups){ fx.groups.forEach(function(g){ g.a.ta=g.b.ta=0; }); var d=fx.done; fx.groups=null; fx.done=null; if(d) d(); }
   slamFinish();
   var st=busy; busy=null;
@@ -505,15 +526,20 @@ function next(done){
   if(si>=steps.length){ playing=false; return; }
   if(si===0&&!INSTANT&&numMode&&!isOverview()){ numMode=false; draw(); }
   if(si===0&&!INSTANT&&isOverview()){            // 最初は全体を見せている。元の大きさに戻してから始める
-    fullSize(); setTimeout(function(){ sc.scrollTo({left:sc.scrollWidth,behavior:'auto'}); },20);
+    fullSize(); setTimeout(function(){ cancelAnimationFrame(scrollAnim); sc.scrollLeft=sc.scrollWidth; },20);
     busy={wait:true}; setTimeout(function(){ if(busy&&busy.wait){ busy=null; next(done); } },reduced()?0:rt(550)); return;
   }
-  var st=steps[si++]; st.thenDone=false; busy=st; setFlash(st.flash); follow(st.focus); setCap(st.cap);
-  if(st.custom){ st.custom(function(){ busy=null; draw(); if(done) done(); }); return; }
-  st.run.call(st);
-  animate(st.curve?420:700,function(){
-    if(st.then&&!st.thenDone){ st.thenDone=true; st.then.call(st); animate(300,function(){ busy=null; draw(); if(done) done(); }); }
-    else { busy=null; draw(); if(done) done(); } },st.curve);
+  var st=steps[si++]; st.thenDone=false; st.started=false; busy=st; setFlash(st.flash); setCap(st.cap);
+  // 視点を先にゆっくり送り、着いてからドットを動かす（送っている間に動くと、動きが見えない）
+  follow(st.focus,function(){
+    if(busy!==st||st.started) return;   /* 送っている間に「前へ」・「つぎへ」で手が変わった（settle が済ませた） */
+    st.started=true;
+    if(st.custom){ st.custom(function(){ busy=null; draw(); if(done) done(); }); return; }
+    st.run.call(st);
+    animate(st.curve?420:700,function(){
+      if(st.then&&!st.thenDone){ st.thenDone=true; st.then.call(st); animate(300,function(){ busy=null; draw(); if(done) done(); }); }
+      else { busy=null; draw(); if(done) done(); } },st.curve);
+  });
 }
 function back(){
   if(!started) return;
