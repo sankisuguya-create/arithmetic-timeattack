@@ -403,12 +403,12 @@ body.special-unit #toKeyset{display:none}
 .prime-previous{text-align:center;font-size:clamp(18px,2.8vw,28px);min-height:34px;color:var(--acc);opacity:.76;overflow-wrap:anywhere}
 .prime-equation .solved{color:var(--acc)}
 /* 正答回数の図：メニューの左の列。狭い画面ではモードの後ろに薄く敷く */
-#start.figmode{padding-left:calc(min(40vw,520px) + 1.3rem)}
-#menuFig{position:absolute;left:0;top:0;bottom:0;width:min(40vw,520px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;padding:1rem}
+#start.figmode{padding-left:calc(min(44vw,600px) + 1.3rem)}
+#menuFig{position:absolute;left:0;top:0;bottom:0;width:min(44vw,600px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;padding:1rem}
 #menuFig[hidden],#menuFigN[hidden]{display:none}
 #menuFigCv{width:100%;aspect-ratio:1;max-height:78vh}
 #menuFigN{z-index:2}
-#menuFigNum{font-size:1.4rem;font-weight:700;color:var(--acc);font-variant-numeric:tabular-nums}
+#menuFigNum{font-size:1.8rem;font-weight:700;color:var(--acc);font-variant-numeric:tabular-nums}
 #menuFigN{position:absolute;left:1rem;bottom:1rem;width:9.5em;padding:.45rem .6rem;font:inherit;font-size:1rem;text-align:center;border-radius:10px;
   border:1.5px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:inherit}
 #menuFigN::placeholder{color:inherit;opacity:.45}
@@ -2243,11 +2243,14 @@ function menuFigDraw_(){
   if(cv.width !== W || cv.height !== Hh){ cv.width = W; cv.height = Hh; }
   var g = cv.getContext('2d'); g.clearRect(0, 0, W, Hh);
   if(shown < 2) return;                          // 0と1は図にならない
-  var acc = getComputedStyle(document.documentElement).getPropertyValue('--acc').trim() || '#85ADFF';
-  var R = Math.min(W, Hh) * 0.47;
+  var acc = getComputedStyle($('menuFigNum')).color || '#245BC2';   // メニューの地（明るい紙色）での強調色。数字と同じ色で描く
+  var R = Math.min(W, Hh) * 0.48;
   g.save(); g.translate(W / 2, Hh / 2); g.fillStyle = acc;
-  GrowingFigures.factorPoints(shown, R).forEach(function(d){
-    g.globalAlpha = d.cls ? 0.65 : 1; g.beginPath(); g.arc(d.x, d.y, Math.max(0.6, d.r), 0, Math.PI * 2); g.fill();
+  // 円は factorPoints の大きさ（隙間を広く取った 0.72 倍）より大きく描き、点ではなく粒として見えるようにする。
+  // 交互の濃淡（cls）は残すが、薄い側も 0.8 までにして紙色に沈ませない
+  var pts = GrowingFigures.factorPoints(shown, R), k = 0.95 / 0.72;
+  pts.forEach(function(d){
+    g.globalAlpha = d.cls ? 0.8 : 1; g.beginPath(); g.arc(d.x, d.y, Math.max(1.2 * dpr, d.r * k), 0, Math.PI * 2); g.fill();
   });
   g.restore();
 }
