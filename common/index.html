@@ -2727,7 +2727,7 @@ function primeNext_(){
 function primeChoose_(p){
   if(scr!=='play' || !ready || locked || $('countdown').classList.contains('on')) return;
   if((!practice || pTimed) && performance.now()-startT>=CFG.limitSec*1000){practice?finishPractice():finish();return;}
-  if(PRIME.done){primeNext_();if(!ready || scr!=='play')return;}
+  if(PRIME.done){primeNext_();return;}
   if((INTERACTION.keys||[]).indexOf(p)<0)return;
   if(!firstKeyAt)firstKeyAt=performance.now();
   if(PRIME.left%p!==0){
@@ -3251,8 +3251,8 @@ function pServe(){
 }
 
 function beginPractice(timed){
-  primeReset_();
   practice = true; pTimed = !!timed;
+  primeReset_();
   coopBadge_(true);                         // 前の本番の協力の印を残さない（れんしゅうは数えない）
   // 記録する経路では型を絞らない。同じ型ばかりの記録が入ると
   // weak_child の平均がその型だけ短く出て、診断が壊れる
