@@ -5,12 +5,12 @@ var UNIT = {
   units: {}, answerOrder: 'unordered',
   interaction: { kind: 'prime-division', keys: factorPrimes_(179) },
   modes: [
-    { id: 1, name: '16まで', desc: '4〜16の合成数・図あり', diagram: true, wide: true },
-    { id: 2, name: '九九まで', desc: '九九に現れる合成数・図あり', diagram: true, wide: true },
-    { id: 3, name: '45まで', desc: '4〜45の合成数・図あり', diagram: true, wide: true },
-    { id: 4, name: '360まで', desc: '4〜360の合成数・図あり', diagram: true, wide: true },
-    { id: 5, name: '九九まで（図なし）', desc: 'モード2と同じ出題範囲', diagram: false, wide: true },
-    { id: 6, name: '360まで（図なし）', desc: 'モード4と同じ出題範囲', diagram: false, wide: true }
+    { id: 1, name: '16まで', desc: '4〜16の合成数・図あり', diagram: true },
+    { id: 2, name: '九九まで', desc: '九九に現れる合成数・図あり', diagram: true },
+    { id: 3, name: '45まで', desc: '4〜45の合成数・図あり', diagram: true },
+    { id: 4, name: '360まで', desc: '4〜360の合成数・図あり', diagram: true },
+    { id: 5, name: '九九まで（図なし）', desc: 'モード2と同じ出題範囲', diagram: false },
+    { id: 6, name: '360まで（図なし）', desc: 'モード4と同じ出題範囲', diagram: false }
   ],
   types: factorTypes_(),
   digitCap: factorCaps_(),
@@ -21,7 +21,7 @@ var UNIT = {
       note: '各モードの平均正答数で速さを補正。本番の完成問題数で育つ' }
   ],
   floorPattern: 'factor720', floorColor: 'amethyst',
-  tips: '図あり・図なしは別モードで記録します。初打鍵は最初の素数を選ぶまでの時間で、分解全体の想起時間ではありません。完成時間には素数キーの選択・スクロール・複数回の入力が含まれます。型は素因数の個数（重複を含む）です。',
+  tips: '図あり・図なしは別モードで記録します。初打鍵は最初の素数を選ぶまでの時間で、分解全体の想起時間ではありません。完成時間には素数キーの選択・縦スクロール・複数回の入力が含まれます。型は素因数の個数（重複を含む）です。',
   fmtAnswer: function (type, vals) { return vals.filter(function(v){ return Number(v) > 0; }).join(' × '); },
   gen: function (rand, mode) {
     var pool = factorPool_(mode);
