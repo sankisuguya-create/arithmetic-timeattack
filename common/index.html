@@ -382,6 +382,28 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   .ghost{animation:ghostfade .42s linear forwards!important}
 }
 @keyframes ghostfade{0%{opacity:.8}100%{opacity:0}}
+/* 学年なしの特殊枠。黒いプレイ面と紙面で読める独立の青。 */
+body.special-unit #start,body.special-unit #popt,body.special-unit #ptime,body.special-unit #ptype,body.special-unit #result{--acc:#245BC2}
+body.special-unit #toKeyset{display:none}
+#primeKeys{display:none}
+#play.prime-mode #pad,#play.prime-mode .footnote{display:none}
+#play.prime-mode .stage{position:absolute;top:62px;left:0;right:0;bottom:110px;padding:55px 24px 12px;width:100%;display:flex;align-items:center;justify-content:center}
+#play.prime-mode #eq{width:min(880px,100%);max-width:100%}
+#play.prime-mode .cntbox{position:absolute;top:12px;right:24px;left:auto;transform:none}
+#play.prime-mode #primeKeys{display:flex;position:absolute;bottom:20px;left:4%;width:92%;gap:10px;overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x;padding:6px 3px 12px;scrollbar-width:thin;scrollbar-color:var(--acc) var(--ink)}
+#primeKeys button{flex:0 0 70px;height:62px;border:1px solid #516079;border-radius:12px;background:#1b2638;color:white;font:600 26px system-ui;cursor:pointer;touch-action:manipulation}
+#primeKeys button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.prime-main{width:100%;display:grid;grid-template-columns:1.2fr 1fr;align-items:center;gap:24px;min-height:220px}
+.prime-main.no-diagram{grid-template-columns:1fr}
+.prime-diagram{width:100%;height:min(42vh,330px);fill:var(--acc)}
+.prime-number{text-align:center}.prime-origin{font-size:16px;color:#aeb9c9}
+.prime-value{font-size:clamp(70px,12vw,130px);line-height:1.2;font-weight:600;color:white}
+.prime-value.solved{font-size:clamp(30px,6vw,64px)}
+.prime-current{text-align:center;font-size:clamp(19px,3vw,28px);padding:12px 0;overflow-wrap:anywhere;min-height:54px}
+.prime-previous{text-align:center;font-size:clamp(16px,2.5vw,22px);min-height:34px;color:var(--acc);opacity:.76;overflow-wrap:anywhere}
+.prime-equation .solved{color:var(--acc)}
+@media(max-height:570px){.prime-diagram{height:32vh}.prime-main{min-height:120px}.prime-value{font-size:72px}#play.prime-mode .stage{padding-top:42px;bottom:96px}.prime-current{padding:5px 0;min-height:36px}}
+@media(max-width:480px){#play.prime-mode .stage{padding-left:12px;padding-right:12px}.prime-main{gap:8px}.prime-origin{font-size:13px}#primeKeys button{flex-basis:58px}.prime-value{font-size:72px}}
 </style>
 </head>
 <body>
@@ -476,6 +498,7 @@ body.practice-result .stats,body.practice-result .rank{display:none}
     <div class="key del" data-key="Backspace">⌫</div>
     <div class="key ent" data-key="Enter">こたえ<br>あわせ</div>
   </div>
+  <div id="primeKeys" aria-label="素数キー"></div>
   <div id="missline"></div>
   <div id="countdown"></div>
 </section>
@@ -536,7 +559,7 @@ var BOOTED = false;
    あえて手書きにする：スクリプレットで ENGINE_VER を埋めると稼働中の Core.gs の
    値が入り、応答の版と必ず一致して検知できなくなる。版を上げるときは
    Core.gs の ENGINE_VER と index.html・teacher.html の WANT_VER の3か所を一緒に上げる */
-var WANT_VER = 7;
+var WANT_VER = 8;
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -929,7 +952,7 @@ function coopEmblem_(col, pat){
 /* ---- 図形の生成器 ----
    design リポジトリ growing-figures/generators.js の写し。図形を直すときは向こうを正本として直し、
    check.cjs を通してからここへ写す。ここでは window.GrowingFigures に入る。
-   写し元: sankisuguya-create/design growing-figures/generators.js @ 6ca10d7
+   写し元: sankisuguya-create/design growing-figures/generators.js @ 7bcf6f7
    （写し直すときはこのピンと tests/fixtures/generators.<コミット>.js の原本を一緒に進める。手順は docs/ARCHITECTURE.md）
    FLOOR_GEN_BEGIN と FLOOR_GEN_END の印（引用符で囲んだ何もしない文）の間は、教師画面の床のプレビューがサーバー側で切り出して使う（Core.gs の floorGenSource_）。
    写し直すときも印は残す。印と同じ字面（引用符とセミコロンまで）をコメントに書かない（生のファイルを読むとコメントの中で切れる）。 */
@@ -1887,7 +1910,39 @@ function coopEmblem_(col, pat){
     return circ.concat(sph);
   }
 
+  /** Factorization Diagrams。中心を空け、子の上を親の中心へ向ける。
+   * 円の数は n と一致。2×2 だけは4方向にまとめ、素因数の積は保つ。 */
+  function factorPoints(n, radius) {
+    if (!(n >= 2 && n <= 10000 && n % 1 === 0)) return [];
+    var factors = [], v = n, out = [];
+    for (var p = 2; p * p <= v; p++) while (v % p === 0) { factors.push(p); v /= p; }
+    if (v > 1) factors.push(v);
+    factors.reverse();
+    function nest(i, x, y, r, up, path) {
+      if (i === factors.length) { out.push({x:x, y:y, r:r * 0.72, cls:path[path.length-1] % 2, dir:2}); return; }
+      var count = factors[i], step = 1;
+      if (count === 2 && factors[i+1] === 2) { count = 4; step = 2; }
+      var sine = Math.sin(Math.PI/count), child = r * sine/(1+sine) * 0.9, ring = r-child;
+      for (var j=0; j<count; j++) {
+        var angle = up + (count === 4 ? Math.PI/4 : 0) + j*2*Math.PI/count;
+        nest(i+step, x+ring*Math.cos(angle), y+ring*Math.sin(angle), child, angle+Math.PI, path.concat(j));
+      }
+    }
+    nest(0,0,0,radius || 135,-Math.PI/2,[]);
+    return out;
+  }
+  /** 720 = 5×3×3×4×4。空白を残す単一の円図（敷き詰め模様ではない）。 */
+  function factor720(g) {
+    var dots = factorPoints(720, Math.min(g.W,g.H)*0.47);
+    return dots.map(function(d,i){
+      var poly = [];
+      for(var j=0;j<32;j++){var a=j*2*Math.PI/32;poly.push([g.W/2+d.x+d.r*Math.cos(a),g.H/2+d.y+d.r*Math.sin(a)]);}
+      return {p:poly, cls:d.cls, dir:d.dir, o:((i%144)*5+Math.floor(i/144))/720};
+    });
+  }
+
   var GENERATORS = {
+    factor720: { name: '素因数分解720（5方向の円）', make: factor720, coverage: 'sparse', tileCount: 720 },
     penrose:   { name: 'ペンローズ（5回対称）', make: penrose },
     octagon:   { name: '八角の星（8回対称）',   make: multigrid(4) },
     heptagon:  { name: '七角（7回対称）',       make: multigrid(7) },
@@ -1914,7 +1969,7 @@ function coopEmblem_(col, pat){
     borrow:    { name: 'くり下がりの三角（ひき算）',             make: borrow }
   };
 
-  var api = { GENERATORS: GENERATORS, multigrid: multigrid };
+  var api = { GENERATORS: GENERATORS, multigrid: multigrid, factorPoints: factorPoints };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GrowingFigures = api;
 })(window);   // 写し元は (this)。この画面は strict なので window を渡す
@@ -2165,6 +2220,7 @@ window.addEventListener('resize', function(){
  *  画面
  * ============================================================ */
 function show(id){
+  if(id !== 'play')clearTimeout(PRIME.timer);
   ['start','keyset','popt','ptime','ptype','play','result'].forEach(function(s){ $(s).classList.remove('on'); });
   $(id).classList.add('on'); scr = id;
   document.body.setAttribute('data-scr', id);   // 協力の印を出す画面の目印
@@ -2610,7 +2666,94 @@ function unitSpan(u){
   return '<span class="u"'+(c ? ' style="color:'+c+'"' : '')+'>'+esc(u)+'</span>';
 }
 
+/* 宣言された素数キーで積を分解する対話。出題生成は UNIT.gen のみ。 */
+var INTERACTION = null;
+var PRIME = { left:0, parts:[], previous:'', done:false, timer:0, animation:null };
+function primeMode_(){ return !!(INTERACTION && INTERACTION.kind === 'prime-division'); }
+function primeReset_(){
+  clearTimeout(PRIME.timer); PRIME.timer=0; PRIME.done=false; PRIME.previous=''; PRIME.parts=[];
+  if(PRIME.animation) PRIME.animation.cancel();
+}
+function primeKeys_(){
+  var row=$('primeKeys');
+  row.replaceChildren();
+  if(!primeMode_()) return;
+  (INTERACTION.keys || []).forEach(function(p){
+    var b=document.createElement('button'); b.type='button'; b.textContent=p;
+    b.dataset.prime=p; b.setAttribute('aria-label',p+'でわる');
+    b.addEventListener('click',function(){primeChoose_(p);}); row.appendChild(b);
+  });
+}
+function primeDraw_(){
+  var q=queue[qi];
+  if(!q){ practice ? finishPractice() : finish(); return; }
+  PRIME.left=Number(q.q[0]); PRIME.parts=[]; PRIME.done=false;
+  $('primeKeys').scrollLeft=0;
+  primePaint_(); shownAt=performance.now(); firstKeyAt=0; curAns=[];
+}
+function primePaint_(){
+  var q=queue[qi], m=practice?pMode:mode, diagram=!!(MODES[m] && MODES[m].diagram);
+  eqEl.className='eq prime-equation';
+  eqEl.innerHTML='<div class="prime-main'+(diagram?'':' no-diagram')+'">'+
+    (diagram?'<svg class="prime-diagram" viewBox="-150 -150 300 300" role="img" aria-label="'+(PRIME.done?'クリア':PRIME.left+'個の円')+'"></svg>':'')+
+    '<div class="prime-number"><div class="prime-origin">もとの数 '+esc(q.q[0])+'</div><div class="prime-value'+(PRIME.done?' solved':'')+'">'+(PRIME.done?'クリア！':PRIME.left)+'</div></div></div>'+
+    '<div class="prime-current'+(PRIME.done?' solved':'')+'">'+esc(q.q[0])+' ＝ '+(PRIME.done?PRIME.parts:PRIME.parts.concat('？')).join(' × ')+'</div>'+
+    '<div class="prime-previous" aria-label="前の問題の正解">'+esc(PRIME.previous)+'</div>';
+  if(diagram && !PRIME.done){
+    var svg=eqEl.querySelector('svg');
+    GrowingFigures.factorPoints(PRIME.left,135).forEach(function(d){
+      var c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',d.x);c.setAttribute('cy',d.y);c.setAttribute('r',Math.min(12,d.r));svg.appendChild(c);
+    });
+  }
+}
+function primeAnswer_(parts){
+  var a=parts.slice(), size=queue[qi].f.length;
+  while(a.length<size)a.push(0);
+  return a;
+}
+function primeNext_(){
+  clearTimeout(PRIME.timer); PRIME.timer=0;
+  if(scr!=='play' || !PRIME.done) return;
+  var q=queue[qi]; PRIME.previous=q.q[0]+' ＝ '+PRIME.parts.join(' × ');
+  PRIME.done=false; nextQuestion();
+  var el=eqEl.querySelector('.prime-previous');
+  if(el && !matchMedia('(prefers-reduced-motion: reduce)').matches){
+    PRIME.animation=el.animate([{transform:'translateY(-32px)',opacity:1},{transform:'translateY(0)',opacity:0.76}],{duration:220,easing:'ease-out'});
+  }
+}
+function primeChoose_(p){
+  if(scr!=='play' || !ready || locked || $('countdown').classList.contains('on')) return;
+  if((!practice || pTimed) && performance.now()-startT>=CFG.limitSec*1000){practice?finishPractice():finish();return;}
+  if(PRIME.done){primeNext_();if(!ready || scr!=='play')return;}
+  if((INTERACTION.keys||[]).indexOf(p)<0)return;
+  if(!firstKeyAt)firstKeyAt=performance.now();
+  if(PRIME.left%p!==0){
+    attempts++; miss++; curAns.push(primeAnswer_(PRIME.parts.concat(p))); showMiss();
+    // 誤答後も現在の因数と残りを保つ。正解の公開や自動送りはしない。
+    return;
+  }
+  PRIME.parts.push(p); PRIME.left/=p;
+  if(PRIME.left===1){
+    PRIME.done=true; correct++; attempts++; countEl.textContent=correct; bumpCount();
+    curAns.push(primeAnswer_(PRIME.parts));
+    if(!practice || pRecorded)pushItem();else curAns=[];
+    miss=0; PRIME.timer=setTimeout(primeNext_,380);
+  }
+  primePaint_();
+}
+function primeUnfinished_(){
+  clearTimeout(PRIME.timer); PRIME.timer=0;
+  if(primeMode_() && !PRIME.done && PRIME.parts.length)curAns.push(primeAnswer_(PRIME.parts));
+}
+$('primeKeys').addEventListener('wheel',function(e){
+  if(Math.abs(e.deltaY)<=Math.abs(e.deltaX))return;
+  var row=this, old=row.scrollLeft; row.scrollLeft+=e.deltaY*(e.deltaMode===1?20:1);
+  if(old!==row.scrollLeft)e.preventDefault();
+},{passive:false});
+
 function draw(){
+  if(primeMode_()){ primeDraw_(); return; }
   var q = queue[qi];
 
   var rhs = '';
@@ -2882,6 +3025,7 @@ function setField(i){
 }
 
 function handleInput(k){
+  if(typeof primeMode_ === 'function' && primeMode_()) return; // 自由入力を受け付けない
   if(locked || !ready) return;
   var q = queue[qi];
   if(!q) return;
@@ -2987,6 +3131,7 @@ function needsEnter(){
 }
 function applyLayout(){
   var v = getLayout(), play = $('play');
+  play.classList.toggle('prime-mode',primeMode_());
   if(needsWide()) v = 'row';
   play.classList.remove('layout-tr','layout-tl');
   play.classList.toggle('has-enter', needsEnter());
@@ -3105,6 +3250,7 @@ function pServe(){
 }
 
 function beginPractice(timed){
+  primeReset_();
   practice = true; pTimed = !!timed;
   coopBadge_(true);                         // 前の本番の協力の印を残さない（れんしゅうは数えない）
   // 記録する経路では型を絞らない。同じ型ばかりの記録が入ると
@@ -3161,6 +3307,7 @@ function beginPractice(timed){
 
 function finishPractice(){
   cancelAnimationFrame(raf);
+  primeUnfinished_();
   if(curAns.length > 0 && pRecorded) pushItem();
 
   $('finalScore').textContent = correct;
@@ -3204,6 +3351,7 @@ function finishPractice(){
 
 function begin(m){
   if(!CFG.open[m] || isLocked(m)) return;
+  primeReset_();
   practice=false; pTimed=false; pRecorded=false;
   document.body.classList.remove('practice-result');
   mode=m; token=''; ready=false; startAborted=false;
@@ -3279,6 +3427,7 @@ function countdown(n){
 
 function finish(){
   cancelAnimationFrame(raf);
+  primeUnfinished_();
   if(curAns.length > 0) pushItem();
   var m = mode;
   var sent = { token: token, items: items.slice(), mode: m };
@@ -3395,6 +3544,7 @@ document.addEventListener('keydown', function(e){
   }
   if(scr === 'play'){
     if(k === 'Escape'){ goBack(); return; }
+    if(primeMode_())return; // Tab・Enter・Space は素数ボタンの標準操作
     if(locked || !ready) return;
     if((k>='0' && k<='9') || k==='Backspace' || k==='Enter'){
       e.preventDefault();
@@ -3471,6 +3621,9 @@ function applyBoot(r, live){
   LOCKED = r.locked || {};             // 古い控えには無いので {}（＝全部開いて見える）に落とす
   MODES = {}; MODES_ALL = [];
   (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });
+  INTERACTION = r.unit.interaction || null;
+  document.body.classList.toggle('special-unit',r.unit.category === 'special');
+  primeKeys_();
   UNITS = r.unit.units || {};
   DIGITCAP = r.unit.digitCap || {};    // 古い localStorage の控えには無いので {} に落とす
   SCALE = r.unit.scale || {};

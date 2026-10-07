@@ -26,7 +26,7 @@ for (const name of unitNames()) {
   assert.deepEqual(errors, [], `${name}: Unit.gs の契約違反`);
 
   // 置き場の学年と宣言の学年が一致すること（プレビューのメニューはこの宣言で分ける）
-  assert.equal(unitDir(name).split('/')[1], 'grade' + unit.grade,
+  assert.equal(unitDir(name).split('/')[1], unit.category === 'special' ? 'special' : 'grade' + unit.grade,
     `${name}: UNIT.grade=${unit.grade} と置き場 ${unitDir(name)} が合わない`);
 
   // 2) 出題 → サーバー採点の往復。正しい答えは通り、1つずらした答えは弾かれる

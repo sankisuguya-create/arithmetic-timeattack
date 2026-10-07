@@ -411,6 +411,7 @@ function inTab(l, g){
   return gr.split(',').map(function(s){ return Number(s.trim()); }).indexOf(g) >= 0;
 }
 function gradeLabel(l){
+  if(l.place==='special')return '特殊（学年なし）';
   var gr = String(l.grades || '').trim();
   return (!gr || gr.toLowerCase()==='all') ? '全学年' : gr.split(',').map(function(s){ return s.trim()+'年'; }).join('・');
 }
@@ -462,10 +463,11 @@ function renderEditor(){
       '<div class="full"><label>説明（1行・任意）</label><input type="text" data-f="subtitle" value="'+esc(l.subtitle)+'"></div>'+
       '<div class="full"><label>URL（末尾が /exec）</label><input type="text" data-f="url" value="'+esc(l.url)+'"><div class="uwarn" data-w="url"></div></div>'+
       '<div class="full"><label>記録シート（単元のスプレッドシートの URL・任意）</label><input type="text" data-f="sheet" value="'+esc(l.sheet)+'"><div class="uwarn" data-w="sheet"></div></div>'+
-      '<div class="full"><label>この単元を出す学年タブ（未選択＝全学年）</label><span class="chips">'+chips+'</span></div>'+
+      (l.place==='special'?'':'<div class="full"><label>この単元を出す学年タブ（未選択＝全学年）</label><span class="chips">'+chips+'</span></div>')+
       '<div><label>置き場</label><select data-f="place">'+
-        '<option value=""'+(l.place==='doc'?'':' selected')+'>単元のタイル</option>'+
-        '<option value="doc"'+(l.place==='doc'?' selected':'')+'>右下の「資料」</option></select></div>'+
+        '<option value=""'+(!l.place?' selected':'')+'>単元のタイル</option>'+
+        '<option value="doc"'+(l.place==='doc'?' selected':'')+'>右下の「資料」</option>'+
+        '<option value="special"'+(l.place==='special'?' selected':'')+'>特殊（学年なし）</option></select></div>'+
       '<div class="full"><label>色（<span id="swName">'+esc((COLORS[l.color]||{}).label||l.color)+'</span>・• はほかの単元で使用中）</label><div class="swatches">'+colorOpts+'</div></div>'+
       '<div><label>並び順</label><button type="button" class="bstep sm" data-mv="up">↑ 上へ</button> <button type="button" class="bstep sm" data-mv="down">↓ 下へ</button></div>'+
     '</div>'+
@@ -500,7 +502,7 @@ document.addEventListener('input', function(e){
 });
 document.addEventListener('change', function(e){
   if(e.target.dataset.f==='color'){ renderList(); }
-  if(e.target.dataset.f==='place'){ renderList(); urlWarn(); }
+  if(e.target.dataset.f==='place'){ if(LINKS[SEL].place==='special')LINKS[SEL].grades=''; renderList(); renderEditor(); urlWarn(); }
 });
 
 /* 公開切替。1クリックでシートの当該行だけ書き換える（他の未保存の入力を巻き込まない） */
