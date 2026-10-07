@@ -383,15 +383,17 @@ body.practice-result .stats,body.practice-result .rank{display:none}
 }
 @keyframes ghostfade{0%{opacity:.8}100%{opacity:0}}
 /* 学年なしの特殊枠。黒いプレイ面と紙面で読める独立の青。 */
-body.special-unit #start,body.special-unit #popt,body.special-unit #ptime,body.special-unit #ptype,body.special-unit #result{--acc:#245BC2}
-body.special-unit #toKeyset{display:none}
+body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.special-unit #ptime,body.special-unit #ptype,body.special-unit #result{--acc:#245BC2}
 #primeKeys{display:none}
 #play.prime-mode #pad,#play.prime-mode .footnote{display:none}
-#play.prime-mode .stage{position:absolute;top:62px;left:0;right:0;bottom:110px;padding:55px 24px 12px;width:100%;display:flex;align-items:center;justify-content:center}
+#play.prime-mode .stage{position:absolute;top:62px;left:0;right:auto;bottom:12px;padding:55px 24px 12px;width:66.6%;display:flex;align-items:center;justify-content:center}
 #play.prime-mode #eq{width:min(1120px,100%);max-width:100%}
 #play.prime-mode .cntbox{position:absolute;top:12px;right:24px;left:auto;transform:none}
-#play.prime-mode #primeKeys{display:flex;position:absolute;bottom:20px;left:4%;width:92%;gap:10px;overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x;padding:6px 3px 12px;scrollbar-width:thin;scrollbar-color:var(--acc) var(--ink)}
-#primeKeys button{flex:0 0 70px;height:62px;border:1px solid #516079;border-radius:12px;background:#1b2638;color:white;font:600 26px system-ui;cursor:pointer;touch-action:manipulation}
+#play.prime-mode.layout-tl .stage{left:auto;right:0}
+#play.prime-mode #primeKeys{display:grid;position:absolute;top:62px;bottom:12px;right:0;left:auto;width:33.4%;box-sizing:border-box;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:max(60px,calc((100dvh - 90px) * .20 * var(--prime-scale,1)));align-content:start;gap:12px;padding:12px;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:var(--acc) #232B44}
+#play.prime-mode.layout-tl #primeKeys{left:0;right:auto}
+#primeKeys button{min-width:0;width:100%;height:100%;border:0;border-radius:14px;background:#232B44;color:var(--chalk);font:800 clamp(20px,3.2vw,38px) system-ui;cursor:pointer;touch-action:pan-y;-webkit-tap-highlight-color:transparent}
+#primeKeys button:active{background:#05070E}
 #primeKeys button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 .prime-main{width:100%;display:grid;grid-template-columns:1.2fr 1fr;align-items:center;gap:24px;min-height:220px}
 .prime-main.no-diagram{grid-template-columns:1fr}
@@ -414,8 +416,8 @@ body.special-unit #toKeyset{display:none}
 #menuFigN::placeholder{color:inherit;opacity:.45}
 #menuFigN.over{border-color:var(--alert,#C0330A)}
 @media(max-width:760px){#start.figmode{padding-left:1.3rem}#menuFig{width:100%;opacity:.22;pointer-events:none;z-index:-1}#menuFigNum{display:none}}
-@media(max-height:570px){.prime-diagram{height:32vh}.prime-main{min-height:120px}.prime-value{font-size:72px}#play.prime-mode .stage{padding-top:42px;bottom:96px}.prime-current{padding:5px 0;min-height:36px}}
-@media(max-width:480px){#play.prime-mode .stage{padding-left:12px;padding-right:12px}.prime-main{gap:8px}.prime-origin{font-size:13px}#primeKeys button{flex-basis:58px}.prime-value{font-size:72px}}
+@media(max-height:570px){.prime-diagram{height:32vh}.prime-main{min-height:120px}.prime-value{font-size:72px}#play.prime-mode .stage{padding-top:42px;bottom:12px}.prime-current{padding:5px 0;min-height:36px}}
+@media(max-width:480px){#play.prime-mode .stage{padding-left:12px;padding-right:12px}.prime-main{gap:8px}.prime-origin{font-size:13px}#play.prime-mode .stage{width:58%;padding-left:6px;padding-right:6px}#play.prime-mode #primeKeys{width:42%;gap:5px;padding:6px}.prime-main{grid-template-columns:1fr;min-height:0}.prime-diagram{height:25vh}#primeKeys button{font-size:20px}.prime-current{font-size:17px}.prime-previous{font-size:15px}.prime-value{font-size:72px}}
 </style>
 </head>
 <body>
@@ -2742,7 +2744,7 @@ function primeDraw_(){
   var q=queue[qi];
   if(!q){ practice ? finishPractice() : finish(); return; }
   PRIME.left=Number(q.q[0]); PRIME.parts=[]; PRIME.done=false;
-  $('primeKeys').scrollLeft=0;
+  $('primeKeys').scrollTop=0;
   primePaint_(); shownAt=performance.now(); firstKeyAt=0; curAns=[];
 }
 function primePaint_(){
@@ -2779,7 +2781,7 @@ function primeNext_(){
 function primeChoose_(p){
   if(scr!=='play' || !ready || locked || $('countdown').classList.contains('on')) return;
   if((!practice || pTimed) && performance.now()-startT>=CFG.limitSec*1000){practice?finishPractice():finish();return;}
-  if(PRIME.done){primeNext_();if(!ready || scr!=='play')return;}
+  if(PRIME.done){primeNext_();return;}
   if((INTERACTION.keys||[]).indexOf(p)<0)return;
   if(!firstKeyAt)firstKeyAt=performance.now();
   if(PRIME.left%p!==0){
@@ -2803,11 +2805,6 @@ function primeUnfinished_(){
 $('menuFigN').addEventListener('input', function(){ this.value = this.value.replace(/[^0-9０-９]/g, '').replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }); menuFigDraw_(); });
 $('menuFigN').addEventListener('keydown', function(e){ e.stopPropagation(); });   // 数字キーでモードを選ぶ操作に取られない
 window.addEventListener('resize', function(){ if(scr === 'start') menuFigDraw_(); });
-$('primeKeys').addEventListener('wheel',function(e){
-  if(Math.abs(e.deltaY)<=Math.abs(e.deltaX))return;
-  var row=this, old=row.scrollLeft; row.scrollLeft+=e.deltaY*(e.deltaMode===1?20:1);
-  if(old!==row.scrollLeft)e.preventDefault();
-},{passive:false});
 
 function draw(){
   if(primeMode_()){ primeDraw_(); return; }
@@ -3166,6 +3163,8 @@ function getLayout(){
   try{ var v = localStorage.getItem('km_layout'); if(LAYOUTS.indexOf(v)>=0) return v; }catch(e){}
   return 'tr';
 }
+function availableLayouts_(){ return primeMode_() ? ['tr','tl'] : LAYOUTS; }
+function effectiveLayout_(){ var v=getLayout(); return primeMode_() && v==='row' ? 'tr' : v; }
 function setLayout(v){ try{ localStorage.setItem('km_layout', v); }catch(e){} applyLayout(); updateKeysetNow(); }
 function getSize(){
   try{ var v = localStorage.getItem('km_keysize'); if(SIZES.indexOf(v)>=0) return v; }catch(e){}
@@ -3187,9 +3186,10 @@ function needsEnter(){
   return !!(MODES[m] && MODES[m].enterKey);
 }
 function applyLayout(){
-  var v = getLayout(), play = $('play');
+  var v = effectiveLayout_(), play = $('play');
+  play.style.setProperty('--prime-scale', SIZE_SCALE[getSize()]);
   play.classList.toggle('prime-mode',primeMode_());
-  if(needsWide()) v = 'row';
+  if(needsWide() && !primeMode_()) v = 'row';
   play.classList.remove('layout-tr','layout-tl');
   play.classList.toggle('has-enter', needsEnter());
   // 利き手そのものは残す。めもりモードは横一列に切り替わって layout-tl が外れるが、
@@ -3224,8 +3224,8 @@ function layoutRow(){
   });
 }
 function renderKeyset(){
-  var cur = getLayout();
-  $('keysetGrid').innerHTML = LAYOUTS.map(function(v, i){
+  var cur = effectiveLayout_();
+  $('keysetGrid').innerHTML = availableLayouts_().map(function(v, i){
     var on = v===cur;
     return '<div class="card" data-layout="'+v+'" style="'+(on?'border-color:var(--acc);':'')+'">'+
       '<div class="k">'+(i+1)+'</div><div><div class="t">'+LAYOUT_LABEL[v]+'</div>'+
@@ -3244,7 +3244,8 @@ function renderKeyset(){
 function openKeyset(){ renderKeyset(); show('keyset'); }
 function updateKeysetNow(){
   var el = $('keysetNow'); if(!el) return;
-  el.textContent = LAYOUT_LABEL[getLayout()] + (getLayout()==='row' ? '' : ' / '+SIZE_LABEL[getSize()]);
+  var v=effectiveLayout_();
+  el.textContent = LAYOUT_LABEL[v] + (v==='row' ? '' : ' / '+SIZE_LABEL[getSize()]);
 }
 
 /* ============================================================
@@ -3307,8 +3308,8 @@ function pServe(){
 }
 
 function beginPractice(timed){
-  primeReset_();
   practice = true; pTimed = !!timed;
+  primeReset_();
   coopBadge_(true);                         // 前の本番の協力の印を残さない（れんしゅうは数えない）
   // 記録する経路では型を絞らない。同じ型ばかりの記録が入ると
   // weak_child の平均がその型だけ短く出て、診断が壊れる
@@ -3563,7 +3564,7 @@ document.addEventListener('keydown', function(e){
     return;
   }
   if(scr === 'keyset'){
-    if(k>='1' && k<='3'){ e.preventDefault(); setLayout(LAYOUTS[+k-1]); renderKeyset(); }
+    if(k>='1' && k<='3'){ var layouts=availableLayouts_(); if(layouts[+k-1]){e.preventDefault(); setLayout(layouts[+k-1]); renderKeyset();} }
     else if(k>='4' && k<='6'){ e.preventDefault(); setSize(SIZES[+k-4]); renderKeyset(); }
     else if(k === 'Escape'){ e.preventDefault(); goBack(); }
     return;
