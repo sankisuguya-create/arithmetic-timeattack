@@ -549,7 +549,7 @@ function boot() {
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
             // 学年の進みの色・まちがいの赤・「？」の印の色。画面は色の値を持たず、ここから受け取る
-            grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
+            grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, menuFigure: UNIT.menuFigure || '', accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
@@ -1022,7 +1022,9 @@ function bests_(mail, limitSec) {
     tries[m] = Number((e.tries || {})[m]) || 0;
   });
   return { best: real, practiceBest: prac, stars: stars, tries: tries,
-           floor: { min: Math.round(floorMin * 100) / 100, pace: pace } };
+           floor: { min: Math.round(floorMin * 100) / 100, pace: pace,
+                    // モードごとの本番の正答の累計と育ちの倍率。メニューに「正答回数の図」を出す単元（UNIT.menuFigure）が使う
+                    tcm: e.tcm || {}, gw: growWeights_() } };
 }
 
 /**

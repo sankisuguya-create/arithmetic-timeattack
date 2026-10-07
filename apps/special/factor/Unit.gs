@@ -21,6 +21,9 @@ var UNIT = {
       note: '各モードの平均正答数で速さを補正。本番の完成問題数で育つ' }
   ],
   floorPattern: 'factor720', floorColor: 'amethyst',
+  /** メニューの背景の図形の代わりに、モードの左へ「正答回数の数の図」（素因数で入れ子にした円）を出す。
+   *  正答回数＝モードごとの本番の正答 × 育ちの倍率（小数点以下切り捨て）の合計。10000で止める */
+  menuFigure: 'factor',
   tips: '図あり・図なしは別モードで記録します。初打鍵は最初の素数を選ぶまでの時間で、分解全体の想起時間ではありません。完成時間には素数キーの選択・スクロール・複数回の入力が含まれます。型は素因数の個数（重複を含む）です。',
   fmtAnswer: function (type, vals) { return vals.filter(function(v){ return Number(v) > 0; }).join(' × '); },
   gen: function (rand, mode) {
