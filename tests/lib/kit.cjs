@@ -16,7 +16,7 @@ function read(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
  */
 function unitDir(id) {
   const apps = path.join(ROOT, 'apps');
-  const hits = fs.readdirSync(apps).filter(g => /^grade[1-6]$/.test(g))
+  const hits = fs.readdirSync(apps).filter(g => /^(grade[1-6]|special)$/.test(g))
     .filter(g => fs.existsSync(path.join(apps, g, id, 'Unit.gs')));
   if (hits.length !== 1) throw new Error(`単元 ${id} の置き場が ${hits.length} 件あります（apps/grade*/${id}）`);
   return `apps/${hits[0]}/${id}`;
@@ -38,7 +38,7 @@ function loadUnit(name) {
 function unitNames() {
   const apps = path.join(ROOT, 'apps');
   const out = [];
-  fs.readdirSync(apps).filter(g => /^grade[1-6]$/.test(g)).forEach(g => {
+  fs.readdirSync(apps).filter(g => /^(grade[1-6]|special)$/.test(g)).forEach(g => {
     fs.readdirSync(path.join(apps, g))
       .filter(d => fs.existsSync(path.join(apps, g, d, 'Unit.gs')))
       .forEach(d => out.push(d));

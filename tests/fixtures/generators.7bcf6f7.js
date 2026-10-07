@@ -951,7 +951,39 @@
     return circ.concat(sph);
   }
 
+  /** Factorization Diagrams。中心を空け、子の上を親の中心へ向ける。
+   * 円の数は n と一致。2×2 だけは4方向にまとめ、素因数の積は保つ。 */
+  function factorPoints(n, radius) {
+    if (!(n >= 2 && n <= 10000 && n % 1 === 0)) return [];
+    var factors = [], v = n, out = [];
+    for (var p = 2; p * p <= v; p++) while (v % p === 0) { factors.push(p); v /= p; }
+    if (v > 1) factors.push(v);
+    factors.reverse();
+    function nest(i, x, y, r, up, path) {
+      if (i === factors.length) { out.push({x:x, y:y, r:r * 0.72, cls:path[path.length-1] % 2, dir:2}); return; }
+      var count = factors[i], step = 1;
+      if (count === 2 && factors[i+1] === 2) { count = 4; step = 2; }
+      var sine = Math.sin(Math.PI/count), child = r * sine/(1+sine) * 0.9, ring = r-child;
+      for (var j=0; j<count; j++) {
+        var angle = up + (count === 4 ? Math.PI/4 : 0) + j*2*Math.PI/count;
+        nest(i+step, x+ring*Math.cos(angle), y+ring*Math.sin(angle), child, angle+Math.PI, path.concat(j));
+      }
+    }
+    nest(0,0,0,radius || 135,-Math.PI/2,[]);
+    return out;
+  }
+  /** 720 = 5×3×3×4×4。空白を残す単一の円図（敷き詰め模様ではない）。 */
+  function factor720(g) {
+    var dots = factorPoints(720, Math.min(g.W,g.H)*0.47);
+    return dots.map(function(d,i){
+      var poly = [];
+      for(var j=0;j<32;j++){var a=j*2*Math.PI/32;poly.push([g.W/2+d.x+d.r*Math.cos(a),g.H/2+d.y+d.r*Math.sin(a)]);}
+      return {p:poly, cls:d.cls, dir:d.dir, o:((i%144)*5+Math.floor(i/144))/720};
+    });
+  }
+
   var GENERATORS = {
+    factor720: { name: '素因数分解720（5方向の円）', make: factor720, coverage: 'sparse', tileCount: 720 },
     penrose:   { name: 'ペンローズ（5回対称）', make: penrose },
     octagon:   { name: '八角の星（8回対称）',   make: multigrid(4) },
     heptagon:  { name: '七角（7回対称）',       make: multigrid(7) },
@@ -978,7 +1010,7 @@
     borrow:    { name: 'くり下がりの三角（ひき算）',             make: borrow }
   };
 
-  var api = { GENERATORS: GENERATORS, multigrid: multigrid };
+  var api = { GENERATORS: GENERATORS, multigrid: multigrid, factorPoints: factorPoints };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GrowingFigures = api;
 })(this);

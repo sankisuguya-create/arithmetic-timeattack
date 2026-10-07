@@ -80,7 +80,7 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 7;   // 7 = 筆算の並べ方（col） / 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
+var ENGINE_VER = 8;   // 8 = 特殊枠・素数選択・順不同採点 / 7 = 筆算の並べ方（col） / 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
                       // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
                       // 4 = coopPeek（児童画面の定期確認。開いたままの画面に印をすぐ出す）
                       // 5 = getPastYears（教師画面の過年度タブ）
@@ -447,6 +447,7 @@ function typesByMode_() {
 /** 直前3問と同じ問題を避けながら n 問作る */
 function genQueue_(seed, mode, n) {
   var rand = rng_(seed);
+  if (typeof UNIT.queue === 'function') return UNIT.queue(rand, Number(mode), n);
   var out = [], recent = [];
   for (var i = 0; i < n; i++) {
     var it, guard = 0;
@@ -548,7 +549,7 @@ function boot() {
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
             // 学年の進みの色・まちがいの赤・「？」の印の色。画面は色の値を持たず、ここから受け取る
-            grade: UNIT.grade, accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
+            grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
@@ -928,6 +929,11 @@ function itemsValid_(items) {
  *  答え a[i] は qq.f[i] の順で届く（QI_.ANS と同じ並び。児童側は currentAns が f.map で作る） */
 function match_(a, qq, byTotal) {
   if (!a || a.length !== qq.f.length) return false;
+  if (UNIT.answerOrder === 'unordered') {
+    var actual = a.map(Number).sort(function(x,y){ return x-y; });
+    var expected = qq.f.map(function(k){ return Number(qq.ans[k]); }).sort(function(x,y){ return x-y; });
+    return actual.every(function(v,i){ return isFinite(v) && v === expected[i]; });
+  }
   var got = 0, want = 0;
   for (var i = 0; i < qq.f.length; i++) {
     var u = qq.f[i];
@@ -3117,7 +3123,7 @@ var GRADE_EXTRA_ = {
   5: ['#49B9DF', '#8A6CE5'],
   6: ['#49B9DF', '#8A6CE5']
 };
-function gradeAccent_() { return GRADE_ACCENT_[UNIT.grade] || GRADE_ACCENT_[3]; }
+function gradeAccent_() { return UNIT.category === 'special' && UNIT.grade === null ? '#85ADFF' : (GRADE_ACCENT_[UNIT.grade] || GRADE_ACCENT_[3]); }
 
 /**
  * 「？」（問われている位置を示す印）の色。
@@ -3140,7 +3146,7 @@ function questionColor_() {
  * 学年の色と同じ色だけは禁止（2つの層が見分けられなくなる）。
  */
 /** 床の図形として選べる生成器（common/index.html に写した generators.js の id） */
-var FLOOR_PATTERNS_ = ['penrose','octagon','heptagon','dodecagon','sunflower','whirl','flower','mandala','decagon','petals','tape','clockstar','pascal','chair','fibgrid','farey','padovan','decimal','scaleswirl','scalefib','circlesphere','carry','borrow'];
+var FLOOR_PATTERNS_ = ['penrose','octagon','heptagon','dodecagon','sunflower','whirl','flower','mandala','decagon','petals','tape','clockstar','pascal','chair','fibgrid','farey','padovan','decimal','scaleswirl','scalefib','circlesphere','carry','borrow','factor720'];
 
 var FLOOR_GEMS_ = {
   amethyst:   '#8A6CE5',   // すみれ
@@ -3173,7 +3179,8 @@ function validateUnit_() {
   if (!UNIT.title) probs.push('UNIT.title がありません');
   if (!UNIT.teacherTitle) probs.push('UNIT.teacherTitle がありません');
   // 学年はプレビューのメニューとリポジトリの置き場（apps/grade<学年>/）の分類に使う
-  if (!(UNIT.grade >= 1 && UNIT.grade <= 6 && UNIT.grade % 1 === 0)) probs.push('UNIT.grade（1〜6の学年）がありません');
+  if (!(UNIT.category === 'special' && UNIT.grade === null) && !(UNIT.grade >= 1 && UNIT.grade <= 6 && UNIT.grade % 1 === 0)) probs.push('UNIT.grade（1〜6、または category:special と grade:null）がありません');
+  if (UNIT.answerOrder && UNIT.answerOrder !== 'unordered') probs.push('answerOrder が不正です');
   // 単元が足す色（単位の色・目立たせる欄の色）は、別学年の色のうち GRADE_EXTRA_ にあるものだけ
   var extraOk = GRADE_EXTRA_[UNIT.grade] || [];
   function checkColor(where, c) {

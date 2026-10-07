@@ -180,7 +180,7 @@ function links_() {
   return out;
 }
 
-function placeOf_(x) { return String(x || '').trim().toLowerCase() === 'doc' ? 'doc' : ''; }
+function placeOf_(x) { var p = String(x || '').trim().toLowerCase(); return p === 'doc' || p === 'special' ? p : ''; }
 
 /** ハブ自身が配る資料のページ。?page=<name> で開き、教師画面から1押しで資料に足せる */
 var DOCS = [
@@ -196,6 +196,7 @@ function docUrl_(page) {
 function forGrade_(list, grade) {
   return list.filter(function (l) {
     if (!l.visible || !l.url) return false;
+    if (l.place === 'special') return true;
     if (!l.grades || l.grades.toLowerCase() === 'all') return true;
     if (!grade) return true;                    // 学年不明なら全部見せる
     return l.grades.split(',').some(function (g) { return Number(g.trim()) === Number(grade); });
@@ -219,6 +220,7 @@ function tabSet_(cfg, grade) {
 
 /** リンクがタブ集合のどれかに出るか */
 function inTabs_(l, set) {
+  if (l.place === 'special') return true;
   if (!l.grades || l.grades.toLowerCase() === 'all') return true;   // 全学年リンクはどのタブにも出る
   return l.grades.split(',').some(function (s) { return !!set[Number(s.trim())]; });
 }
@@ -227,6 +229,7 @@ function inTabs_(l, set) {
 function linkGrades_() {
   var set = {};
   links_().forEach(function (l) {
+    if (l.place === 'special') return;
     String(l.grades || '').split(',').forEach(function (s) {
       var g = Number(s.trim());
       if (g) set[g] = true;
@@ -343,7 +346,7 @@ function saveLinks(rows) {
     out.push([
       String(r.id || Utilities.getUuid().slice(0, 8)),
       String(r.title || ''), String(r.subtitle || ''), String(r.url || ''),
-      String(r.grades || ''), String(r.color || 'mint'),
+      placeOf_(r.place) === 'special' ? '' : String(r.grades || ''), String(r.color || 'mint'),
       r.visible ? true : false, i + 1,
       String(r.sheet || '').trim(),
       placeOf_(r.place)

@@ -121,6 +121,7 @@ body{
 body.hasdoc{padding-bottom:5.5rem}   /* 右下のボタンが最後のタイルにかぶらない */
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+#specialSection{margin:1.6rem auto 0;max-width:1100px}#specialSection h2{font-size:1rem;margin-bottom:.8rem;color:#245BC2}#specialSection[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -131,6 +132,7 @@ body.hasdoc{padding-bottom:5.5rem}   /* 右下のボタンが最後のタイル�
 </div>
 <div class="tabs" id="tabs" style="display:none"></div>
 <div class="grid" id="grid"></div>
+<section id="specialSection" hidden><h2>特殊</h2><div class="grid" id="specialGrid"></div></section>
 <div id="msg"></div>
 <div class="foot" id="foot"></div>
 <!-- 教師のアカウントで開いた時だけ出る。児童のアカウントには描かれない -->
@@ -207,8 +209,9 @@ function drawTabs(){
 }
 
 function drawGrid(){
-  var links = RESP.links.filter(function(l){ return l.place !== 'doc' && (!ACTIVE || inTab(l, ACTIVE)); });
+  var links = RESP.links.filter(function(l){ return l.place !== 'doc' && l.place !== 'special' && (!ACTIVE || inTab(l, ACTIVE)); });
   drawDocs();
+  drawSpecial();
   if(!links.length){
     $('grid').innerHTML =
       '<div class="empty">いま つかえる れんしゅうは ありません。<br>先生に きいてください。</div>';
@@ -231,6 +234,14 @@ function drawGrid(){
 }
 
 /* 右下の「資料」。タブの絞り込みはタイルと同じ */
+function drawSpecial(){
+  var links=RESP.links.filter(function(l){return l.place==='special';});
+  $('specialSection').hidden=!links.length;
+  $('specialGrid').innerHTML=links.map(function(l){
+    return '<a class="tile" href="'+esc(l.url)+'" target="_blank" rel="noopener" style="background:#245BC2;color:#FFFFFF"><span class="t mincho">'+esc(l.title)+'</span>'+(l.subtitle?'<span class="s">'+esc(l.subtitle)+'</span>':'')+'</a>';
+  }).join('');
+  loadMincho(links.map(function(l){return l.title;}).join('')); fitAll();
+}
 function drawDocs(){
   var docs = RESP.links.filter(function(l){ return l.place === 'doc' && (!ACTIVE || inTab(l, ACTIVE)); });
   $('docBtn').style.display = docs.length ? '' : 'none';

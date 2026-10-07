@@ -66,7 +66,7 @@ var KNOWN_UNITS = [
   'grade2/tasu', 'grade2/hiku',
   'grade3/kuku', 'grade3/length', 'grade3/weight', 'grade3/divmod',
   'grade3/bignum', 'grade3/decimal', 'grade3/circle', 'grade3/bai',
-  'grade5/volume'
+  'grade5/volume', 'special/factor'
 ];
 function unitId_(p) { return p.split('/').pop(); }
 function unitPath_(id) {
@@ -124,7 +124,7 @@ async function showMenu() {
       if (texts[i].status !== 'fulfilled') throw new Error('読み込めません（' + texts[i].reason.message + '）');
       // gen は呼ばない（宣言を読むだけ）。ri_ / pick_ が無くても UNIT の定義までは通る
       var U = new Function(texts[i].value + '\n;return UNIT;')();
-      grade = U.grade || 0;
+      grade = U.category === 'special' ? -1 : (U.grade || 0);
       title = (U.title || id).replace(/\s*タイムアタック！?\s*$/, '');
       modes = (U.modes || []).map(function (m) { return m.id + ' ' + m.name; }).join('　');
     } catch (e) { err = String(e.message || e); }
@@ -138,9 +138,9 @@ async function showMenu() {
   });
   // 学年ごとに見出しと格子を作る。学年が読めなかった単元は最後の「学年不明」へ
   cards.forEach(function (c) { (groups[c.grade] = groups[c.grade] || []).push(c.a); });
-  Object.keys(groups).map(Number).sort(function (x, y) { return (x || 99) - (y || 99); }).forEach(function (g) {
+  Object.keys(groups).map(Number).sort(function (x, y) { return (x > 0 ? x : x === -1 ? 98 : 99) - (y > 0 ? y : y === -1 ? 98 : 99); }).forEach(function (g) {
     var h = document.createElement('h2');
-    h.textContent = g ? g + '年' : '学年不明（UNIT.grade が無い／読めない）';
+    h.textContent = g === -1 ? '特殊' : g ? g + '年' : '学年不明（UNIT.grade が無い／読めない）';
     var grid = document.createElement('div');
     grid.className = 'grid';
     groups[g].forEach(function (a) { grid.appendChild(a); });
@@ -224,7 +224,7 @@ async function main() {
     "  var __set = {}, __defs = UNIT.defaults || {};\n" +   // 教師の上書きは無いので既定値
     "  (UNIT.settings||[]).forEach(function(s){ var v=__defs[s.key]; __set[s.key] = (s.type==='text') ? v : Number(v); });\n" +
     "  var __r = { ok:true, guest:true, name:'', grade:0, limitSec:Number(__defs.limit_sec)||60, missLimit:Number(__defs.miss_limit)||3,\n" +
-    "    unit:{ id:UNIT.id, title:UNIT.title + '（プレビュー）', modes:UNIT.modes, grade:UNIT.grade,\n" +
+    "    unit:{ id:UNIT.id, title:UNIT.title + '（プレビュー）', modes:UNIT.modes, grade:UNIT.grade, category:UNIT.category, interaction:UNIT.interaction||null,\n" +
     "      accent:gradeAccent_(), alert:ALERT_COLOR_, q:questionColor_(),\n" +
     "      units:UNIT.units||{}, digitCap:UNIT.digitCap||{}, types:UNIT.types||{}, typesByMode:__tbm,\n" +
     "      scale:UNIT.scale||{}, glyph:UNIT.glyph||{}, slotColor:UNIT.slotColor||{},\n" +
