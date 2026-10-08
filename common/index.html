@@ -2244,8 +2244,14 @@ function menuFigDraw_(){
   var W = Math.max(1, Math.round(box.width * dpr)), Hh = Math.max(1, Math.round(box.height * dpr));
   if(cv.width !== W || cv.height !== Hh){ cv.width = W; cv.height = Hh; }
   var g = cv.getContext('2d'); g.clearRect(0, 0, W, Hh);
-  if(shown < 2) return;                          // 0と1は図にならない
-  var acc = getComputedStyle($('menuFigNum')).color || '#245BC2';   // メニューの地（明るい紙色）での強調色。数字と同じ色で描く
+  var acc = getComputedStyle($('menuFigNum')).color || '#245BC2';
+  if(shown < 2){                                 // 0と1：素因数の図にならない。0は輪郭だけ、1は円1つを描いて、空に見えないようにする
+    g.save(); g.translate(W / 2, Hh / 2); g.strokeStyle = acc; g.fillStyle = acc; g.globalAlpha = 0.35;
+    g.lineWidth = 2 * dpr; g.setLineDash([6 * dpr, 8 * dpr]);
+    g.beginPath(); g.arc(0, 0, Math.min(W, Hh) * 0.4, 0, Math.PI * 2); g.stroke();
+    if(shown === 1){ g.globalAlpha = 1; g.beginPath(); g.arc(0, 0, Math.min(W, Hh) * 0.06, 0, Math.PI * 2); g.fill(); }
+    g.restore(); return;
+  }   // メニューの地（明るい紙色）での強調色。数字と同じ色で描く
   var R = Math.min(W, Hh) * 0.48;
   g.save(); g.translate(W / 2, Hh / 2); g.fillStyle = acc;
   // 円は factorPoints の大きさ（隙間を広く取った 0.72 倍）より大きく描き、点ではなく粒として見えるようにする。
@@ -2261,7 +2267,12 @@ function floorOnShow(id){
   if(id !== 'start'){ floorReplayEnd_(); floorSettle_(); return; }   // メニューを離れたら演出は打ち切って焼き付ける
   floorLater_(true);                              // 本番から戻った時は、増えた分がここで育つ
 }
-function floorSync(){ if(scr === 'start') floorLater_(false); }
+function floorSync(){
+  if(scr !== 'start') return;
+  floorLater_(false);
+  // 正答回数の図：最初のメニューは記録が届く前に出ているので、届いた後（ここ）でも描く。枠の大きさが決まってから描くよう次のフレームで
+  requestAnimationFrame(menuFigDraw_);
+}
 
 var floorRT = 0;
 window.addEventListener('resize', function(){
