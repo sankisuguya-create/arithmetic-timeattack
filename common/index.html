@@ -415,6 +415,32 @@ body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.
   border:1.5px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:inherit}
 #menuFigN::placeholder{color:inherit;opacity:.45}
 #menuFigN.over{border-color:var(--alert,#C0330A)}
+/* 図あり／図なしの切り替え（pair のモードを持つ単元だけ）。左下の数の欄の右に並べる */
+#figTog{position:absolute;left:calc(1rem + 9.5em + .6rem);bottom:1rem;display:flex;gap:.4rem;z-index:2}
+#figTog[hidden]{display:none}
+#figTog button{width:44px;height:44px;padding:0;border-radius:10px;border:1.5px solid var(--line);background:rgba(255,255,255,.85);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;touch-action:manipulation;-webkit-tap-highlight-color:transparent;opacity:.5}
+#figTog button[aria-pressed="true"]{opacity:1;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
+#figTog button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#figTog svg{width:36px;height:36px}
+/* 図なし（暗室）：黒地に光る数字。素数キーは輪郭だけで、押すと光る */
+body.figoff{--paper:#05060A;--ink:#E9F6FF;--line:#1D2A3A;--mute:#7F93A8}
+body.figoff #start,body.figoff #keyset,body.figoff #popt,body.figoff #ptime,body.figoff #ptype,body.figoff #result{--acc:#5FE3FF;background:#05060A;color:#E9F6FF}
+body.figoff .card{background:#0C0F18;border-color:#1D2A3A;box-shadow:inset 0 0 0 1px rgba(95,227,255,.08)}
+body.figoff .card:hover{border-color:#5FE3FF}
+body.figoff .card .k{background:transparent;border:1.5px solid #5FE3FF;color:#5FE3FF}
+body.figoff .card.locked{background:#0A0C12}
+body.figoff .pbtn .k{background:transparent;border:1.5px solid #5FE3FF;color:#5FE3FF}
+body.figoff .pbtn:hover,body.figoff .tap:hover{background:#0C0F18}
+body.figoff #menuFigNum,body.figoff .timelede{text-shadow:0 0 .6em rgba(95,227,255,.55)}
+body.figoff #figTog button,body.figoff #floorReplay{background:#0C0F18}
+body.figoff #play{background:#05060A}
+body.figoff #bar{background:linear-gradient(90deg,#5FE3FF,#B48CFF)}
+body.figoff .prime-value{text-shadow:0 0 .35em rgba(95,227,255,.6)}
+body.figoff .prime-previous{color:#B48CFF}
+body.figoff #play{--acc:#5FE3FF}
+body.figoff #primeKeys button{background:#080B12;border:1.5px solid #24384C;color:#CFEFFF}
+body.figoff #primeKeys button:active{background:#0B1A22;border-color:#5FE3FF;box-shadow:0 0 .8em rgba(95,227,255,.6);color:#fff}
 @media(max-width:760px){#start.figmode{padding-left:1.3rem}#menuFig{width:100%;opacity:.22;pointer-events:none;z-index:-1}#menuFigNum{display:none}}
 @media(max-height:570px){.prime-diagram{height:32vh}.prime-main{min-height:120px}.prime-value{font-size:72px}#play.prime-mode .stage{padding-top:42px;bottom:12px}.prime-current{padding:5px 0;min-height:36px}}
 @media(max-width:480px){#play.prime-mode .stage{padding-left:12px;padding-right:12px}.prime-main{gap:8px}.prime-origin{font-size:13px}#play.prime-mode .stage{width:58%;padding-left:6px;padding-right:6px}#play.prime-mode #primeKeys{width:42%;gap:5px;padding:6px}.prime-main{grid-template-columns:1fr;min-height:0}.prime-diagram{height:25vh}#primeKeys button{font-size:20px}.prime-current{font-size:17px}.prime-previous{font-size:15px}.prime-value{font-size:72px}}
@@ -429,6 +455,10 @@ body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.
     <div id="menuFigNum" aria-live="polite"></div>
   </div>
   <input id="menuFigN" type="text" inputmode="numeric" autocomplete="off" aria-label="図にする数（せいかいの回数まで）" hidden>
+  <div id="figTog" role="group" aria-label="ずの あり・なし" hidden>
+    <button type="button" data-off="0" aria-label="ず あり" aria-pressed="true"></button>
+    <button type="button" data-off="1" aria-label="ず なし" aria-pressed="false"></button>
+  </div>
   <canvas id="floorBase" class="floorcv" aria-hidden="true" hidden></canvas>
   <canvas id="floorGrow" class="floorcv" aria-hidden="true" hidden></canvas>
   <div class="apptitle">よみこみ中…</div>
@@ -579,7 +609,7 @@ var BOOTED = false;
    あえて手書きにする：スクリプレットで ENGINE_VER を埋めると稼働中の Core.gs の
    値が入り、応答の版と必ず一致して検知できなくなる。版を上げるときは
    Core.gs の ENGINE_VER と index.html・teacher.html の WANT_VER の3か所を一緒に上げる */
-var WANT_VER = 9;
+var WANT_VER = 10;
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -2244,6 +2274,7 @@ function menuFigDraw_(){
   var W = Math.max(1, Math.round(box.width * dpr)), Hh = Math.max(1, Math.round(box.height * dpr));
   if(cv.width !== W || cv.height !== Hh){ cv.width = W; cv.height = Hh; }
   var g = cv.getContext('2d'); g.clearRect(0, 0, W, Hh);
+  if(FIGOFF) g.drawImage(batsu_(W, Hh), 0, 0);    // 図なしの時だけ、図形の後ろに絵筆のばつ印
   var acc = getComputedStyle($('menuFigNum')).color || '#245BC2';
   if(shown < 2){                                 // 0は図なし、1は中心に円を1つだけ
     if(shown === 1){ g.fillStyle = acc; g.beginPath(); g.arc(W / 2, Hh / 2, Math.min(W, Hh) * 0.06, 0, Math.PI * 2); g.fill(); }
@@ -2258,6 +2289,58 @@ function menuFigDraw_(){
     g.globalAlpha = d.cls ? 0.8 : 1; g.beginPath(); g.arc(d.x, d.y, Math.max(1.2 * dpr, d.r * k), 0, Math.PI * 2); g.fill();
   });
   g.restore();
+}
+/* ばつ印。たっぷり絵の具を含ませた筆で2画。毛（120本）ごとに線を引き、毛先のばらつき・かすれ・抜けを出す。
+ * 毛ごとの線で重いので、大きさが変わった時だけ裏の canvas に描いて使い回す。乱数は固定（毎回同じ形） */
+var BATSU = { key: '', cv: null };
+function batsu_(W, H){
+  var key = W + 'x' + H;
+  if(BATSU.key === key) return BATSU.cv;
+  var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  var g = cv.getContext('2d'), seed = 9;
+  function R(){ seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+  function noise2(x, y){ var n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return n - Math.floor(n); }
+  function paper(x, y){ return noise2(Math.floor(x / 2), Math.floor(y / 2)) * .55 + noise2(Math.floor(x / 7) + 11, Math.floor(y / 7) + 5) * .45; }
+  function stroke(x0, y0, x1, y1, w){
+    var dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy), nx = -dy / L, ny = dx / L, bend = (R() - .5) * .1 * L;
+    var K = 120, CL = 6 + Math.floor(R() * 3), clEnd = [], br = [], c, i, j, k;
+    for(c = 0; c < CL; c++) clEnd.push(.8 + R() * .2);                         // 房ごとに抜ける位置が違う
+    for(i = 0; i < K; i++){
+      var o = (i / (K - 1)) * 2 - 1 + (R() - .5) * .03, cl = Math.min(CL - 1, Math.floor((o + 1) / 2 * CL));
+      br.push({ o: o, cc: ((cl + .5) / CL) * 2 - 1 + (R() - .5) * .12, ink: 1 - .3 * o * o + R() * .2, dep: .4 + R(),
+                th: .7 + R() * .8, tone: .6 + R() * .4, ts: o * o * .045 + R() * .015, te: clEnd[cl] - R() * .06, seed: R() * 100 });
+    }
+    // 筆圧：入りで一気に（端の毛ほど遅れて紙に付く）→運ぶ→抜く
+    function press(t){ return t < .08 ? .7 + .3 * Math.sin(t / .08 * Math.PI / 2) : t < .6 ? 1 - .1 * (t - .08) / .52 : .9 * Math.pow(1 - (t - .6) / .4, .5); }
+    var steps = Math.ceil(L / 1.4), prev = null;
+    for(k = 0; k <= steps; k++){
+      var t = k / steps, b4 = bend * 4 * t * (1 - t), cx = x0 + dx * t + nx * b4, cy = y0 + dy * t + ny * b4;
+      var p = press(t), lift = Math.max(0, (t - .55) / .45), cur = [];
+      for(j = 0; j < K; j++){
+        var bb = br[j], wob = (noise2(bb.seed, t * 6) - .5) * .05;
+        var lat = ((bb.o + wob) * (1 - lift * .6) + bb.cc * lift * .6) * w / 2 * Math.max(.3, p);
+        cur.push([cx + nx * lat, cy + ny * lat]);
+      }
+      if(prev) for(j = 0; j < K; j++){
+        var b2 = br[j];
+        if(t < b2.ts || t > b2.te) continue;
+        if(Math.abs(b2.o) > .82 && noise2(b2.seed + 3, Math.floor(t * 40)) < .35) continue;   // 縁の毛はところどころ付かない
+        var ink = b2.ink - b2.dep * Math.pow(t, 1.8);
+        if(ink < .6 && paper(cur[j][0], cur[j][1]) > ink * 1.3) continue;                      // 減った毛は紙目の山だけ（かすれ）
+        g.globalAlpha = Math.max(0, Math.min(1, ink * 1.2)) * b2.tone;
+        g.lineWidth = (w / K) * 2.3 * b2.th * Math.max(.45, p);
+        g.beginPath(); g.moveTo(prev[j][0], prev[j][1]); g.lineTo(cur[j][0], cur[j][1]); g.stroke();
+      }
+      prev = cur;
+    }
+    g.globalAlpha = 1;
+  }
+  var S = Math.min(W, H), ox = (W - S) / 2, oy = (H - S) / 2, m = S * .16, w = S * .2 * .95;
+  g.strokeStyle = '#353B55'; g.lineCap = 'round';                            // 鉄色。光る数字・図形より沈む
+  stroke(ox + m * 1.1, oy + m * 1.05, ox + S - m * 1.05, oy + S - m, w * 1.1);
+  stroke(ox + S - m * 1.1, oy + m, ox + m * 1.15, oy + S - m * 1.05, w);
+  BATSU.key = key; BATSU.cv = cv;
+  return cv;
 }
 function floorOnShow(id){
   if(id === 'start') menuFigDraw_();
@@ -2304,7 +2387,33 @@ function busy(t){
 
 /* 教師がクラスごとに公開したモードだけを出す。非公開のものは一覧に載せない */
 function visibleModes(){
-  return MODES_ALL.filter(function(m){ return !!CFG.open[m]; });
+  return MODES_ALL.filter(function(m){ return !MODES[m].pair && !!CFG.open[m]; }).map(figMode_);
+}
+/* ---- 図あり／図なし（UNIT.modes の pair）。図なしは pair 付きの別モードとして始め、記録も別に残る ----
+ * 切り替えは端末に覚える（児童ごとの好み。消えても図ありに戻るだけ） */
+var FIGOFF = false, PAIR_OF = {};
+function figMode_(m){ return (FIGOFF && PAIR_OF[m]) || m; }
+function figIcon_(off){
+  var dark = FIGOFF, col = dark ? '#5FE3FF' : '#245BC2', bg = dark ? '#0C0F18' : '#FFFFFF', fg = dark ? '#E9F6FF' : '#101728';
+  var p = (typeof GrowingFigures === 'undefined') ? [] : GrowingFigures.factorPoints(12, 15);
+  return '<svg viewBox="0 0 44 44" aria-hidden="true">' + p.map(function(d){
+      return '<circle cx="' + (22 + d.x).toFixed(1) + '" cy="' + (22 + d.y).toFixed(1) + '" r="' + Math.max(1.6, d.r * 0.95 / 0.72).toFixed(1) + '" fill="' + col + '"/>';
+    }).join('') +
+    (off ? '<line x1="9" y1="35" x2="35" y2="9" stroke="' + bg + '" stroke-width="7" stroke-linecap="round"/>' +
+           '<line x1="9" y1="35" x2="35" y2="9" stroke="' + fg + '" stroke-width="3" stroke-linecap="round"/>' : '') + '</svg>';
+}
+function figTogPaint_(){
+  document.body.classList.toggle('figoff', FIGOFF);
+  Array.prototype.forEach.call(document.querySelectorAll('#figTog button'), function(b){
+    var off = b.getAttribute('data-off') === '1';
+    b.setAttribute('aria-pressed', String(off === FIGOFF)); b.innerHTML = figIcon_(off);
+  });
+}
+function figSet_(off){
+  if(FIGOFF === off) return;
+  FIGOFF = off;
+  try { localStorage.setItem('figoff:' + APP_ID, off ? '1' : ''); } catch (e) {}
+  figTogPaint_(); renderMenu(); menuFigDraw_();
 }
 function isLocked(m){ return !!LOCKED[m]; }
 
@@ -2322,7 +2431,7 @@ function emptyBox(){
 /* 上段＝番号とモード名だけ。副題は出さない（児童が選ぶのに要らず、名前の幅を奪う） */
 function cardTop(m, idx){
   return '<div class="top"><div class="k">'+(idx+1)+'</div>'+
-         '<div class="t">'+esc(MODES[m].name)+'</div></div>';
+         '<div class="t">'+esc(MODES[MODES[m].pair || m].name)+'</div></div>';
 }
 
 function renderMenu(){
@@ -2811,7 +2920,11 @@ function primeUnfinished_(){
   if(primeMode_() && !PRIME.done && PRIME.parts.length)curAns.push(primeAnswer_(PRIME.parts));
 }
 $('menuFigN').addEventListener('input', function(){ this.value = this.value.replace(/[^0-9０-９]/g, '').replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }); menuFigDraw_(); });
-$('menuFigN').addEventListener('keydown', function(e){ e.stopPropagation(); });   // 数字キーでモードを選ぶ操作に取られない
+$('menuFigN').addEventListener('keydown', function(e){ e.stopPropagation(); });
+$('figTog').addEventListener('click', function(e){
+  e.stopPropagation();
+  var b = e.target.closest('button'); if(b) figSet_(b.getAttribute('data-off') === '1');
+});   // 数字キーでモードを選ぶ操作に取られない
 window.addEventListener('resize', function(){ if(scr === 'start') menuFigDraw_(); });
 
 function draw(){
@@ -3685,8 +3798,8 @@ function applyBoot(r, live){
   CFG.open = r.open || {}; CFG.guest = !!r.guest;
   CFG.settings = r.settings || {};
   LOCKED = r.locked || {};             // 古い控えには無いので {}（＝全部開いて見える）に落とす
-  MODES = {}; MODES_ALL = [];
-  (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); });
+  MODES = {}; MODES_ALL = []; PAIR_OF = {};
+  (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); if(m.pair) PAIR_OF[m.pair] = m.id; });
   INTERACTION = r.unit.interaction || null;
   document.body.classList.toggle('special-unit',r.unit.category === 'special');
   primeKeys_();
@@ -3704,6 +3817,11 @@ function applyBoot(r, live){
   FLOOR.gw = (r.floor || {}).gw || {};
   MENUFIG = r.unit.menuFigure || '';
   $('start').classList.toggle('figmode', !!MENUFIG); $('menuFig').hidden = !MENUFIG; $('menuFigN').hidden = !MENUFIG;
+  var hasPair = Object.keys(PAIR_OF).length > 0;
+  $('figTog').hidden = !hasPair;
+  FIGOFF = false;
+  if(hasPair){ try { FIGOFF = localStorage.getItem('figoff:' + APP_ID) === '1'; } catch (e) {} }
+  figTogPaint_();
   FLOOR.c2 = r.unit.floor2 || '';
   FLOOR.pat = r.unit.floorPattern || '';   // 図形。古い控え・古いエンジンには無いのでペンローズに落とす
   TYPES = r.unit.types || {};

@@ -80,7 +80,7 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 9;   // 9 = 正答回数の図（unit.menuFigure・floor.tcm/gw） / 8 = 特殊枠・素数選択・順不同採点 / 7 = 筆算の並べ方（col） / 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
+var ENGINE_VER = 10;   // 10 = 別記録版モード（modes[].pair）・図なし切り替え / 9 = 正答回数の図（unit.menuFigure・floor.tcm/gw） / 8 = 特殊枠・素数選択・順不同採点 / 7 = 筆算の並べ方（col） / 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
                       // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
                       // 4 = coopPeek（児童画面の定期確認。開いたままの画面に印をすぐ出す）
                       // 5 = getPastYears（教師画面の過年度タブ）
@@ -337,6 +337,8 @@ function openFor_(grade, cls) {
   var over = classConfig_()[grade + '-' + cls];
   var out = {};
   modeIds_().forEach(function (id) { out[id] = !!(over && over.modes[id]); });
+  // pair のあるモード（図なし等の別記録版）は、相方の公開設定に従う。class_config に列を持たない
+  UNIT.modes.forEach(function (m) { if (m.pair) out[m.id] = !!out[m.pair]; });
   return out;
 }
 
@@ -370,7 +372,7 @@ function modeAllowed_(mode, open, seqOff, tries) {
  * 閉じる側に倒すと試用そのものができなくなる。
  */
 function needsMet_(m, seqOff, tries) {
-  var nd = m.needs;
+  var nd = m.needs || (m.pair && (modeDef_(m.pair) || {}).needs);
   if (!nd) return true;
   if (!tries) return true;
   if (seqOff) return true;
@@ -386,8 +388,9 @@ function lockNotes_(open, seqOff, tries) {
   UNIT.modes.forEach(function (m) {
     if (!open[m.id]) return;
     if (needsMet_(m, seqOff, tries)) return;
-    out[m.id] = '「' + modeName_(m.needs.mode) + '」を ' +
-                m.needs.tries + 'かい やると あきます';
+    var nd = m.needs || modeDef_(m.pair).needs;
+    out[m.id] = '「' + modeName_(nd.mode) + '」を ' +
+                nd.tries + 'かい やると あきます';
   });
   return out;
 }
@@ -405,9 +408,12 @@ function modeDef_(id) {
 
 function modeIds_() { return UNIT.modes.map(function (m) { return m.id; }); }
 
+/** class_config で公開を決めるモード（pair のあるモードは相方に従うので除く） */
+function cfgModeIds_() { return UNIT.modes.filter(function (m) { return !m.pair; }).map(function (m) { return m.id; }); }
+
 /** class_config の見出し。class | mode_1 … mode_n | seq_off（順次開放を使う単元だけ） */
 function classHead_() {
-  var head = ['class'].concat(modeIds_().map(function (id) { return 'mode_' + id; }));
+  var head = ['class'].concat(cfgModeIds_().map(function (id) { return 'mode_' + id; }));
   if (hasNeeds_()) head.push('seq_off');
   return head;
 }
@@ -1382,7 +1388,7 @@ function listClasses() {
   var orphans = [];
   for (var k in over) if (!known[k]) orphans.push(k);
 
-  return { classes: classes, modes: UNIT.modes, hasNeeds: hasNeeds_(),
+  return { classes: classes, modes: UNIT.modes.filter(function (m) { return !m.pair; }), hasNeeds: hasNeeds_(),
            orphans: orphans, where: where_() };
 }
 
@@ -1391,7 +1397,7 @@ function saveClassConfig(rows) {
   var sh = ss_().getSheetByName(SHEETS.CLASS) || ss_().insertSheet(SHEETS.CLASS);
   sh.clear();
   var head = classHead_();
-  var ids = modeIds_();
+  var ids = cfgModeIds_();
   var out = [head];
   (rows || []).forEach(function (r) {
     var line = [String(r.cls)].concat(ids.map(function (id) { return !!(r.modes && r.modes[id]); }));
@@ -1446,7 +1452,7 @@ function listClassesCore_(over) {
     var o = over[ck];
     var row = { cls: ck, grade: grade, room: cls, n: 1,
                 modes: {}, seqOff: !!(o && o.seqOff) };
-    modeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
+    cfgModeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
     seen[ck] = row; out.push(row);
   });
   out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
@@ -3233,6 +3239,15 @@ function validateUnit_() {
     if (!(m.needs.mode > 0)) { probs.push('モード ' + m.id + ' の needs.mode がありません'); return; }
     if (modeIds.indexOf(m.needs.mode) < 0) probs.push('モード ' + m.id + ' の needs.mode=' + m.needs.mode + ' は存在しません');
     if (!(m.needs.tries > 0)) probs.push('モード ' + m.id + ' の needs.tries がありません');
+  });
+  // 別記録版（pair）の参照先。相方は pair を持たない実在のモード
+  (UNIT.modes || []).forEach(function (m) {
+    if (!m.pair) return;
+    var b = null;
+    UNIT.modes.forEach(function (x) { if (x.id === m.pair) b = x; });
+    if (!b) probs.push('モード ' + m.id + ' の pair=' + m.pair + ' は存在しません');
+    else if (b.pair) probs.push('モード ' + m.id + ' の pair 先 ' + m.pair + ' も pair を持っています');
+    if (m.needs) probs.push('モード ' + m.id + ' は pair を持つので needs は相方に書いてください');
   });
   // ループ検出（AがB、BがA を必要とする形だと永遠に開かない）
   modeIds.forEach(function (id) {
