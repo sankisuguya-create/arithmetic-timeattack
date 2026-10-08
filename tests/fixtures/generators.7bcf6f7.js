@@ -952,10 +952,7 @@
   }
 
   /** Factorization Diagrams。中心を空け、子の上を親の中心へ向ける。
-   * 円の数は n と一致。2×2 だけは4方向にまとめ、素因数の積は保つ。
-   * 2×2 の4つは、どの深さでも画面に対して正方形（斜め45°の4か所）に置く。親の向きに合わせて回すと
-   * 菱形（＋の形）や斜めの列になり、直角に並んで見えない（8＝2×2×2 が×の形になっていた）。
-   * 2 が奇数個の時は、まとめずに残す1個を内側ではなく外側に回す（8＝2×(2×2) で正方形が2つ並ぶ） */
+   * 円の数は n と一致。2×2 だけは4方向にまとめ、素因数の積は保つ。 */
   function factorPoints(n, radius) {
     if (!(n >= 2 && n <= 10000 && n % 1 === 0)) return [];
     var factors = [], v = n, out = [];
@@ -964,12 +961,11 @@
     factors.reverse();
     function nest(i, x, y, r, up, path) {
       if (i === factors.length) { out.push({x:x, y:y, r:r * 0.72, cls:path[path.length-1] % 2, dir:2}); return; }
-      var count = factors[i], step = 1, twos = 0;
-      for (var t = i; t < factors.length && factors[t] === 2; t++) twos++;
-      if (count === 2 && twos >= 2 && twos % 2 === 0) { count = 4; step = 2; }
+      var count = factors[i], step = 1;
+      if (count === 2 && factors[i+1] === 2) { count = 4; step = 2; }
       var sine = Math.sin(Math.PI/count), child = r * sine/(1+sine) * 0.9, ring = r-child;
       for (var j=0; j<count; j++) {
-        var angle = count === 4 ? Math.PI/4 + j*Math.PI/2 : up + j*2*Math.PI/count;
+        var angle = up + (count === 4 ? Math.PI/4 : 0) + j*2*Math.PI/count;
         nest(i+step, x+ring*Math.cos(angle), y+ring*Math.sin(angle), child, angle+Math.PI, path.concat(j));
       }
     }
