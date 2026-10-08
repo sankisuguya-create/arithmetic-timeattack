@@ -441,6 +441,10 @@ body.figoff .pbtn:hover,body.figoff .tap:hover{background:#0C0F18}
 body.figoff .timelede{text-shadow:0 0 .6em rgba(95,227,255,.55)}
 body.figoff #figTog button,body.figoff #floorReplay{background:#0C0F18}
 body.figoff #play{background:#05060A}
+/* 図なしは --ink を明るい文字色にしているので、--ink を地に使う所は暗い地に戻す */
+body.figoff #countdown{background:#05060A;color:#E9F6FF;text-shadow:0 0 .25em rgba(95,227,255,.55)}
+body.figoff .timecard .k{background:transparent;border:1.5px solid #5FE3FF;color:#5FE3FF}
+body.figoff .timecard{background:#0C0F18;border-color:#1D2A3A}
 body.figoff #bar{background:linear-gradient(90deg,#5FE3FF,#B48CFF)}
 body.figoff .prime-value{text-shadow:0 0 .35em rgba(95,227,255,.6)}
 body.figoff .prime-previous{color:#B48CFF}
@@ -2856,7 +2860,7 @@ function primeReset_(){
   clearTimeout(PRIME.timer); PRIME.timer=0; PRIME.done=false; PRIME.previous=''; PRIME.parts=[];
   if(PRIME.animation) PRIME.animation.cancel();
 }
-/* 素数キーの並び。モードが keys を持つ時（1000まで）はそちらを使う */
+/* 素数キーの並び。モードが keys を持つ時（素数の上限があるモード）はそちらを使う */
 function primeKeyList_(){
   var m=practice?pMode:mode;
   return (MODES[m] && MODES[m].keys) || INTERACTION.keys || [];
