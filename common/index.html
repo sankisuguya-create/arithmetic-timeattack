@@ -2389,57 +2389,37 @@ function figTogPaint_(){
     b.setAttribute('aria-pressed', String(off === FIGOFF)); b.innerHTML = figIcon_(off);
   });
 }
-function figSet_(off){
+/* 切り替えの演出：波紋。新しい画面を、押したアイコンを中心に円で広げ、その先を細くなりながら進む輪が走る
+ * （View Transitions の新しい側を clip-path で切り抜く）。円の数を全コマで同じにして、コマの間を補間させる */
+function figFxFrames_(ox, oy){
+  var W = innerWidth, H = innerHeight, far = Math.max(Math.hypot(ox, oy), Math.hypot(W - ox, oy), Math.hypot(ox, H - oy), Math.hypot(W - ox, H - oy));
+  var F = 36, frames = [];
+  function circ(r){ r = Math.max(0, r); return 'M' + (ox - r).toFixed(1) + ' ' + oy.toFixed(1) + 'a' + r.toFixed(1) + ' ' + r.toFixed(1) + ' 0 1 0 ' + (2 * r).toFixed(1) + ' 0a' + r.toFixed(1) + ' ' + r.toFixed(1) + ' 0 1 0 ' + (-2 * r).toFixed(1) + ' 0Z'; }
+  // 波紋：内側の円（新しい画面）＋その先の輪4本。輪は外ほど細く、間隔は一定。evenodd で輪の内側を抜く
+  for(var f2 = 0; f2 <= F; f2++){
+    var p2 = f2 / F, e2 = 1 - Math.pow(1 - p2, 2.2), R = e2 * (far + 140) - 60, path2 = circ(R), grow = Math.min(1, p2 * 5);
+    for(var k = 0; k < 4; k++){
+      var rr = R + 26 + k * 30, w = (10 - k * 2.2) * grow * (1 - p2 * .6);
+      path2 += circ(rr + w / 2) + circ(rr - w / 2);
+    }
+    frames.push({ clipPath: 'path(evenodd, \'' + path2 + '\')' });
+  }
+  return frames;
+}
+function figSet_(off, from){
   if(FIGOFF === off) return;
   FIGOFF = off;
   try { localStorage.setItem('figoff:' + APP_ID, off ? '1' : ''); } catch (e) {}
   var apply = function(){ figTogPaint_(); renderMenu(); menuFigDraw_(); };
-  // 切り替えの演出：新しい画面が左下から「ズズズ…」と広がる。引っかかりながら進むよう、伸びと止まりを交互に置く。
   // 動きを減らす設定の端末と、View Transitions の無いブラウザでは、すぐ切り替える
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(reduce || !document.startViewTransition){ apply(); return; }
+  var box = from ? from.getBoundingClientRect() : { left: 0, top: innerHeight, width: 0, height: 0 };
+  var ox = box.left + box.width / 2, oy = box.top + box.height / 2;
   var vt = document.startViewTransition(apply);
   vt.ready.then(function(){
-    // 前線はコッホ曲線。左下の角から右上の角へ、対角線に沿って進む（土台の線は対角線に直交し、山は進む向きに立つ）。
-    // 止まるたびに一段ずつ細かくなる（自己相似の段が増える）。段の違う形どうしを補間できるよう、
-    // 粗い段は最も細かい段と同じ点の数になるまで、まっすぐな辺の上に点を足して揃える
-    var W = innerWidth, H = innerHeight, D = Math.hypot(W, H), ux = W / D, uy = -H / D, nx = -uy, ny = ux;
-    var M = 8, L = 3, PER = Math.pow(4, L);
-    function koch(k){                      // 土台 [0,1] 上のコッホ曲線（段 k）を、PER 個の辺に揃えた [t, h] の列で返す
-      var pts = [[0, 0], [1, 0]];
-      for(var s = 0; s < k; s++){
-        var nx2 = [pts[0]];
-        for(var i = 1; i < pts.length; i++){
-          var p0 = pts[i - 1], p1 = pts[i], dx = (p1[0] - p0[0]) / 3, dh = (p1[1] - p0[1]) / 3;
-          var a = [p0[0] + dx, p0[1] + dh], c = [p0[0] + 2 * dx, p0[1] + 2 * dh];
-          var tip = [a[0] + dx * .5 - dh * Math.sqrt(3) / 2, a[1] + dh * .5 + dx * Math.sqrt(3) / 2];   // 辺を60°起こした頂点
-          nx2.push(a, tip, c, p1);
-        }
-        pts = nx2;
-      }
-      var rep = PER / (pts.length - 1), out = [pts[0]];
-      for(var j = 1; j < pts.length; j++) for(var q = 1; q <= rep; q++){
-        var f = q / rep; out.push([pts[j - 1][0] + (pts[j][0] - pts[j - 1][0]) * f, pts[j - 1][1] + (pts[j][1] - pts[j - 1][1]) * f]);
-      }
-      return out;
-    }
-    var shapes = [0, 1, 2, 3].map(koch);
-    function front(d, k){
-      var cx = ux * d, cy = H + uy * d, seg = 2 * D / M, pts = [];
-      pts.push((cx - ux * D * 2 - nx * D) + 'px ' + (cy - uy * D * 2 - ny * D) + 'px');
-      for(var m = 0; m < M; m++) shapes[k].forEach(function(p, i){
-        if(m > 0 && i === 0) return;
-        var t = -D + (m + p[0]) * seg, h = p[1] * seg;
-        pts.push((cx + nx * t + ux * h) + 'px ' + (cy + ny * t + uy * h) + 'px');
-      });
-      pts.push((cx - ux * D * 2 + nx * D) + 'px ' + (cy - uy * D * 2 + ny * D) + 'px');
-      return 'polygon(' + pts.join(',') + ')';
-    }
-    // 伸びと止まりを交互に置いて「ズズズ…」と進める。止まる間に段が一つ増える
-    var r = [-.35, .1, .12, .4, .42, .7, .72, 1, 1.02, 1.3], lv = [0, 0, 1, 1, 2, 2, 3, 3, 3, 3];
-    var at = [0, .14, .22, .36, .44, .58, .66, .8, .86, 1];
-    document.documentElement.animate(r.map(function(v, i){ return { clipPath: front(v * D, lv[i]), offset: at[i] }; }),
-      { duration: 1300, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
+    document.documentElement.animate(figFxFrames_(ox, oy),
+      { duration: 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
   }).catch(function(){});
 }
 function isLocked(m){ return !!LOCKED[m]; }
@@ -2957,7 +2937,7 @@ $('menuFigN').addEventListener('input', function(){ this.value = this.value.repl
 $('menuFigN').addEventListener('keydown', function(e){ e.stopPropagation(); });
 $('figTog').addEventListener('click', function(e){
   e.stopPropagation();
-  var b = e.target.closest('button'); if(b) figSet_(b.getAttribute('data-off') === '1');
+  var b = e.target.closest('button'); if(b) figSet_(b.getAttribute('data-off') === '1', b);
 });   // 数字キーでモードを選ぶ操作に取られない
 window.addEventListener('resize', function(){ if(scr === 'start') menuFigDraw_(); });
 
