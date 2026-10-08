@@ -67,3 +67,17 @@ const fixedStyles = src => (src.match(/style="[^"]*"/g) || []).filter(x => x !==
 }
 
 console.log('hub_ui.test.cjs: all assertions passed.');
+
+/* ---- ハブ：クラスごとの表示（cls_hide_<id>） ---- */
+{
+  const vm = require('vm');
+  const code = read('apps/hub/Code.gs');
+  const cfg = { 'cls_hide_a': ',3-1,4-2,' };
+  const c = { config_: () => cfg }; vm.createContext(c); vm.runInContext(code, c);
+  assert.equal(c.classKey_(3, '1'), '3-1');
+  assert.ok(c.clsHidden_(cfg, 'a', '3-1') && c.clsHidden_(cfg, 'a', '4-2') && !c.clsHidden_(cfg, 'a', '3-2') && !c.clsHidden_(cfg, 'b', '3-1'));
+  assert.ok(code.includes("&& !clsHidden_(cfg, l.id, ck)"), 'boot は学年タブの後にクラスで絞る');
+  assert.ok(code.includes("o[key] = cur.length ? ',' + cur.join(',') + ',' : '';"), '「3-1」が日付に化けないよう前後をカンマで囲む');
+  const t = read('apps/hub/teacher.html');
+  assert.ok(t.includes('data-p="clsview"') && t.includes('id="cvTable"') && t.includes('.setClassShow(l.id, ck, show)'));
+}

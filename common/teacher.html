@@ -789,6 +789,26 @@ function floorGenErr_(){
   return '図形を読み込めません（index.html と Core.gs を同じ版に貼り直してください）';
 }
 
+/* 正答回数の図の単元（menuFigure='factor'）：背景の床は描かないので、プレビューも児童のメニューの左の図と同じ「正答 N の図」にする */
+function figPreviewInit(){
+  var box = $('floorBox'); box.style.display = '';
+  box.querySelector('h2').textContent = '正答回数の図のプレビュー';
+  box.querySelector('p.desc').innerHTML = '児童のメニューの左に出る図です。正答回数 N（モードごとの本番の正答 × 育ちの倍率、小数点以下切り捨ての合計）を、素因数で入れ子にした円で描きます。10000で止まります。';
+  FP.FIG = true; FP.on = true;
+  addEventListener('resize', function(){ fpDraw(FP.shown); });
+  fpDraw(0); fpInfo();
+}
+function fpFigDraw_(n){
+  var cv = $('fpCanvas'), w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  if(!w || !h) return;
+  cv.width = w * dpr; cv.height = h * dpr;
+  var ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  n = Math.min(10000, Math.floor(n)); ctx.translate(w / 2, h / 2); ctx.fillStyle = '#245BC2'; ctx.strokeStyle = '#245BC2';
+  var R = Math.min(w, h) * 0.46;
+  if(n < 2){ if(n === 1){ ctx.beginPath(); ctx.arc(0, 0, R * 0.12, 0, Math.PI * 2); ctx.fill(); } return; }   // 0は図なし、1は中心に1つだけ
+  GrowingFigures.factorPoints(n, R).forEach(function(d){
+    ctx.globalAlpha = d.cls ? 0.8 : 1; ctx.beginPath(); ctx.arc(d.x, d.y, Math.max(1, d.r * 0.95 / 0.72), 0, Math.PI * 2); ctx.fill(); });
+}
 function floorPreviewInit(f){
   var box = $('floorBox');
   if(!f || !$('floor_per_answer')) return;      // 床を宣言していない単元には出さない
@@ -828,6 +848,7 @@ function fpProg(tc){
 }
 function fpDraw(tc){
   if(!FP.on) return;
+  if(FP.FIG){ fpFigDraw_(tc); FP.shown = tc; return; }
   var cv = $('fpCanvas'), w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(devicePixelRatio || 1, 2);
   if(!w || !h) return;
   cv.width = w * dpr; cv.height = h * dpr;
@@ -843,6 +864,8 @@ function fpDraw(tc){
   FP.shown = tc;
 }
 function fpInfo(){
+  if(FP.FIG){ $('fpTc').textContent = Math.round(FP.tc).toLocaleString(); $('fpStage').textContent = '';
+    $('fpAll').textContent = Math.round(FP.tc) >= 10000 ? '10000で止まります' : ''; setStat('fpStat', '', false); return; }
   var g = fpProg(FP.tc), N = FP.tiles.length, all = Math.ceil(2 * N / fpPer());
   $('fpTc').textContent = Math.round(FP.tc).toLocaleString();
   $('fpStage').textContent =
@@ -979,7 +1002,7 @@ var SETTINGS = [];
    あえて手書きにする：スクリプレットで ENGINE_VER を埋めると稼働中の Core.gs の
    値が入り、応答の版と必ず一致して検知できなくなる。版を上げるときは
    Core.gs の ENGINE_VER と index.html・teacher.html の WANT_VER の3か所を一緒に上げる */
-var WANT_VER = 8;
+var WANT_VER = 9;
 
 /* 直すべきもの（版ずれ・Unit.gs の不具合）は赤で出す。「注意：」で始まる行は設計上許容されるものなので、
    件数だけの折りたたみにする（毎回赤で出すと、本当の警告が目に入らなくなる） */
@@ -1044,7 +1067,7 @@ google.script.run.withSuccessHandler(function(r){
   });
   growRowsRender(u.modes || [], u.growW || {});
   $('coopRvMine').value = Number(c.coop_mine) === 1 ? '1' : '0';   // 既定は出さない（1 の時だけ「じぶん」も出す）
-  floorPreviewInit(u.floor);
+  if(u.menuFigure === 'factor') figPreviewInit(); else floorPreviewInit(u.floor);
   coopInitUnit(u);
 }).withFailureHandler(function(e){
   setStat('saveStat', '読み込めません: ' + e.message, true);
@@ -1755,6 +1778,7 @@ function coopXform(ctx, s){ ctx.setTransform(CP.DPR * s, 0, 0, CP.DPR * s, CP.DP
 function coopView(s){ return { x0: CP.VX - CP.OX / s, x1: CP.VX + (CP.W - CP.OX) / s, y0: CP.VY - CP.OY / s, y1: CP.VY + (CP.H - CP.OY) / s }; }
 function coopInView(t, vr){ return t.cx >= vr.x0 && t.cx <= vr.x1 && t.cy >= vr.y0 && t.cy <= vr.y1; }
 function coopDrawBase(){
+  if(CP.FIG) return;                    // 正答数の図はタイルを使わない（下地の輪郭も描かない）
   var ctx = coopCtx('coopFloor');
   ctx.setTransform(CP.DPR, 0, 0, CP.DPR, 0, 0); ctx.clearRect(0, 0, CP.W, CP.H);
   coopXform(ctx, CP.RENDER_S);
@@ -1762,7 +1786,25 @@ function coopDrawBase(){
   for(var i = 0; i < CP.tiles.length; i++) if(coopInView(CP.tiles[i], vr)) floorPoly_(P, CP.tiles[i]);
   ctx.strokeStyle = 'rgba(' + CGHOST + ',0.12)'; ctx.lineWidth = .8 / CP.RENDER_S; ctx.stroke(P);
 }
+/* ---- 正答数の図（CP.FIG の単元）：N＝Σ floor(正答×育ちの倍率)。円 j の色はその円を足した児童（グループ）の色。10000で止める ---- */
+var COOP_FIG_MAX = 10000;
+function coopFigPaint_(){
+  var ctx = coopCtx('coopGrow'), base = coopCtx('coopFloor');
+  base.setTransform(1, 0, 0, 1, 0, 0); base.clearRect(0, 0, $('coopFloor').width, $('coopFloor').height);
+  ctx.setTransform(CP.DPR, 0, 0, CP.DPR, 0, 0); ctx.clearRect(0, 0, CP.W, CP.H);
+  var own = CP.FOWN || [], n = own.length;
+  if(!n || !window.GrowingFigures) return;     // 0は図なし
+  var R0 = Math.min(CP.W, CP.H) * 0.46, k = 0.95 / 0.72;
+  var pts = n === 1 ? [{ x: 0, y: 0, r: R0 * 0.12 / k }] : GrowingFigures.factorPoints(n, R0);   // 1は中心に1つだけ
+  ctx.translate(CP.W / 2, CP.H / 2);
+  pts.forEach(function(d, j){
+    var s = own[j], a = (CP.sel < 0 || keyOf(s) === CP.sel) ? 1 : 0.12;
+    ctx.fillStyle = 'rgba(' + famOf(s)[0] + ',' + a + ')';
+    ctx.beginPath(); ctx.arc(d.x, d.y, Math.max(1.2, d.r * k), 0, Math.PI * 2); ctx.fill();
+  });
+}
 function coopRepaint(){
+  if(CP.FIG){ coopFigPaint_(); return; }
   coopOrgMarks();
   var ctx = coopCtx('coopGrow');
   ctx.setTransform(CP.DPR, 0, 0, CP.DPR, 0, 0); ctx.clearRect(0, 0, CP.W, CP.H);
@@ -1819,6 +1861,13 @@ function coopGwMean_(){
   return ws.length ? ws.reduce(function(a, w){ return a + w; }, 0) / ws.length : 1;
 }
 function coopApply(e){                 // e = [t_ms, 児童index, 正答数]。CP.placed[c0..CP.cursor) が今回貼ったタイル
+  if(CP.FIG){                          // 正答数の図：円を1つずつ足すだけ（タイルは貼らない）
+    var m = Math.floor(e[2] * coopGwOf_(e[3]));
+    CP.FOWN = CP.FOWN || [];
+    while(m-- > 0 && CP.FOWN.length < COOP_FIG_MAX) CP.FOWN.push(e[1]);
+    CP.total += e[2];
+    return CP.cursor;
+  }
   var n = Math.round(e[2] * coopRateAt(e[0]) * coopGwOf_(e[3])), c0 = CP.cursor, o = keyOf(e[1]), vr = coopView(CP.S);
   while(n-- > 0){
     var j = coopTake(CP.A, o); if(j < 0) break;
@@ -1833,6 +1882,7 @@ function coopGiRedraw(){
   if(CP.MODE === 'group' && CP.ORD && CP.ORD.length > 1) coopRecompute(CP.evI); else coopRepaint();
 }
 function coopBurst(c0, c1){            // 追加された範囲だけ塗る
+  if(CP.FIG){ coopFigPaint_(); return; }   // 正答数の図は、数が変わると並び全体が変わるので描き直す
   if(c1 <= c0) return;
   var ctx = coopCtx('coopGrow'), bk = {};
   for(var j = c0; j < c1; j++){ var tt = CP.tiles[CP.placed[j]]; if(tt.s < 0) continue;
@@ -1847,7 +1897,7 @@ function coopBurst(c0, c1){            // 追加された範囲だけ塗る
   }
 }
 function coopRecompute(upto){          // シーク用：先頭から状態を組み直す
-  CP.cursor = 0; CP.evI = 0; CP.total = 0; CP.paintedInView = 0;
+  CP.cursor = 0; CP.evI = 0; CP.total = 0; CP.paintedInView = 0; CP.FOWN = [];
   CP.S = 1; CP.RENDER_S = 1; CP.zooming = false;
   ['coopFloor', 'coopGrow'].forEach(function(id){ var cv = $(id);
     cv.style.transition = 'none'; cv.style.transform = 'none'; });
@@ -2103,6 +2153,9 @@ setInterval(function(){ if(!$('pageCoop') ||
 
 /* ---- 単元・クラスが読めた時点の初期化（getConfigForUI / listClasses の成功後に呼ばれる） ---- */
 function coopInitUnit(u){
+  CP.FIG = u.menuFigure === 'factor';   // 素因数分解：協力プレイの図形は「その回の正答数 N を素因数で入れ子にした円の図」
+  // 正答数の図には起点・図形・1正答の量が効かないので、詳細設定のその欄を出さない
+  if(CP.FIG) ['coopOrg', 'coopPat', 'coopRate', 'coopOrgWhy'].forEach(function(id){ var r = $(id).closest('.frow'); if(r) r.style.display = 'none'; });
   var GF = window.GrowingFigures, sel = $('coopPat');
   if(!GF || !GF.GENERATORS){ setStat('coopStat', floorGenErr_(), true); return; }
   var pats = (u && u.coopPatterns) || Object.keys(GF.GENERATORS);
@@ -2200,6 +2253,7 @@ function coopOrgList_(){
   return coopOrgCustomFit_(k) || coopOriginsN(k, CP.OX, CP.OY, CP.W, CP.H).map(function(q){ return [Math.round(q[0] * 1000) / 1000, Math.round(q[1] * 1000) / 1000]; });
 }
 function coopOrgMarks(){
+  if(CP.FIG){ $('coopOrgMarks').innerHTML = ''; return; }
   var box = $('coopOrgMarks');
   if(!CP.prev || !CP.W){ if(box.innerHTML) box.innerHTML = ''; return; }
   var S = CP.RENDER_S || 1;

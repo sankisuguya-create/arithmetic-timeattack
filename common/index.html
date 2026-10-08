@@ -579,7 +579,7 @@ var BOOTED = false;
    あえて手書きにする：スクリプレットで ENGINE_VER を埋めると稼働中の Core.gs の
    値が入り、応答の版と必ず一致して検知できなくなる。版を上げるときは
    Core.gs の ENGINE_VER と index.html・teacher.html の WANT_VER の3か所を一緒に上げる */
-var WANT_VER = 8;
+var WANT_VER = 9;
 /* 単位名 → 色。Unit.gs が決める（この画面は単位の名前を知らない） */
 var UNITS = {};
 /* 自動確定の桁数の「宣言」。boot() が Unit.gs から運んでくる。
@@ -2245,12 +2245,9 @@ function menuFigDraw_(){
   if(cv.width !== W || cv.height !== Hh){ cv.width = W; cv.height = Hh; }
   var g = cv.getContext('2d'); g.clearRect(0, 0, W, Hh);
   var acc = getComputedStyle($('menuFigNum')).color || '#245BC2';
-  if(shown < 2){                                 // 0と1：素因数の図にならない。0は輪郭だけ、1は円1つを描いて、空に見えないようにする
-    g.save(); g.translate(W / 2, Hh / 2); g.strokeStyle = acc; g.fillStyle = acc; g.globalAlpha = 0.35;
-    g.lineWidth = 2 * dpr; g.setLineDash([6 * dpr, 8 * dpr]);
-    g.beginPath(); g.arc(0, 0, Math.min(W, Hh) * 0.4, 0, Math.PI * 2); g.stroke();
-    if(shown === 1){ g.globalAlpha = 1; g.beginPath(); g.arc(0, 0, Math.min(W, Hh) * 0.06, 0, Math.PI * 2); g.fill(); }
-    g.restore(); return;
+  if(shown < 2){                                 // 0は図なし、1は中心に円を1つだけ
+    if(shown === 1){ g.fillStyle = acc; g.beginPath(); g.arc(W / 2, Hh / 2, Math.min(W, Hh) * 0.06, 0, Math.PI * 2); g.fill(); }
+    return;
   }   // メニューの地（明るい紙色）での強調色。数字と同じ色で描く
   var R = Math.min(W, Hh) * 0.48;
   g.save(); g.translate(W / 2, Hh / 2); g.fillStyle = acc;

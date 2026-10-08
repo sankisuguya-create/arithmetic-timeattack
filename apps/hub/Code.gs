@@ -295,9 +295,10 @@ function boot() {
   // 名簿にない教師は全タブを見せておく（児童画面のプレビューになる）。
   var tabs = null, links;
   if (c) {
-    var set = tabSet_(cfg, grade);
+    var set = tabSet_(cfg, grade), ck = classKey_(c.grade, c.cls);
     tabs = Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
-    links = links_().filter(function (l) { return l.visible && l.url && inTabs_(l, set); });
+    // 学年タブで絞ったうえで、クラスごとの「出さない」（cls_hide_<id>）でさらに絞る
+    links = links_().filter(function (l) { return l.visible && l.url && inTabs_(l, set) && !clsHidden_(cfg, l.id, ck); });
   } else if (teacher) {
     tabs = linkGrades_();
     links = links_().filter(function (l) { return l.visible && l.url; });
@@ -330,6 +331,7 @@ function getAllLinks() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var mail = email_();
   return { links: links_(), colors: COLORS, config: config_(), where: where_(),
+           classes: rosterClasses_(),
            docs: DOCS.map(function (d) { return { title: d.title, subtitle: d.subtitle, url: docUrl_(d.page) }; }),
            // 横断分析の入口は、開ける人にだけ渡す
            analysisUrl: (typeof canAnalyze_ === 'function' && canAnalyze_(mail)) ? analysisUrl_() : '' };
@@ -400,6 +402,37 @@ function saveHubConfig(obj) {
 function listGrades() {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   return rosterGrades_();
+}
+
+/* ---- クラスごとの表示（config の cls_hide_<リンクid> に「出さないクラス」をカンマ区切りで持つ。無ければ全クラスに出す） ---- */
+function classKey_(grade, cls) { return String(Number(grade) || 0) + '-' + String(cls == null ? '' : cls).trim(); }
+function clsHidden_(cfg, id, ck) {
+  return String(cfg['cls_hide_' + id] || '').split(',').some(function (s) { return s.trim() === ck; });
+}
+/** 名簿にあるクラス（学年-組）と人数。氏名の無い行は数えない */
+function rosterClasses_() {
+  var v = sh_(SHEETS.ROSTER).getDataRange().getValues(), cnt = {};
+  for (var i = 1; i < v.length; i++) {
+    if (!String(v[i][4] || '').trim() || !(Number(v[i][1]) > 0)) continue;
+    var k = classKey_(v[i][1], v[i][2]); cnt[k] = (cnt[k] || 0) + 1;
+  }
+  return Object.keys(cnt).sort(function (a, b) {
+    var pa = a.split('-'), pb = b.split('-');
+    return Number(pa[0]) - Number(pb[0]) || (pa[1] < pb[1] ? -1 : pa[1] > pb[1] ? 1 : 0);
+  }).map(function (k) { return { key: k, n: cnt[k] }; });
+}
+/** クラスごとの表示の1マスを切り替える（押すたびに保存。ほかの設定は触らない） */
+function setClassShow(id, ck, show) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  id = String(id || ''); ck = String(ck || '');
+  if (!id || !ck) throw new Error('リンクかクラスが分かりません。ページを開き直してください。');
+  var key = 'cls_hide_' + id;
+  var cur = String(config_()[key] || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean)
+    .filter(function (s) { return s !== ck; });
+  if (!show) cur.push(ck);
+  // 前後をカンマで囲んで保存する。「3-1」だけを書くとスプレッドシートが日付（3月1日）に変えてしまうため
+  var o = {}; o[key] = cur.length ? ',' + cur.join(',') + ',' : '';
+  return { ok: true, hide: saveHubConfig(o)[key] || '' };
 }
 
 function rosterGrades_() {

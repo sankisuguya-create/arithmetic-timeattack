@@ -14,12 +14,9 @@ var UNIT = {
   ],
   types: factorTypes_(),
   digitCap: factorCaps_(),
-  defaults: { floor_on: 1, floor_per_answer: 0.75 },
-  settings: [
-    { key: 'floor_on', label: 'メニューの背景の図形', type: 'onoff', note: '720個の円が育つ図形' },
-    { key: 'floor_per_answer', label: '1正答あたりの図形の育ち', min: 0.05, max: 10, step: 0.05,
-      note: '各モードの平均正答数で速さを補正。本番の完成問題数で育つ' }
-  ],
+  // メニューの背景の床は使わない（menuFigure の「正答回数の図」に置き換え）。床の表示・育ちの設定欄は置かない
+  defaults: {},
+  settings: [],
   floorPattern: 'factor720', floorColor: 'amethyst',
   /** メニューの背景の図形の代わりに、モードの左へ「正答回数の数の図」（素因数で入れ子にした円）を出す。
    *  正答回数＝モードごとの本番の正答 × 育ちの倍率（小数点以下切り捨て）の合計。10000で止める */
@@ -88,6 +85,7 @@ function factorCaps_() {
 
 function factorTypes_() {
   var out = {}, names = ['16まで', '九九まで', '45まで', '360まで', '九九まで（図なし）', '360まで（図なし）'];
-  for (var m=1;m<=6;m++) for(var p=2;p<=6;p++) out['m'+m+'p'+p]=names[m-1]+'・'+p+(p===6?'個以上':'個')+'の素因数';
+  // 実際に出題される型だけを宣言する（出ない型を宣言すると教師画面に「宣言だけ残っている」注意が出る）
+  for (var m=1;m<=6;m++) factorPool_(m).forEach(function(n){ var p=Math.min(6,factorParts_(n).length); out['m'+m+'p'+p]=names[m-1]+'・'+p+(p===6?'個以上':'個')+'の素因数'; });
   return out;
 }

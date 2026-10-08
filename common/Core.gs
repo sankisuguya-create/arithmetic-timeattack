@@ -80,7 +80,7 @@ var STAR_MAX = 99;                         // 個人内評価（自己ベスト�
  * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
  * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
  */
-var ENGINE_VER = 8;   // 8 = 特殊枠・素数選択・順不同採点 / 7 = 筆算の並べ方（col） / 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
+var ENGINE_VER = 9;   // 9 = 正答回数の図（unit.menuFigure・floor.tcm/gw） / 8 = 特殊枠・素数選択・順不同採点 / 7 = 筆算の並べ方（col） / 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
                       // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
                       // 4 = coopPeek（児童画面の定期確認。開いたままの画面に印をすぐ出す）
                       // 5 = getPastYears（教師画面の過年度タブ）
@@ -1299,6 +1299,7 @@ function getConfigForUI() {
            growW: growWeights_(),   // モードごとの育ちの倍率（今の設定。単元の既定込み）
            // 床のプレビュー（教師画面）に使う。児童の画面と同じ図形・同じ2色
            floor: { pattern: UNIT.floorPattern || 'penrose', c1: gradeAccent_(), c2: floorColor_(), ref: FLOOR_REF_PER_MIN_ },
+           menuFigure: UNIT.menuFigure || '',   // 'factor' の単元は、協力プレイの図形も「正答数の図」にする
            // 協力モードの図形の選択肢。宣言できるのは画面に写した生成器と同じ id だけ
            coopPatterns: FLOOR_PATTERNS_ } };
 }
