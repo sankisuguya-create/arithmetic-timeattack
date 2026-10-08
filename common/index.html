@@ -441,6 +441,10 @@ body.figoff .pbtn:hover,body.figoff .tap:hover{background:#0C0F18}
 body.figoff .timelede{text-shadow:0 0 .6em rgba(95,227,255,.55)}
 body.figoff #figTog button,body.figoff #floorReplay{background:#0C0F18}
 body.figoff #play{background:#05060A}
+/* 図なしは --ink を明るい文字色にしているので、--ink を地に使う所は暗い地に戻す */
+body.figoff #countdown{background:#05060A;color:#E9F6FF;text-shadow:0 0 .25em rgba(95,227,255,.55)}
+body.figoff .timecard .k{background:transparent;border:1.5px solid #5FE3FF;color:#5FE3FF}
+body.figoff .timecard{background:#0C0F18;border-color:#1D2A3A}
 body.figoff #bar{background:linear-gradient(90deg,#5FE3FF,#B48CFF)}
 body.figoff .prime-value{text-shadow:0 0 .35em rgba(95,227,255,.6)}
 body.figoff .prime-previous{color:#B48CFF}
@@ -2263,6 +2267,7 @@ function floorReplayEnd_(){
  * 左下の欄に正答回数以下の数を入れると、その数の図に変わる（空にすると正答回数の図に戻る） */
 var MENUFIG = '';
 var MENUFIG_MAX = 10000;
+var MENUFIG_FREE = false;   // 教師が開いた時 true（boot の teacher）
 function menuFigCount_(){
   var n = 0;
   Object.keys(FLOOR.tcm || {}).forEach(function(m){ n += Math.floor((Number(FLOOR.tcm[m]) || 0) * (Number((FLOOR.gw || {})[m]) || 1)); });
@@ -2271,8 +2276,9 @@ function menuFigCount_(){
 function menuFigDraw_(){
   if(!MENUFIG || typeof GrowingFigures === 'undefined') return;
   var total = menuFigCount_(), inp = $('menuFigN'), v = Math.floor(Number(inp.value));
-  inp.placeholder = total + ' まで';
-  var ok = inp.value.trim() !== '' && v >= 0 && v <= total;
+  // 教師が開いた時（boot の teacher）は、正答回数を超える数も入れられる（授業で好きな数の図を見せるため。10000で止まるのは同じ）
+  inp.placeholder = MENUFIG_FREE ? 'すきな数' : total + ' まで';
+  var ok = inp.value.trim() !== '' && v >= 0 && (MENUFIG_FREE || v <= total);
   inp.classList.toggle('over', inp.value.trim() !== '' && !ok);
   var n = ok ? v : total, shown = Math.min(n, MENUFIG_MAX);
   $('menuFigNum').textContent = shown + (n > MENUFIG_MAX ? '（' + MENUFIG_MAX + 'で とまります）' : '');
@@ -2854,7 +2860,7 @@ function primeReset_(){
   clearTimeout(PRIME.timer); PRIME.timer=0; PRIME.done=false; PRIME.previous=''; PRIME.parts=[];
   if(PRIME.animation) PRIME.animation.cancel();
 }
-/* 素数キーの並び。モードが keys を持つ時（1000まで）はそちらを使う */
+/* 素数キーの並び。モードが keys を持つ時（素数の上限があるモード）はそちらを使う */
 function primeKeyList_(){
   var m=practice?pMode:mode;
   return (MODES[m] && MODES[m].keys) || INTERACTION.keys || [];
@@ -3852,6 +3858,7 @@ function applyBoot(r, live){
   // 断定してよいのはサーバーが答えた時だけ（live）
   if(live) BOOTED = true;
   STARS = r.stars || {}; PBEST = r.practiceBest || {};
+  MENUFIG_FREE = !!r.teacher;
   var tl = $('teacherLink');
   if(tl){
     // 教師のアカウントで児童画面を開いた時だけ、教師画面への導線を出す。

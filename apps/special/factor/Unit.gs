@@ -5,24 +5,24 @@ var UNIT = {
   // 児童メニューのタイトルのふりがな。[漢字, 読み] か、読みの要らない文字列を並べる（つなぐと title と同じ文字列になる）
   titleRuby: [['素','そ'],['因','いん'],['数','すう'],['分','ぶん'],['解','かい'],'タイムアタック！'], teacherTitle: '素因数分解 設定・分析',
   units: {}, answerOrder: 'unordered',
-  interaction: { kind: 'prime-division', keys: factorPrimes_(179) },   // モードが keys を持つ時はそちらを使う（今は使うモードなし）
+  interaction: { kind: 'prime-division', keys: factorPrimes_(179) },   // モードが keys を持つ時はそちらを使う（素数の上限があるモードは、上限までのキーだけ出す）
   modes: [
     { id: 1, name: '16まで', desc: '4〜16の合成数', diagram: true },
     { id: 2, name: '九九まで', desc: '九九に現れる合成数', diagram: true },
-    { id: 3, name: '360まで(素数〜13)', desc: '360までの合成数で、素因数が2・3・5・7・11・13だけのもの', diagram: true },
-    { id: 4, name: '360まで(素数〜97)', desc: '360までの合成数で、最大の素因数が97以下のもの', diagram: true },
+    { id: 3, name: '360まで(素数〜13)', desc: '360までの合成数で、素因数が2・3・5・7・11・13だけのもの', diagram: true, keys: factorPrimes_(13) },
+    { id: 4, name: '360まで(素数〜97)', desc: '360までの合成数で、最大の素因数が97以下のもの', diagram: true, keys: factorPrimes_(97) },
     // 画面では5・6番目。id 5・6 は旧「図なし」の記録をそのまま引き継ぐために図なし側へ回したので、7・8にする。
     // 1024＝2の10乗は、このモードで最も長い分解（因数10個）
-    { id: 7, name: '1024まで(素数〜13)', desc: '1024までの合成数で、素因数が2・3・5・7・11・13だけのもの', diagram: true },
-    { id: 8, name: '1024まで(素数〜97)', desc: '1024までの合成数で、最大の素因数が97以下のもの', diagram: true },
+    { id: 7, name: '1024まで(素数〜13)', desc: '1024までの合成数で、素因数が2・3・5・7・11・13だけのもの', diagram: true, keys: factorPrimes_(13) },
+    { id: 8, name: '1024まで(素数〜97)', desc: '1024までの合成数で、最大の素因数が97以下のもの', diagram: true, keys: factorPrimes_(97) },
     // 図なし。pair のモードと同じ出題範囲・同じ公開設定で、記録だけ分ける。メニューでは左下の切り替えで出す。
     // 5・6 は旧モード5「九九まで（図なし）」・旧モード6「360まで（図なし）」の id。既存の記録をそのまま使う
     { id: 11, name: '16まで（図なし）', desc: 'モード1と同じ出題範囲', diagram: false, pair: 1 },
     { id: 5, name: '九九まで（図なし）', desc: 'モード2と同じ出題範囲', diagram: false, pair: 2 },
-    { id: 13, name: '360まで(素数〜13)（図なし）', desc: 'モード3と同じ出題範囲', diagram: false, pair: 3 },
-    { id: 6, name: '360まで(素数〜97)（図なし）', desc: 'モード4と同じ出題範囲', diagram: false, pair: 4 },
-    { id: 17, name: '1024まで(素数〜13)（図なし）', desc: 'モード7と同じ出題範囲', diagram: false, pair: 7 },
-    { id: 18, name: '1024まで(素数〜97)（図なし）', desc: 'モード8と同じ出題範囲', diagram: false, pair: 8 }
+    { id: 13, name: '360まで(素数〜13)（図なし）', desc: 'モード3と同じ出題範囲', diagram: false, pair: 3, keys: factorPrimes_(13) },
+    { id: 6, name: '360まで(素数〜97)（図なし）', desc: 'モード4と同じ出題範囲', diagram: false, pair: 4, keys: factorPrimes_(97) },
+    { id: 17, name: '1024まで(素数〜13)（図なし）', desc: 'モード7と同じ出題範囲', diagram: false, pair: 7, keys: factorPrimes_(13) },
+    { id: 18, name: '1024まで(素数〜97)（図なし）', desc: 'モード8と同じ出題範囲', diagram: false, pair: 8, keys: factorPrimes_(97) }
   ],
   // 図なしは図形の育ちを3倍にする（倍率の上限。教師画面の全般設定で変えられる）
   growWeights: { 11: 3, 5: 3, 13: 3, 6: 3, 17: 3, 18: 3 },
