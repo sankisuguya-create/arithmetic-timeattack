@@ -411,8 +411,8 @@ body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.
 #menuFig[hidden],#menuFigN[hidden]{display:none}
 #menuFigCv{width:100%;aspect-ratio:1;max-height:78vh}
 #menuFigN{z-index:2}
-/* 正答回数の数字は図の列の下端に小さく沈める（主役は図）。左の数の欄と切り替えアイコンの間の真ん中に置く */
-#menuFigNum{position:absolute;bottom:1rem;left:calc(1rem + 9.5rem);right:calc(1rem + 88px + .4rem);text-align:center;line-height:44px;font-size:1.15rem;font-weight:700;color:var(--mute);font-variant-numeric:tabular-nums}
+/* 正答回数の数字は図の列の下端に小さく沈める（主役は図）。図形の中心の真下に置く */
+#menuFigNum{position:absolute;bottom:1rem;left:50%;transform:translateX(-50%);white-space:nowrap;line-height:44px;font-size:1.15rem;font-weight:700;color:var(--mute);font-variant-numeric:tabular-nums}
 #menuFigN{position:absolute;left:1rem;bottom:1rem;width:9.5em;padding:.45rem .6rem;font:inherit;font-size:1rem;text-align:center;border-radius:10px;
   border:1.5px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:inherit}
 #menuFigN::placeholder{color:inherit;opacity:.45}
