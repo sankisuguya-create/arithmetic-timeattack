@@ -131,6 +131,15 @@ a.openlink:hover{border-color:var(--ink)}
 .names .no{display:inline-block;width:1.8rem;color:var(--mute);text-align:right;margin-right:.4rem}
 .names .nn{color:var(--mute)}
 table.rost{width:100%;border-collapse:collapse;font-size:.85rem}
+/* クラスごとの表示の表。マスは押せる札（● 出す＝濃紺の塗り／○ 出さない＝白地）。色だけでなく記号と語でも分ける */
+table.cv{border-collapse:collapse;font-size:.85rem}
+table.cv th{font-size:.74rem;color:var(--mute);padding:.3rem .4rem;white-space:nowrap;border-bottom:1.5px solid var(--line)}
+table.cv th.nm{text-align:left;color:var(--ink);font-size:.85rem;max-width:16rem;overflow:hidden;text-overflow:ellipsis}
+table.cv td{padding:.2rem .25rem;text-align:center;border-bottom:1px solid var(--line)}
+table.cv tr.off th.nm{color:var(--mute)}
+.cvc{font:inherit;font-weight:800;font-size:.8rem;min-width:6em;padding:.3rem .4rem;border-radius:8px;border:2px solid var(--line);background:#fff;color:var(--mute);cursor:pointer}
+.cvc.on{background:#101728;color:#fff;border-color:#101728}
+.cvc:disabled{cursor:default;opacity:.45;border-style:dashed}
 table.rost th{font-size:.72rem;color:var(--mute);text-align:left;padding:.25rem .4rem;border-bottom:1.5px solid var(--line)}
 table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
 
@@ -150,6 +159,7 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
     <h1>ハブ設定</h1>
     <nav class="tabs" id="maintabs" role="tablist">
       <button class="tab on" data-p="links" role="tab" aria-current="page">単元リンク</button>
+      <button class="tab" data-p="clsview" role="tab">クラスごと</button>
       <button class="tab" data-p="roster" role="tab">名簿</button>
       <button class="tab" data-p="cfg" role="tab">表示と権限</button>
       <button class="tab" data-p="past" role="tab">過年度</button>
@@ -193,6 +203,16 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
   </div>
 
   <!-- ============ 名簿 ============ -->
+  <div class="tabpage" data-pg="clsview">
+    <div class="box">
+      <h2>クラスごとに児童の画面へ出すもの</h2>
+      <div class="stat hint">マスを押すたびに <b>● 出す</b> ／ <b>○ 出さない</b> が入れ替わり、<b>すぐ反映</b>されます。
+        「単元リンク」で非公開のもの（— の行）は、どのクラスにも出ません。学年タブの指定（「単元リンク」の学年）で出ないマスは「対象外」です。</div>
+      <div class="scroll"><table class="cv" id="cvTable"></table></div>
+      <div class="bar"><span class="stat" id="cvStat"></span></div>
+    </div>
+  </div>
+
   <div class="tabpage" data-pg="roster">
     <div class="box col">
       <div class="tool">
@@ -328,6 +348,47 @@ $('maintabs').addEventListener('click', function(e){
     if(on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   document.querySelectorAll('.tabpage').forEach(function(d){ d.classList.toggle('on', d.dataset.pg === p); });
+});
+
+/* ---------- クラスごと（setClassShow）。リンク×クラスの表。押すたびに保存 ---------- */
+var CLASSES = [];
+function cvHidden(l, ck){ return String(CFG['cls_hide_' + l.id] || '').split(',').some(function(s){ return s.trim() === ck; }); }
+function cvRender(){
+  var t = $('cvTable');
+  if(!CLASSES.length){ t.innerHTML = '<tr><td class="stat">名簿にクラスがありません。「名簿」で児童を登録すると、ここにクラスの列が出ます。</td></tr>'; return; }
+  var rows = LINKS.filter(function(l){ return l.id && l.url; });
+  if(!rows.length){ t.innerHTML = '<tr><td class="stat">保存済みのリンクがありません。「単元リンク」で追加して保存してください。</td></tr>'; return; }
+  t.innerHTML = '<tr><th></th>' + CLASSES.map(function(c){ return '<th title="' + c.n + '人">' + esc(c.key.replace('-', '年')) + '組</th>'; }).join('') + '</tr>' +
+    rows.map(function(l){
+      var i = LINKS.indexOf(l);
+      return '<tr' + (l.visible ? '' : ' class="off"') + '><th class="nm" title="' + esc(l.title) + '">' + esc(l.title || '（名前なし）') + (l.place === 'doc' ? ' <span class="ptag">資料</span>' : '') + '</th>' +
+        CLASSES.map(function(c){
+          var g = Number(c.key.split('-')[0]);
+          if(!l.visible) return '<td><button type="button" class="cvc" disabled>—</button></td>';
+          if(!inTab(l, g)) return '<td><button type="button" class="cvc" disabled title="この学年のタブに出さないリンク">対象外</button></td>';
+          var on = !cvHidden(l, c.key);
+          return '<td><button type="button" class="cvc' + (on ? ' on' : '') + '" data-cvl="' + i + '" data-cvc="' + esc(c.key) + '" aria-pressed="' + on + '">' + (on ? '● 出す' : '○ 出さない') + '</button></td>';
+        }).join('') + '</tr>';
+    }).join('');
+}
+$('cvTable').addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('button[data-cvl]'); if(!b || b.disabled) return;
+  var l = LINKS[+b.dataset.cvl], ck = b.dataset.cvc, show = cvHidden(l, ck);   // いま出していなければ出す
+  var before = CFG['cls_hide_' + l.id] || '';
+  var cur = String(before).split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s && s !== ck; });
+  if(!show) cur.push(ck);
+  CFG['cls_hide_' + l.id] = cur.join(','); cvRender();      // 先に見た目を変える（押した結果がすぐ見える）
+  $('cvStat').textContent = '保存中…';
+  google.script.run.withSuccessHandler(function(r){
+    CFG['cls_hide_' + l.id] = (r && r.hide) || ''; cvRender();
+    $('cvStat').textContent = '「' + (l.title || '名前なし') + '」を ' + ck.replace('-', '年') + '組に' + (show ? '出します' : '出しません') + '（次に開いた児童から反映）';
+  }).withFailureHandler(function(err){
+    CFG['cls_hide_' + l.id] = before; cvRender();
+    $('cvStat').textContent = '保存できませんでした: ' + err.message;
+  }).setClassShow(l.id, ck, show);
+});
+$('maintabs').addEventListener('click', function(e){
+  if(e.target && e.target.dataset && e.target.dataset.p === 'clsview') cvRender();
 });
 
 /* ---------- 過年度（Archive.gs の arStatus / arAnonymize / arArchiveRosterNow） ---------- */
@@ -670,7 +731,7 @@ function showWhere(w, analysisUrl){
 function renderAll(){ renderList(); renderEditor(); renderTabs(); }
 
 google.script.run.withSuccessHandler(function(r){
-  COLORS = r.colors; LINKS = r.links; CFG = r.config || {};
+  COLORS = r.colors; LINKS = r.links; CFG = r.config || {}; CLASSES = r.classes || [];
   (LINKS||[]).forEach(function(l){ if(l.sheet==null) l.sheet = ''; if(l.place==null) l.place = ''; });
   DOCS = r.docs || [];
   $('addDoc').innerHTML = '<option value="">＋ ハブの資料…</option>' + DOCS.map(function(d, i){ return '<option value="'+(i+1)+'">'+esc(d.title)+'</option>'; }).join('');
