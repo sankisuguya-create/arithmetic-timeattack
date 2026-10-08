@@ -1762,7 +1762,24 @@ function coopDrawBase(){
   for(var i = 0; i < CP.tiles.length; i++) if(coopInView(CP.tiles[i], vr)) floorPoly_(P, CP.tiles[i]);
   ctx.strokeStyle = 'rgba(' + CGHOST + ',0.12)'; ctx.lineWidth = .8 / CP.RENDER_S; ctx.stroke(P);
 }
+/* ---- 正答数の図（CP.FIG の単元）：N＝Σ floor(正答×育ちの倍率)。円 j の色はその円を足した児童（グループ）の色。10000で止める ---- */
+var COOP_FIG_MAX = 10000;
+function coopFigPaint_(){
+  var ctx = coopCtx('coopGrow'), base = coopCtx('coopFloor');
+  base.setTransform(1, 0, 0, 1, 0, 0); base.clearRect(0, 0, $('coopFloor').width, $('coopFloor').height);
+  ctx.setTransform(CP.DPR, 0, 0, CP.DPR, 0, 0); ctx.clearRect(0, 0, CP.W, CP.H);
+  var own = CP.FOWN || [], n = own.length;
+  if(n < 2 || !window.GrowingFigures) return;
+  var pts = GrowingFigures.factorPoints(n, Math.min(CP.W, CP.H) * 0.46), k = 0.95 / 0.72;
+  ctx.translate(CP.W / 2, CP.H / 2);
+  pts.forEach(function(d, j){
+    var s = own[j], a = (CP.sel < 0 || keyOf(s) === CP.sel) ? 1 : 0.12;
+    ctx.fillStyle = 'rgba(' + famOf(s)[0] + ',' + a + ')';
+    ctx.beginPath(); ctx.arc(d.x, d.y, Math.max(1.2, d.r * k), 0, Math.PI * 2); ctx.fill();
+  });
+}
 function coopRepaint(){
+  if(CP.FIG){ coopFigPaint_(); return; }
   coopOrgMarks();
   var ctx = coopCtx('coopGrow');
   ctx.setTransform(CP.DPR, 0, 0, CP.DPR, 0, 0); ctx.clearRect(0, 0, CP.W, CP.H);
@@ -1819,6 +1836,13 @@ function coopGwMean_(){
   return ws.length ? ws.reduce(function(a, w){ return a + w; }, 0) / ws.length : 1;
 }
 function coopApply(e){                 // e = [t_ms, 児童index, 正答数]。CP.placed[c0..CP.cursor) が今回貼ったタイル
+  if(CP.FIG){                          // 正答数の図：円を1つずつ足すだけ（タイルは貼らない）
+    var m = Math.floor(e[2] * coopGwOf_(e[3]));
+    CP.FOWN = CP.FOWN || [];
+    while(m-- > 0 && CP.FOWN.length < COOP_FIG_MAX) CP.FOWN.push(e[1]);
+    CP.total += e[2];
+    return CP.cursor;
+  }
   var n = Math.round(e[2] * coopRateAt(e[0]) * coopGwOf_(e[3])), c0 = CP.cursor, o = keyOf(e[1]), vr = coopView(CP.S);
   while(n-- > 0){
     var j = coopTake(CP.A, o); if(j < 0) break;
@@ -1833,6 +1857,7 @@ function coopGiRedraw(){
   if(CP.MODE === 'group' && CP.ORD && CP.ORD.length > 1) coopRecompute(CP.evI); else coopRepaint();
 }
 function coopBurst(c0, c1){            // 追加された範囲だけ塗る
+  if(CP.FIG){ coopFigPaint_(); return; }   // 正答数の図は、数が変わると並び全体が変わるので描き直す
   if(c1 <= c0) return;
   var ctx = coopCtx('coopGrow'), bk = {};
   for(var j = c0; j < c1; j++){ var tt = CP.tiles[CP.placed[j]]; if(tt.s < 0) continue;
@@ -1847,7 +1872,7 @@ function coopBurst(c0, c1){            // 追加された範囲だけ塗る
   }
 }
 function coopRecompute(upto){          // シーク用：先頭から状態を組み直す
-  CP.cursor = 0; CP.evI = 0; CP.total = 0; CP.paintedInView = 0;
+  CP.cursor = 0; CP.evI = 0; CP.total = 0; CP.paintedInView = 0; CP.FOWN = [];
   CP.S = 1; CP.RENDER_S = 1; CP.zooming = false;
   ['coopFloor', 'coopGrow'].forEach(function(id){ var cv = $(id);
     cv.style.transition = 'none'; cv.style.transform = 'none'; });
@@ -2103,6 +2128,7 @@ setInterval(function(){ if(!$('pageCoop') ||
 
 /* ---- 単元・クラスが読めた時点の初期化（getConfigForUI / listClasses の成功後に呼ばれる） ---- */
 function coopInitUnit(u){
+  CP.FIG = u.menuFigure === 'factor';   // 素因数分解：協力プレイの図形は「その回の正答数 N を素因数で入れ子にした円の図」
   var GF = window.GrowingFigures, sel = $('coopPat');
   if(!GF || !GF.GENERATORS){ setStat('coopStat', floorGenErr_(), true); return; }
   var pats = (u && u.coopPatterns) || Object.keys(GF.GENERATORS);

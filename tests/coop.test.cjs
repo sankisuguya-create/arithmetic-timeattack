@@ -1149,3 +1149,12 @@ console.log('coop.test.cjs: all assertions passed.');
   assert.ok(ui.includes('var MENUFIG_MAX = 10000;') && ui.includes("function floorOn_(){ return !MENUFIG && "));
   assert.ok(ui.includes('FLOOR.tcm[mode] = (Number(FLOOR.tcm[mode]) || 0) + n;'), '本番を終えた時点で図も増える');
 }
+
+/* ---- 協力プレイの「正答数の図」（menuFigure='factor' の単元） ---- */
+{
+  const tui = read('common/teacher.html');
+  assert.ok(read('common/Core.gs').includes("menuFigure: UNIT.menuFigure || '',   // 'factor' の単元は"));
+  assert.ok(tui.includes("CP.FIG = u.menuFigure === 'factor';"));
+  assert.ok(tui.includes('var m = Math.floor(e[2] * coopGwOf_(e[3]));'), 'N＝Σ floor(正答×倍率)');
+  assert.ok(tui.includes('if(CP.FIG){ coopFigPaint_(); return; }'));
+}

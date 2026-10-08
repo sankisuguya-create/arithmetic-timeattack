@@ -1299,6 +1299,7 @@ function getConfigForUI() {
            growW: growWeights_(),   // モードごとの育ちの倍率（今の設定。単元の既定込み）
            // 床のプレビュー（教師画面）に使う。児童の画面と同じ図形・同じ2色
            floor: { pattern: UNIT.floorPattern || 'penrose', c1: gradeAccent_(), c2: floorColor_(), ref: FLOOR_REF_PER_MIN_ },
+           menuFigure: UNIT.menuFigure || '',   // 'factor' の単元は、協力プレイの図形も「正答数の図」にする
            // 協力モードの図形の選択肢。宣言できるのは画面に写した生成器と同じ id だけ
            coopPatterns: FLOOR_PATTERNS_ } };
 }
