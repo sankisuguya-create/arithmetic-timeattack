@@ -1,7 +1,9 @@
 /** 素因数分解。学年に属さない特殊枠。出題・再採点の正本。 */
 var UNIT = {
   id: 'factor', category: 'special', grade: null,
-  title: '素因数分解タイムアタック！', teacherTitle: '素因数分解 設定・分析',
+  title: '素因数分解タイムアタック！',
+  // 児童メニューのタイトルのふりがな。[漢字, 読み] か、読みの要らない文字列を並べる（つなぐと title と同じ文字列になる）
+  titleRuby: [['素','そ'],['因','いん'],['数','すう'],['分','ぶん'],['解','かい'],'タイムアタック！'], teacherTitle: '素因数分解 設定・分析',
   units: {}, answerOrder: 'unordered',
   interaction: { kind: 'prime-division', keys: factorPrimes_(179) },   // モードが keys を持つ時はそちらを使う（1000まで）
   modes: [

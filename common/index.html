@@ -36,6 +36,7 @@ body{
 #floorReplay:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 #floorReplay svg{width:18px;height:18px;margin-left:2px}
 .apptitle{font-size:clamp(1.3rem,4.5vw,1.9rem);font-weight:800;letter-spacing:.02em}
+.apptitle rt{font-size:.45em;font-weight:700;letter-spacing:0}
 .timelede{font-size:clamp(1.5rem,5.5vw,2.3rem);font-weight:800;color:var(--acc);margin-top:-.6rem}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;width:min(760px,96vw)}
 /* モード名は必ず1段に収める。折り返すと、どのモードを選んでいるかが読み取りにくい。
@@ -3761,9 +3762,15 @@ applyLayout();
 updateKeysetNow();
 
 /** タイトルは id ではなく class="apptitle"。要素が無くても落とさない */
-function setAppTitle(t){
+function setAppTitle(t, ruby){
   var el = document.querySelector('.apptitle');
-  if(el) el.textContent = t;
+  if(!el) return;
+  // ふりがな（UNIT.titleRuby）は、つないだ文字が title と同じ時だけ使う（片方だけ直した時に別の題が出ないように）
+  var plain = Array.isArray(ruby) ? ruby.map(function(x){ return Array.isArray(x) ? x[0] : x; }).join('') : '';
+  if(!plain || plain !== String(t).replace(/（プレビュー）$/, '')){ el.textContent = t; return; }
+  el.innerHTML = ruby.map(function(x){
+    return Array.isArray(x) ? '<ruby>' + esc(x[0]) + '<rt>' + esc(x[1]) + '</rt></ruby>' : esc(x);
+  }).join('') + esc(String(t).slice(plain.length));
 }
 
 /**
@@ -3803,7 +3810,7 @@ function applyBoot(r, live){
   FLOOR.pat = r.unit.floorPattern || '';   // 図形。古い控え・古いエンジンには無いのでペンローズに落とす
   TYPES = r.unit.types || {};
   TYPES_BY_MODE = r.unit.typesByMode || {};
-  setAppTitle(r.unit.title);
+  setAppTitle(r.unit.title, r.unit.titleRuby);
   BEST=r.best; MEDAL=r.medals;
   // 控えを描いただけでは「開いていない」と断定できない。
   // 断定してよいのはサーバーが答えた時だけ（live）

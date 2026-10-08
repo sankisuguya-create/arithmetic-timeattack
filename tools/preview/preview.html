@@ -224,7 +224,7 @@ async function main() {
     "  var __set = {}, __defs = UNIT.defaults || {};\n" +   // 教師の上書きは無いので既定値
     "  (UNIT.settings||[]).forEach(function(s){ var v=__defs[s.key]; __set[s.key] = (s.type==='text') ? v : Number(v); });\n" +
     "  var __r = { ok:true, guest:true, name:'', grade:0, limitSec:Number(__defs.limit_sec)||60, missLimit:Number(__defs.miss_limit)||3,\n" +
-    "    unit:{ id:UNIT.id, title:UNIT.title + '（プレビュー）', modes:UNIT.modes, grade:UNIT.grade, category:UNIT.category, interaction:UNIT.interaction||null, menuFigure:UNIT.menuFigure||'',\n" +
+    "    unit:{ id:UNIT.id, title:UNIT.title + '（プレビュー）', titleRuby:UNIT.titleRuby||null, modes:UNIT.modes, grade:UNIT.grade, category:UNIT.category, interaction:UNIT.interaction||null, menuFigure:UNIT.menuFigure||'',\n" +
     "      accent:gradeAccent_(), alert:ALERT_COLOR_, q:questionColor_(),\n" +
     "      units:UNIT.units||{}, digitCap:UNIT.digitCap||{}, types:UNIT.types||{}, typesByMode:__tbm,\n" +
     "      scale:UNIT.scale||{}, glyph:UNIT.glyph||{}, slotColor:UNIT.slotColor||{},\n" +

@@ -566,7 +566,7 @@ function boot() {
     // digitCap は「宣言」なので、そのままクライアントへ渡してよい（答えは含まない）。
     // 渡さないと index.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
-    unit: { id: UNIT.id, title: UNIT.title, modes: UNIT.modes,
+    unit: { id: UNIT.id, title: UNIT.title, titleRuby: UNIT.titleRuby || null, modes: UNIT.modes,
             // 学年の進みの色・まちがいの赤・「？」の印の色。画面は色の値を持たず、ここから受け取る
             grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, menuFigure: UNIT.menuFigure || '', accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
