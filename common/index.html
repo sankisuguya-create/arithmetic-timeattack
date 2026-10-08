@@ -2361,9 +2361,12 @@ var FIGOFF = false, PAIR_OF = {};
 function figMode_(m){ return (FIGOFF && PAIR_OF[m]) || m; }
 function figIcon_(off){
   var dark = FIGOFF, col = dark ? '#5FE3FF' : '#245BC2', bg = dark ? '#0C0F18' : '#FFFFFF', fg = dark ? '#E9F6FF' : '#101728';
-  var p = (typeof GrowingFigures === 'undefined') ? [] : GrowingFigures.factorPoints(12, 15);
+  // 4 の図（2×2）を45°回して上下左右に置く。図なしの×（／と＼）がちょうど粒の間を通り、重ねても元の図が読める
+  var p = (typeof GrowingFigures === 'undefined') ? [] : GrowingFigures.factorPoints(4, 13), c = Math.SQRT1_2;
+  var far = Math.max.apply(null, p.map(function(d){ return Math.hypot(d.x, d.y); }).concat([1e-6])), c2 = c * 11 / far;   // 粒の中心を中心から11の所へ
   return '<svg viewBox="0 0 44 44" aria-hidden="true">' + p.map(function(d){
-      return '<circle cx="' + (22 + d.x).toFixed(1) + '" cy="' + (22 + d.y).toFixed(1) + '" r="' + Math.max(1.6, d.r * 0.95 / 0.72).toFixed(1) + '" fill="' + col + '"/>';
+      var x = (d.x - d.y) * c2, y = (d.x + d.y) * c2;
+      return '<circle cx="' + (22 + x).toFixed(1) + '" cy="' + (22 + y).toFixed(1) + '" r="' + '4' + '" fill="' + col + '"/>';
     }).join('') +
     (off ? ['9,35,35,9', '9,9,35,35'].map(function(l){          // ／と＼を重ねて×にする
         var c = l.split(','), at = ' x1="' + c[0] + '" y1="' + c[1] + '" x2="' + c[2] + '" y2="' + c[3] + '"';
