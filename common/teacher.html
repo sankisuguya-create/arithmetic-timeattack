@@ -805,8 +805,7 @@ function fpFigDraw_(n){
   var ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
   n = Math.min(10000, Math.floor(n)); ctx.translate(w / 2, h / 2); ctx.fillStyle = '#245BC2'; ctx.strokeStyle = '#245BC2';
   var R = Math.min(w, h) * 0.46;
-  if(n < 2){ ctx.globalAlpha = .35; ctx.setLineDash([6, 8]); ctx.beginPath(); ctx.arc(0, 0, R * 0.85, 0, Math.PI * 2); ctx.stroke();
-    if(n === 1){ ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(0, 0, R * 0.12, 0, Math.PI * 2); ctx.fill(); } return; }
+  if(n < 2){ if(n === 1){ ctx.beginPath(); ctx.arc(0, 0, R * 0.12, 0, Math.PI * 2); ctx.fill(); } return; }   // 0は図なし、1は中心に1つだけ
   GrowingFigures.factorPoints(n, R).forEach(function(d){
     ctx.globalAlpha = d.cls ? 0.8 : 1; ctx.beginPath(); ctx.arc(d.x, d.y, Math.max(1, d.r * 0.95 / 0.72), 0, Math.PI * 2); ctx.fill(); });
 }
@@ -1794,8 +1793,9 @@ function coopFigPaint_(){
   base.setTransform(1, 0, 0, 1, 0, 0); base.clearRect(0, 0, $('coopFloor').width, $('coopFloor').height);
   ctx.setTransform(CP.DPR, 0, 0, CP.DPR, 0, 0); ctx.clearRect(0, 0, CP.W, CP.H);
   var own = CP.FOWN || [], n = own.length;
-  if(n < 2 || !window.GrowingFigures) return;
-  var pts = GrowingFigures.factorPoints(n, Math.min(CP.W, CP.H) * 0.46), k = 0.95 / 0.72;
+  if(!n || !window.GrowingFigures) return;     // 0は図なし
+  var R0 = Math.min(CP.W, CP.H) * 0.46, k = 0.95 / 0.72;
+  var pts = n === 1 ? [{ x: 0, y: 0, r: R0 * 0.12 / k }] : GrowingFigures.factorPoints(n, R0);   // 1は中心に1つだけ
   ctx.translate(CP.W / 2, CP.H / 2);
   pts.forEach(function(d, j){
     var s = own[j], a = (CP.sel < 0 || keyOf(s) === CP.sel) ? 1 : 0.12;
