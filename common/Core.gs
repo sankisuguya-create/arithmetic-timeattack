@@ -283,6 +283,19 @@ function classKey_(c) { return c.grade + '-' + c.cls; }
  * 「わり算9×16 だけ閉じる」ができず、`flag: null` のモードは閉じる手段が無かった。
  * 20モードのうち単独で閉じられるものが1つも無い状態だったので、モード単位にした。
  */
+/**
+ * class_config の1列目（クラス名「学年-組」）を文字列に戻す。
+ * スプレッドシートは「3-1」を日付（3月1日）として受け取ってしまい、読むと Date が返る。
+ * そのままだと名簿のクラス（"3-1"）と一致せず、公開したモードが児童に1つも出ない。
+ * Date なら月-日に読み替えて元の「学年-組」に戻す（保存時は列を文字列の書式にして、そもそも化けないようにする）。
+ */
+function clsCell_(x) {
+  if (Object.prototype.toString.call(x) === '[object Date]' && !isNaN(x.getTime())) {
+    return (x.getMonth() + 1) + '-' + x.getDate();
+  }
+  return String(x == null ? '' : x).trim();
+}
+
 function classConfig_(fresh) {
   // 教師画面は fresh で呼ぶ。設定した本人が見る画面が、
   // 最大60秒古い写しを見せると「保存できていない」と区別がつかない。
@@ -297,7 +310,7 @@ function classConfig_(fresh) {
     var v = sh.getDataRange().getValues();
     var head = v[0].map(String);
     for (var i = 1; i < v.length; i++) {
-      var ck = String(v[i][0]).trim();
+      var ck = clsCell_(v[i][0]);
       if (!ck) continue;
       var row = { modes: {}, seqOff: false };
       modeIds_().forEach(function (id) {
@@ -1385,6 +1398,7 @@ function saveClassConfig(rows) {
     if (hasNeeds_()) line.push(!!r.seqOff);
     out.push(line);
   });
+  sh.getRange(1, 1, out.length, 1).setNumberFormat('@');   // クラス名の列は文字列。「3-1」が日付に化けないように
   sh.getRange(1, 1, out.length, head.length).setValues(out);
   sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
   sh.setFrozenRows(1);

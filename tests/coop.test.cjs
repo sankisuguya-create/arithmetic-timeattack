@@ -1158,3 +1158,16 @@ console.log('coop.test.cjs: all assertions passed.');
   assert.ok(tui.includes('var m = Math.floor(e[2] * coopGwOf_(e[3]));'), 'N＝Σ floor(正答×倍率)');
   assert.ok(tui.includes('if(CP.FIG){ coopFigPaint_(); return; }'));
 }
+
+/* ---- class_config：クラス名「3-1」がスプレッドシートで日付（3月1日）に化けても読める ---- */
+{
+  const head = ctx.classHead_();
+  const row = [new Date(2026, 2, 1)].concat(head.slice(1).map((h, i) => i === 0));   // mode の先頭だけ TRUE
+  sheets.class_config = new Sheet('class_config', head);
+  sheets.class_config.values.push(row);
+  const map = ctx.classConfig_(true);
+  assert.ok(map['3-1'], '日付になったクラス名を「3-1」に戻して読む');
+  assert.equal(ctx.clsCell_(new Date(2026, 3, 12)), '4-12');
+  assert.equal(ctx.clsCell_(' 3-2 '), '3-2');
+  assert.ok(read('common/Core.gs').includes("sh.getRange(1, 1, out.length, 1).setNumberFormat('@');"), '保存時はクラス名の列を文字列の書式に');
+}
