@@ -5,24 +5,27 @@ var UNIT = {
   // 児童メニューのタイトルのふりがな。[漢字, 読み] か、読みの要らない文字列を並べる（つなぐと title と同じ文字列になる）
   titleRuby: [['素','そ'],['因','いん'],['数','すう'],['分','ぶん'],['解','かい'],'タイムアタック！'], teacherTitle: '素因数分解 設定・分析',
   units: {}, answerOrder: 'unordered',
-  interaction: { kind: 'prime-division', keys: factorPrimes_(179) },   // モードが keys を持つ時はそちらを使う（1000まで）
+  interaction: { kind: 'prime-division', keys: factorPrimes_(179) },   // モードが keys を持つ時はそちらを使う（今は使うモードなし）
   modes: [
     { id: 1, name: '16まで', desc: '4〜16の合成数', diagram: true },
     { id: 2, name: '九九まで', desc: '九九に現れる合成数', diagram: true },
     { id: 3, name: '360まで(素数〜13)', desc: '360までの合成数で、素因数が2・3・5・7・11・13だけのもの', diagram: true },
     { id: 4, name: '360まで(素数〜97)', desc: '360までの合成数で、最大の素因数が97以下のもの', diagram: true },
-    // 画面では5番目。id 5・6 は旧「図なし」の記録をそのまま引き継ぐために図なし側へ回したので、7にする
-    { id: 7, name: '1000まで(素数〜499)', desc: '1000までの合成数（素数キーは499まで）', diagram: true, keys: factorPrimes_(499) },
+    // 画面では5・6番目。id 5・6 は旧「図なし」の記録をそのまま引き継ぐために図なし側へ回したので、7・8にする。
+    // 1024＝2の10乗は、このモードで最も長い分解（因数10個）
+    { id: 7, name: '1024まで(素数〜13)', desc: '1024までの合成数で、素因数が2・3・5・7・11・13だけのもの', diagram: true },
+    { id: 8, name: '1024まで(素数〜97)', desc: '1024までの合成数で、最大の素因数が97以下のもの', diagram: true },
     // 図なし。pair のモードと同じ出題範囲・同じ公開設定で、記録だけ分ける。メニューでは左下の切り替えで出す。
     // 5・6 は旧モード5「九九まで（図なし）」・旧モード6「360まで（図なし）」の id。既存の記録をそのまま使う
     { id: 11, name: '16まで（図なし）', desc: 'モード1と同じ出題範囲', diagram: false, pair: 1 },
     { id: 5, name: '九九まで（図なし）', desc: 'モード2と同じ出題範囲', diagram: false, pair: 2 },
     { id: 13, name: '360まで(素数〜13)（図なし）', desc: 'モード3と同じ出題範囲', diagram: false, pair: 3 },
     { id: 6, name: '360まで(素数〜97)（図なし）', desc: 'モード4と同じ出題範囲', diagram: false, pair: 4 },
-    { id: 17, name: '1000まで(素数〜499)（図なし）', desc: '1000までと同じ出題範囲', diagram: false, pair: 7, keys: factorPrimes_(499) }
+    { id: 17, name: '1024まで(素数〜13)（図なし）', desc: 'モード7と同じ出題範囲', diagram: false, pair: 7 },
+    { id: 18, name: '1024まで(素数〜97)（図なし）', desc: 'モード8と同じ出題範囲', diagram: false, pair: 8 }
   ],
   // 図なしは図形の育ちを3倍にする（倍率の上限。教師画面の全般設定で変えられる）
-  growWeights: { 11: 3, 5: 3, 13: 3, 6: 3, 17: 3 },
+  growWeights: { 11: 3, 5: 3, 13: 3, 6: 3, 17: 3, 18: 3 },
   types: factorTypes_(),
   digitCap: factorCaps_(),
   // メニューの背景の床は使わない（menuFigure の「正答回数の図」に置き換え）。床の表示・育ちの設定欄は置かない
@@ -32,7 +35,7 @@ var UNIT = {
   /** メニューの背景の図形の代わりに、モードの左へ「正答回数の数の図」（素因数で入れ子にした円）を出す。
    *  正答回数＝モードごとの本番の正答 × 育ちの倍率（小数点以下切り捨て）の合計。10000で止める */
   menuFigure: 'factor',
-  tips: '図あり・図なしは別モード（5・6・11・13・17が図なし。5・6は旧「図なし」の記録を引き継ぐ）で記録します。1000までは素数キーが499まで出ます。公開は図ありのモードの設定に従います。初打鍵は最初の素数を選ぶまでの時間で、分解全体の想起時間ではありません。完成時間には素数キーの選択・縦スクロール・複数回の入力が含まれます。型は素因数の個数（重複を含む）です。',
+  tips: '図あり・図なしは別モード（5・6・11・13・17・18が図なし。5・6は旧「図なし」の記録を引き継ぐ）で記録します。公開は図ありのモードの設定に従います。初打鍵は最初の素数を選ぶまでの時間で、分解全体の想起時間ではありません。完成時間には素数キーの選択・縦スクロール・複数回の入力が含まれます。型は素因数の個数（重複を含む）です。',
   fmtAnswer: function (type, vals) { return vals.filter(function(v){ return Number(v) > 0; }).join(' × '); },
   gen: function (rand, mode) {
     var pool = factorPool_(mode);
@@ -54,9 +57,9 @@ var UNIT = {
   }
 };
 // UNIT の宣言より前に評価されるよう、変数ではなく関数で持つ
-function factorModes_() { return [1, 2, 3, 4, 7, 11, 5, 13, 6, 17]; }
+function factorModes_() { return [1, 2, 3, 4, 7, 8, 11, 5, 13, 6, 17, 18]; }
 /** 図なしのモードを、出題範囲の元になる図ありのモードに写す */
-function factorBase_(mode) { return { 11: 1, 5: 2, 13: 3, 6: 4, 17: 7 }[mode] || Number(mode); }
+function factorBase_(mode) { return { 11: 1, 5: 2, 13: 3, 6: 4, 17: 7, 18: 8 }[mode] || Number(mode); }
 function factorPrimes_(max) {
   var out = [];
   for (var n = 2; n <= max; n++) {
@@ -74,7 +77,7 @@ function factorParts_(n) {
 }
 function factorPool_(mode) {
   var base = factorBase_(mode);
-  var max = {1:16, 2:81, 3:360, 4:360, 7:1000}[base], maxP = {3:13, 4:97}[base] || 0;
+  var max = {1:16, 2:81, 3:360, 4:360, 7:1024, 8:1024}[base], maxP = {3:13, 4:97, 7:13, 8:97}[base] || 0;
   if (!max) throw new Error('不正なモード');
   var out = [], kuku = base === 2;
   for (var n = 4; n <= max; n++) {
@@ -102,7 +105,7 @@ function factorCaps_() {
 }
 
 function factorTypes_() {
-  var out = {}, names = { 1: '16まで', 2: '九九まで', 3: '360まで(素数〜13)', 4: '360まで(素数〜97)', 7: '1000まで(素数〜499)' };
+  var out = {}, names = { 1: '16まで', 2: '九九まで', 3: '360まで(素数〜13)', 4: '360まで(素数〜97)', 7: '1024まで(素数〜13)', 8: '1024まで(素数〜97)' };
   // 実際に出題される型だけを宣言する（出ない型を宣言すると教師画面に「宣言だけ残っている」注意が出る）
   factorModes_().forEach(function (m) { factorPool_(m).forEach(function(n){ var p=Math.min(6,factorParts_(n).length); var b=factorBase_(m); out['m'+m+'p'+p]=names[b]+(b!==m?'（図なし）':'')+'・'+p+(p===6?'個以上':'個')+'の素因数'; }); });
   return out;
