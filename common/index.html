@@ -2389,31 +2389,12 @@ function figTogPaint_(){
     b.setAttribute('aria-pressed', String(off === FIGOFF)); b.innerHTML = figIcon_(off);
   });
 }
-/* 切り替えの演出。新しい画面を、押したアイコンを中心に広げる（View Transitions の新しい側を clip-path で切り抜く）。
- *   ripple：波紋。広がる円の先を、細くなりながら先へ進む輪が走る
- *   tile：タイル。正方形のタイルが、近いものから順にふくらんで敷き詰まる
- * どちらも点・円・四角の数を全コマで同じにして、コマの間を補間させる */
-var FIGFX = 'ripple';
-function figFxFrames_(kind, ox, oy){
+/* 切り替えの演出：波紋。新しい画面を、押したアイコンを中心に円で広げ、その先を細くなりながら進む輪が走る
+ * （View Transitions の新しい側を clip-path で切り抜く）。円の数を全コマで同じにして、コマの間を補間させる */
+function figFxFrames_(ox, oy){
   var W = innerWidth, H = innerHeight, far = Math.max(Math.hypot(ox, oy), Math.hypot(W - ox, oy), Math.hypot(ox, H - oy), Math.hypot(W - ox, H - oy));
   var F = 36, frames = [];
   function circ(r){ r = Math.max(0, r); return 'M' + (ox - r).toFixed(1) + ' ' + oy.toFixed(1) + 'a' + r.toFixed(1) + ' ' + r.toFixed(1) + ' 0 1 0 ' + (2 * r).toFixed(1) + ' 0a' + r.toFixed(1) + ' ' + r.toFixed(1) + ' 0 1 0 ' + (-2 * r).toFixed(1) + ' 0Z'; }
-  if(kind === 'tile'){
-    var T = Math.ceil(Math.min(W, H) / 9), cols = Math.ceil(W / T), rows = Math.ceil(H / T), tiles = [], maxd = 0;
-    for(var j = 0; j < rows; j++) for(var i = 0; i < cols; i++){
-      var cx = (i + .5) * T, cy = (j + .5) * T, d = Math.hypot(cx - ox, cy - oy);
-      tiles.push([cx, cy, d]); if(d > maxd) maxd = d;
-    }
-    for(var f = 0; f <= F; f++){
-      var p = f / F, path = '';
-      tiles.forEach(function(t){
-        var q = Math.max(0, Math.min(1, (p * 1.45 - t[2] / maxd) / .45)), e = 1 - Math.pow(1 - q, 3), h = (T * e + (q >= 1 ? 1 : 0)) / 2;
-        path += 'M' + (t[0] - h).toFixed(1) + ' ' + (t[1] - h).toFixed(1) + 'h' + (2 * h).toFixed(1) + 'v' + (2 * h).toFixed(1) + 'h' + (-2 * h).toFixed(1) + 'Z';
-      });
-      frames.push({ clipPath: 'path(\'' + path + '\')' });
-    }
-    return frames;
-  }
   // 波紋：内側の円（新しい画面）＋その先の輪4本。輪は外ほど細く、間隔は一定。evenodd で輪の内側を抜く
   for(var f2 = 0; f2 <= F; f2++){
     var p2 = f2 / F, e2 = 1 - Math.pow(1 - p2, 2.2), R = e2 * (far + 140) - 60, path2 = circ(R), grow = Math.min(1, p2 * 5);
@@ -2437,8 +2418,8 @@ function figSet_(off, from){
   var ox = box.left + box.width / 2, oy = box.top + box.height / 2;
   var vt = document.startViewTransition(apply);
   vt.ready.then(function(){
-    document.documentElement.animate(figFxFrames_(FIGFX, ox, oy),
-      { duration: FIGFX === 'tile' ? 1000 : 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
+    document.documentElement.animate(figFxFrames_(ox, oy),
+      { duration: 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
   }).catch(function(){});
 }
 function isLocked(m){ return !!LOCKED[m]; }
