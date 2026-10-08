@@ -2400,9 +2400,26 @@ function figSet_(off){
   if(reduce || !document.startViewTransition){ apply(); return; }
   var vt = document.startViewTransition(apply);
   vt.ready.then(function(){
-    var r = [0, 18, 20, 42, 45, 70, 73, 100, 104, 150], at = [0, .14, .22, .36, .44, .58, .66, .8, .86, 1];
-    document.documentElement.animate(r.map(function(v, i){ return { clipPath: 'circle(' + v + '% at 0% 100%)', offset: at[i] }; }),
-      { duration: 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
+    // 前線はギザギザの線。左下の角から右上の角へ、対角線に沿って進む（線そのものは対角線に直交）
+    var W = innerWidth, H = innerHeight, D = Math.hypot(W, H), ux = W / D, uy = -H / D, nx = -uy, ny = ux;
+    var N = 90, jag = Math.max(14, D * .02), seed = 7;
+    function R(){ seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+    var tooth = [];
+    for(var i = 0; i <= N; i++) tooth.push((i % 2 ? 1 : -.4) * jag * (.55 + R() * .9));   // 山と谷を交互に、高さはばらつかせる
+    function front(d, wob){
+      var pts = [], cx = ux * d, cy = H + uy * d;
+      pts.push((cx - ux * D * 2 - nx * D) + 'px ' + (cy - uy * D * 2 - ny * D) + 'px');
+      for(var i = 0; i <= N; i++){
+        var t = (i / N * 2 - 1) * D, j = tooth[i] * (1 + (R() - .5) * wob);
+        pts.push((cx + nx * t + ux * j) + 'px ' + (cy + ny * t + uy * j) + 'px');
+      }
+      pts.push((cx - ux * D * 2 + nx * D) + 'px ' + (cy - uy * D * 2 + ny * D) + 'px');
+      return 'polygon(' + pts.join(',') + ')';
+    }
+    // 伸びと止まりを交互に置いて「ズズズ…」と引っかかりながら進める。止まる間も歯の高さが少し揺れる
+    var r = [-.05, .2, .22, .44, .46, .68, .7, .92, .94, 1.15], at = [0, .14, .22, .36, .44, .58, .66, .8, .86, 1];
+    document.documentElement.animate(r.map(function(v, i){ return { clipPath: front(v * D, i % 2 ? .5 : .2), offset: at[i] }; }),
+      { duration: 1200, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
   }).catch(function(){});
 }
 function isLocked(m){ return !!LOCKED[m]; }
