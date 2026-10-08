@@ -1148,6 +1148,8 @@ console.log('coop.test.cjs: all assertions passed.');
   assert.ok(ui.includes('n += Math.floor((Number(FLOOR.tcm[m]) || 0) * (Number((FLOOR.gw || {})[m]) || 1));'));
   assert.ok(ui.includes('var MENUFIG_MAX = 10000;') && ui.includes("function floorOn_(){ return !MENUFIG && "));
   assert.ok(ui.includes('FLOOR.tcm[mode] = (Number(FLOOR.tcm[mode]) || 0) + n;'), '本番を終えた時点で図も増える');
+  // 教師が開いた児童画面だけ、正答回数を超える数を図にできる
+  assert.ok(ui.includes('MENUFIG_FREE = !!r.teacher;') && ui.includes('(MENUFIG_FREE || v <= total)'));
 }
 
 /* ---- 協力プレイの「正答数の図」（menuFigure='factor' の単元） ---- */
