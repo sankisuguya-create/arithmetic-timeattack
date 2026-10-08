@@ -9,17 +9,17 @@ var UNIT = {
   modes: [
     { id: 1, name: '16まで', desc: '4〜16の合成数', diagram: true },
     { id: 2, name: '九九まで', desc: '九九に現れる合成数', diagram: true },
-    { id: 3, name: '360まで(素数13)', desc: '360までの合成数で、素因数が2・3・5・7・11・13だけのもの', diagram: true },
-    { id: 4, name: '360まで(素数97)', desc: '360までの合成数で、最大の素因数が97以下のもの', diagram: true },
+    { id: 3, name: '360まで(素数〜13)', desc: '360までの合成数で、素因数が2・3・5・7・11・13だけのもの', diagram: true },
+    { id: 4, name: '360まで(素数〜97)', desc: '360までの合成数で、最大の素因数が97以下のもの', diagram: true },
     // 画面では5番目。id 5・6 は旧「図なし」の記録をそのまま引き継ぐために図なし側へ回したので、7にする
-    { id: 7, name: '1000まで', desc: '1000までの合成数（素数キーは499まで）', diagram: true, keys: factorPrimes_(499) },
+    { id: 7, name: '1000まで(素数〜499)', desc: '1000までの合成数（素数キーは499まで）', diagram: true, keys: factorPrimes_(499) },
     // 図なし。pair のモードと同じ出題範囲・同じ公開設定で、記録だけ分ける。メニューでは左下の切り替えで出す。
     // 5・6 は旧モード5「九九まで（図なし）」・旧モード6「360まで（図なし）」の id。既存の記録をそのまま使う
     { id: 11, name: '16まで（図なし）', desc: 'モード1と同じ出題範囲', diagram: false, pair: 1 },
     { id: 5, name: '九九まで（図なし）', desc: 'モード2と同じ出題範囲', diagram: false, pair: 2 },
-    { id: 13, name: '360まで(素数13)（図なし）', desc: 'モード3と同じ出題範囲', diagram: false, pair: 3 },
-    { id: 6, name: '360まで(素数97)（図なし）', desc: 'モード4と同じ出題範囲', diagram: false, pair: 4 },
-    { id: 17, name: '1000まで（図なし）', desc: '1000までと同じ出題範囲', diagram: false, pair: 7, keys: factorPrimes_(499) }
+    { id: 13, name: '360まで(素数〜13)（図なし）', desc: 'モード3と同じ出題範囲', diagram: false, pair: 3 },
+    { id: 6, name: '360まで(素数〜97)（図なし）', desc: 'モード4と同じ出題範囲', diagram: false, pair: 4 },
+    { id: 17, name: '1000まで(素数〜499)（図なし）', desc: '1000までと同じ出題範囲', diagram: false, pair: 7, keys: factorPrimes_(499) }
   ],
   // 図なしは図形の育ちを3倍にする（倍率の上限。教師画面の全般設定で変えられる）
   growWeights: { 11: 3, 5: 3, 13: 3, 6: 3, 17: 3 },
@@ -102,7 +102,7 @@ function factorCaps_() {
 }
 
 function factorTypes_() {
-  var out = {}, names = { 1: '16まで', 2: '九九まで', 3: '360まで(素数13)', 4: '360まで(素数97)', 7: '1000まで' };
+  var out = {}, names = { 1: '16まで', 2: '九九まで', 3: '360まで(素数〜13)', 4: '360まで(素数〜97)', 7: '1000まで(素数〜499)' };
   // 実際に出題される型だけを宣言する（出ない型を宣言すると教師画面に「宣言だけ残っている」注意が出る）
   factorModes_().forEach(function (m) { factorPool_(m).forEach(function(n){ var p=Math.min(6,factorParts_(n).length); var b=factorBase_(m); out['m'+m+'p'+p]=names[b]+(b!==m?'（図なし）':'')+'・'+p+(p===6?'個以上':'個')+'の素因数'; }); });
   return out;
