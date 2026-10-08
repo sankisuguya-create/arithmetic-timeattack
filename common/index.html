@@ -410,13 +410,15 @@ body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.
 #menuFig[hidden],#menuFigN[hidden]{display:none}
 #menuFigCv{width:100%;aspect-ratio:1;max-height:78vh}
 #menuFigN{z-index:2}
-#menuFigNum{font-size:1.8rem;font-weight:700;color:var(--acc);font-variant-numeric:tabular-nums}
+/* 正答回数の数字は図の列の下端に小さく沈める（主役は図）。切り替えアイコンの左に並ぶ */
+#menuFigNum{position:absolute;bottom:1rem;right:calc(1rem + 88px + .4rem + .8rem);line-height:44px;font-size:1.15rem;font-weight:700;color:var(--mute);font-variant-numeric:tabular-nums}
 #menuFigN{position:absolute;left:1rem;bottom:1rem;width:9.5em;padding:.45rem .6rem;font:inherit;font-size:1rem;text-align:center;border-radius:10px;
   border:1.5px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:inherit}
 #menuFigN::placeholder{color:inherit;opacity:.45}
 #menuFigN.over{border-color:var(--alert,#C0330A)}
 /* 図あり／図なしの切り替え（pair のモードを持つ単元だけ）。左下の数の欄の右に並べる */
-#figTog{position:absolute;left:calc(1rem + 9.5em + .6rem);bottom:1rem;display:flex;gap:.4rem;z-index:2}
+/* 図の列とモードの境界に右端を揃える */
+#figTog{position:absolute;left:calc(min(44vw,600px) - 1rem);transform:translateX(-100%);bottom:1rem;display:flex;gap:.4rem;z-index:2}
 #figTog[hidden]{display:none}
 #figTog button{width:44px;height:44px;padding:0;border-radius:10px;border:1.5px solid var(--line);background:rgba(255,255,255,.85);cursor:pointer;
   display:flex;align-items:center;justify-content:center;touch-action:manipulation;-webkit-tap-highlight-color:transparent;opacity:.5}
@@ -432,7 +434,7 @@ body.figoff .card .k{background:transparent;border:1.5px solid #5FE3FF;color:#5F
 body.figoff .card.locked{background:#0A0C12}
 body.figoff .pbtn .k{background:transparent;border:1.5px solid #5FE3FF;color:#5FE3FF}
 body.figoff .pbtn:hover,body.figoff .tap:hover{background:#0C0F18}
-body.figoff #menuFigNum,body.figoff .timelede{text-shadow:0 0 .6em rgba(95,227,255,.55)}
+body.figoff .timelede{text-shadow:0 0 .6em rgba(95,227,255,.55)}
 body.figoff #figTog button,body.figoff #floorReplay{background:#0C0F18}
 body.figoff #play{background:#05060A}
 body.figoff #bar{background:linear-gradient(90deg,#5FE3FF,#B48CFF)}
@@ -441,7 +443,7 @@ body.figoff .prime-previous{color:#B48CFF}
 body.figoff #play{--acc:#5FE3FF}
 body.figoff #primeKeys button{background:#080B12;border:1.5px solid #24384C;color:#CFEFFF}
 body.figoff #primeKeys button:active{background:#0B1A22;border-color:#5FE3FF;box-shadow:0 0 .8em rgba(95,227,255,.6);color:#fff}
-@media(max-width:760px){#start.figmode{padding-left:1.3rem}#menuFig{width:100%;opacity:.22;pointer-events:none;z-index:-1}#menuFigNum{display:none}}
+@media(max-width:760px){#figTog{left:calc(1rem + 9.5em + .6rem);transform:none}#start.figmode{padding-left:1.3rem}#menuFig{width:100%;opacity:.22;pointer-events:none;z-index:-1}#menuFigNum{display:none}}
 @media(max-height:570px){.prime-diagram{height:32vh}.prime-main{min-height:120px}.prime-value{font-size:72px}#play.prime-mode .stage{padding-top:42px;bottom:12px}.prime-current{padding:5px 0;min-height:36px}}
 @media(max-width:480px){#play.prime-mode .stage{padding-left:12px;padding-right:12px}.prime-main{gap:8px}.prime-origin{font-size:13px}#play.prime-mode .stage{width:58%;padding-left:6px;padding-right:6px}#play.prime-mode #primeKeys{width:42%;gap:5px;padding:6px}.prime-main{grid-template-columns:1fr;min-height:0}.prime-diagram{height:25vh}#primeKeys button{font-size:20px}.prime-current{font-size:17px}.prime-previous{font-size:15px}.prime-value{font-size:72px}}
 </style>
@@ -2275,7 +2277,7 @@ function menuFigDraw_(){
   if(cv.width !== W || cv.height !== Hh){ cv.width = W; cv.height = Hh; }
   var g = cv.getContext('2d'); g.clearRect(0, 0, W, Hh);
   if(FIGOFF) g.drawImage(batsu_(W, Hh), 0, 0);    // 図なしの時だけ、図形の後ろに絵筆のばつ印
-  var acc = getComputedStyle($('menuFigNum')).color || '#245BC2';
+  var acc = getComputedStyle($('start')).getPropertyValue('--acc').trim() || '#245BC2';   // 数字は沈めた色なので、図は強調色を直接読む
   if(shown < 2){                                 // 0は図なし、1は中心に円を1つだけ
     if(shown === 1){ g.fillStyle = acc; g.beginPath(); g.arc(W / 2, Hh / 2, Math.min(W, Hh) * 0.06, 0, Math.PI * 2); g.fill(); }
     return;
@@ -2362,8 +2364,13 @@ function figIcon_(off){
   return '<svg viewBox="0 0 44 44" aria-hidden="true">' + p.map(function(d){
       return '<circle cx="' + (22 + d.x).toFixed(1) + '" cy="' + (22 + d.y).toFixed(1) + '" r="' + Math.max(1.6, d.r * 0.95 / 0.72).toFixed(1) + '" fill="' + col + '"/>';
     }).join('') +
-    (off ? '<line x1="9" y1="35" x2="35" y2="9" stroke="' + bg + '" stroke-width="7" stroke-linecap="round"/>' +
-           '<line x1="9" y1="35" x2="35" y2="9" stroke="' + fg + '" stroke-width="3" stroke-linecap="round"/>' : '') + '</svg>';
+    (off ? ['9,35,35,9', '9,9,35,35'].map(function(l){          // ／と＼を重ねて×にする
+        var c = l.split(','), at = ' x1="' + c[0] + '" y1="' + c[1] + '" x2="' + c[2] + '" y2="' + c[3] + '"';
+        return '<line' + at + ' stroke="' + bg + '" stroke-width="7" stroke-linecap="round"/>';
+      }).join('') + ['9,35,35,9', '9,9,35,35'].map(function(l){
+        var c = l.split(','), at = ' x1="' + c[0] + '" y1="' + c[1] + '" x2="' + c[2] + '" y2="' + c[3] + '"';
+        return '<line' + at + ' stroke="' + fg + '" stroke-width="3" stroke-linecap="round"/>';
+      }).join('') : '') + '</svg>';
 }
 function figTogPaint_(){
   document.body.classList.toggle('figoff', FIGOFF);

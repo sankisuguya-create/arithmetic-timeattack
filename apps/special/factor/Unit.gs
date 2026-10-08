@@ -19,8 +19,8 @@ var UNIT = {
     { id: 6, name: '360まで(素数97)（図なし）', desc: 'モード4と同じ出題範囲', diagram: false, pair: 4 },
     { id: 17, name: '1000まで（図なし）', desc: '1000までと同じ出題範囲', diagram: false, pair: 7, keys: factorPrimes_(499) }
   ],
-  // 図なしは図形の育ちを2倍にする（教師画面の全般設定で変えられる）
-  growWeights: { 11: 2, 5: 2, 13: 2, 6: 2, 17: 2 },
+  // 図なしは図形の育ちを3倍にする（倍率の上限。教師画面の全般設定で変えられる）
+  growWeights: { 11: 3, 5: 3, 13: 3, 6: 3, 17: 3 },
   types: factorTypes_(),
   digitCap: factorCaps_(),
   // メニューの背景の床は使わない（menuFigure の「正答回数の図」に置き換え）。床の表示・育ちの設定欄は置かない
