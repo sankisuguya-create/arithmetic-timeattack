@@ -426,6 +426,9 @@ body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.
 #figTog button[aria-pressed="true"]{opacity:1;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
 #figTog button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 #figTog svg{width:36px;height:36px}
+/* 切り替えの演出（figSet_）。既定のクロスフェードを止め、新しい画面を古い画面の上に重ねて円で切り抜く */
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-new(root){z-index:2}
 /* 図なし（暗室）：黒地に光る数字。素数キーは輪郭だけで、押すと光る */
 body.figoff{--paper:#05060A;--ink:#E9F6FF;--line:#1D2A3A;--mute:#7F93A8}
 body.figoff #start,body.figoff #keyset,body.figoff #popt,body.figoff #ptime,body.figoff #ptype,body.figoff #result{--acc:#5FE3FF;background:#05060A;color:#E9F6FF}
@@ -2361,19 +2364,22 @@ var FIGOFF = false, PAIR_OF = {};
 function figMode_(m){ return (FIGOFF && PAIR_OF[m]) || m; }
 function figIcon_(off){
   var dark = FIGOFF, col = dark ? '#5FE3FF' : '#245BC2', bg = dark ? '#0C0F18' : '#FFFFFF', fg = dark ? '#E9F6FF' : '#101728';
-  // 4 の図（2×2）を45°回して上下左右に置く。図なしの×（／と＼）がちょうど粒の間を通り、重ねても元の図が読める
-  var p = (typeof GrowingFigures === 'undefined') ? [] : GrowingFigures.factorPoints(4, 13), c = Math.SQRT1_2;
-  var far = Math.max.apply(null, p.map(function(d){ return Math.hypot(d.x, d.y); }).concat([1e-6])), c2 = c * 11 / far;   // 粒の中心を中心から11の所へ
-  return '<svg viewBox="0 0 44 44" aria-hidden="true">' + p.map(function(d){
-      var x = (d.x - d.y) * c2, y = (d.x + d.y) * c2;
-      return '<circle cx="' + (22 + x).toFixed(1) + '" cy="' + (22 + y).toFixed(1) + '" r="' + '4' + '" fill="' + col + '"/>';
-    }).join('') +
+  // 12＝4×3 の図：3粒の組を上下左右に4つ。素因数で入れ子にする図の形を残しつつ、組を×（／と＼）の間に置いて、図なしで重ねても隠れないようにする
+  var dots = [];
+  [0, 1, 2, 3].forEach(function(i){
+    var a = i * Math.PI / 2, gx = 22 + Math.sin(a) * 12.5, gy = 22 - Math.cos(a) * 12.5;
+    [0, 1, 2].forEach(function(k){
+      var b = a + k * 2 * Math.PI / 3;
+      dots.push('<circle cx="' + (gx + Math.sin(b) * 3.2).toFixed(1) + '" cy="' + (gy - Math.cos(b) * 3.2).toFixed(1) + '" r="2" fill="' + col + '"/>');
+    });
+  });
+  return '<svg viewBox="0 0 44 44" aria-hidden="true">' + dots.join('') +
     (off ? ['9,35,35,9', '9,9,35,35'].map(function(l){          // ／と＼を重ねて×にする
         var c = l.split(','), at = ' x1="' + c[0] + '" y1="' + c[1] + '" x2="' + c[2] + '" y2="' + c[3] + '"';
-        return '<line' + at + ' stroke="' + bg + '" stroke-width="7" stroke-linecap="round"/>';
+        return '<line' + at + ' stroke="' + bg + '" stroke-width="5" stroke-linecap="round"/>';
       }).join('') + ['9,35,35,9', '9,9,35,35'].map(function(l){
         var c = l.split(','), at = ' x1="' + c[0] + '" y1="' + c[1] + '" x2="' + c[2] + '" y2="' + c[3] + '"';
-        return '<line' + at + ' stroke="' + fg + '" stroke-width="3" stroke-linecap="round"/>';
+        return '<line' + at + ' stroke="' + fg + '" stroke-width="2.5" stroke-linecap="round"/>';
       }).join('') : '') + '</svg>';
 }
 function figTogPaint_(){
@@ -2387,7 +2393,17 @@ function figSet_(off){
   if(FIGOFF === off) return;
   FIGOFF = off;
   try { localStorage.setItem('figoff:' + APP_ID, off ? '1' : ''); } catch (e) {}
-  figTogPaint_(); renderMenu(); menuFigDraw_();
+  var apply = function(){ figTogPaint_(); renderMenu(); menuFigDraw_(); };
+  // 切り替えの演出：新しい画面が左下から「ズズズ…」と広がる。引っかかりながら進むよう、伸びと止まりを交互に置く。
+  // 動きを減らす設定の端末と、View Transitions の無いブラウザでは、すぐ切り替える
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduce || !document.startViewTransition){ apply(); return; }
+  var vt = document.startViewTransition(apply);
+  vt.ready.then(function(){
+    var r = [0, 18, 20, 42, 45, 70, 73, 100, 104, 150], at = [0, .14, .22, .36, .44, .58, .66, .8, .86, 1];
+    document.documentElement.animate(r.map(function(v, i){ return { clipPath: 'circle(' + v + '% at 0% 100%)', offset: at[i] }; }),
+      { duration: 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
+  }).catch(function(){});
 }
 function isLocked(m){ return !!LOCKED[m]; }
 
