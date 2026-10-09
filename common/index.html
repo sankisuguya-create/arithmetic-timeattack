@@ -610,6 +610,18 @@ var APP_ID = <?!= JSON.stringify(String(UNIT.id)) ?>;
 
 /* モードはサーバー（Unit.gs）から受け取る。この画面は単元を知らない */
 var MODES = {}, MODES_ALL = [], LOCKED = {};
+/* 正答回数による段階解放（クラスで入っている時だけ { モード: 必要な正答回数 }）。
+ * 閉じているかの正本はサーバー（boot の locked・startSession）。本番を終えて正答回数が届いたら、
+ * 次の boot を待たずにここで開けて見せる（同じ式なので、サーバーも同じ判定で通す） */
+var NUNLOCK = null;
+function nUnlockRelock_(){
+  if(!NUNLOCK) return;
+  var n = menuFigCount_();
+  Object.keys(LOCKED).forEach(function(id){
+    var m = MODES[id], need = m && Number(NUNLOCK[m.pair || m.id]);
+    if(need && n >= need && /せいかいの かいすう/.test(LOCKED[id])) delete LOCKED[id];
+  });
+}
 /* boot() の結果を1度でも反映したか。
    公開モードが0件のとき、起動待ちなのか「教師がまだ開いていない」のかを
    区別するために要る。両方を『よみこみ中…』と出すと、
@@ -774,6 +786,7 @@ function floorAdd(mode, n){
   var pace = Number(FLOOR.pace[mode]) || 20;
   FLOOR.min += n / pace; FLOOR.grew = true;   // 次にメニューが見えた時、増えた分を演出つきで見せる
   FLOOR.tcm[mode] = (Number(FLOOR.tcm[mode]) || 0) + n;
+  nUnlockRelock_();
   try{ var c = bootCacheLoad(); if(c && c.floor){ c.floor.min = FLOOR.min; c.floor.tcm = FLOOR.tcm; bootCacheSave(c); } }catch(e){}
 }
 
@@ -3824,6 +3837,7 @@ function applyBoot(r, live){
   CFG.open = r.open || {}; CFG.guest = !!r.guest;
   CFG.settings = r.settings || {};
   LOCKED = r.locked || {};             // 古い控えには無いので {}（＝全部開いて見える）に落とす
+  NUNLOCK = (r.nGate && r.unit.nUnlock) || null;
   MODES = {}; MODES_ALL = []; PAIR_OF = {};
   (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); if(m.pair) PAIR_OF[m.pair] = m.id; });
   INTERACTION = r.unit.interaction || null;
