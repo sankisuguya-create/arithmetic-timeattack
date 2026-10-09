@@ -1117,7 +1117,7 @@ $('agg').onclick = function(){
 /* ===== 公開モードタブ（クラスごとの公開モード） =====
  * 列見出しはモード番号にして、名前と例は表の下の凡例に置く。
  * モード名（「かんさん きほん」など）をそのまま6列並べると表が横に伸びて読めない。 */
-var CLS = { classes: [], modes: [], hasNeeds: false };
+var CLS = { classes: [], modes: [], hasNeeds: false, nUnlock: null };
 
 function renderClasses(){
   var head = $('clsHead');
@@ -1126,6 +1126,7 @@ function renderClasses(){
       return '<th class="c">'+(i+1)+'</th>';
     }).join('') +
     (CLS.hasNeeds ? '<th class="c">順序の<br>解除</th>' : '') +
+    (CLS.nUnlock ? '<th class="c">段階<br>解放</th>' : '') +
     '<th class="c">一括</th>';
 
   $('clsBody').innerHTML = CLS.classes.map(function(c){
@@ -1137,6 +1138,10 @@ function renderClasses(){
       cells += '<td class="c"><input type="checkbox" data-cls="'+esc(c.cls)+
                '" data-seq="1"'+(c.seqOff?' checked':'')+'></td>';
     }
+    if(CLS.nUnlock){
+      cells += '<td class="c"><input type="checkbox" data-cls="'+esc(c.cls)+
+               '" data-nun="1"'+(c.nUnlock?' checked':'')+'></td>';
+    }
     cells += '<td class="c nw">'+
       '<button type="button" class="bstep sm" data-b="1" data-c="'+esc(c.cls)+'">全オン</button> '+
       '<button type="button" class="bstep sm" data-b="0" data-c="'+esc(c.cls)+'">オフ</button></td>';
@@ -1146,9 +1151,15 @@ function renderClasses(){
 
   $('clsLegend').innerHTML =
     CLS.modes.map(function(m, i){
+      var need = CLS.nUnlock && CLS.nUnlock[m.id];
       return '<div><span class="n">'+(i+1)+'</span><b>'+esc(m.name)+'</b>'+
-             (m.desc ? '　'+esc(m.desc) : '')+'</div>';
+             (m.desc ? '　'+esc(m.desc) : '')+
+             (need ? '　<span class="mute">（段階解放：正答回数 '+esc(need)+'）</span>' : '')+'</div>';
     }).join('') +
+    (CLS.nUnlock
+      ? '<div class="mt4">「段階解放」を入れると、公開したモードのうち、児童の正答回数（メニューの図の数）が'+
+        '上の数に届いたものから順に使えるようになります。届くまでは、児童の画面に「せいかいの かいすうが ◯ に なると あきます」と出ます。</div>'
+      : '') +
     (CLS.hasNeeds
       ? '<div class="mt4">「順序の解除」を入れると、前のモードの回数に関係なく'+
         'すべて使えるようになります。</div>'
@@ -1186,6 +1197,7 @@ function collectClasses(){
     var c = map[cb.dataset.cls];
     if(!c) return;
     if(cb.dataset.seq) c.seqOff = cb.checked;
+    else if(cb.dataset.nun) c.nUnlock = cb.checked;
     else c.modes[cb.dataset.m] = cb.checked;
   });
 }

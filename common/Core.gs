@@ -319,6 +319,8 @@ function classConfig_(fresh) {
       });
       var sc = head.indexOf('seq_off');
       if (sc >= 0) row.seqOff = toBool_(v[i][sc]);
+      var nc = head.indexOf('n_unlock');
+      if (nc >= 0) row.nUnlock = toBool_(v[i][nc]);
       map[ck] = row;
     }
   }
@@ -348,11 +350,39 @@ function seqOffFor_(grade, cls) {
   return !!(over && over.seqOff);
 }
 
-function modeAllowed_(mode, open, seqOff, tries) {
+/** gateN：段階解放を使うクラスなら児童の正答回数 N、使わないなら null（nGateFor_） */
+function modeAllowed_(mode, open, seqOff, tries, gateN) {
   var m = modeDef_(mode);
   if (!m) return false;
   if (!open[m.id]) return false;
+  if (!nMet_(m, gateN)) return false;
   return needsMet_(m, seqOff, tries);
+}
+
+/*
+ * 正答回数による段階解放（UNIT.nUnlock = { モード: 必要な正答回数 }）。
+ * 正答回数 N はメニューの「正答回数の図」と同じ数（モードごとの本番の正答 × 育ちの倍率、切り捨ての合計）。
+ * 児童が画面で見ている数で開くので、次がいつ開くかを自分で見通せる。
+ * 成績（1回の正答数）ではなく累計なので、遅い子も続ければ必ず届く（needsMet_ の注記と同じ理由）。
+ * クラスごとに class_config の n_unlock で入れる。pair のモードは相方の閾値に従う。
+ */
+function hasNUnlock_() { return !!(UNIT.nUnlock && Object.keys(UNIT.nUnlock).length); }
+function nNeed_(m) { var t = UNIT.nUnlock || {}; return Number(t[m.pair || m.id]) || 0; }
+function nMet_(m, gateN) { return gateN == null || nNeed_(m) <= gateN; }
+function nUnlockFor_(grade, cls) {
+  var over = classConfig_()[grade + '-' + cls];
+  return hasNUnlock_() && !!(over && over.nUnlock);
+}
+/** 正答回数 N（index.html の menuFigCount_ と同じ式） */
+function figCount_(tcm) {
+  var gw = growWeights_(), n = 0;
+  Object.keys(tcm || {}).forEach(function (m) { n += Math.floor((Number(tcm[m]) || 0) * (Number(gw[m]) || 1)); });
+  return n;
+}
+function nGateFor_(c, mail) {
+  if (!nUnlockFor_(c.grade, c.cls)) return null;
+  var e = summaryIndex_(config_().limit_sec)[mail] || {};
+  return figCount_(e.tcm);
 }
 
 /**
@@ -383,10 +413,11 @@ function needsMet_(m, seqOff, tries) {
  * まだ開いていないモードに、開け方の案内文を付ける。{ モードid: 文言 }
  * 教師が非公開にしたモードはここに入れない（画面から消えるので案内する相手がいない）。
  */
-function lockNotes_(open, seqOff, tries) {
+function lockNotes_(open, seqOff, tries, gateN) {
   var out = {};
   UNIT.modes.forEach(function (m) {
     if (!open[m.id]) return;
+    if (!nMet_(m, gateN)) { out[m.id] = 'せいかいの かいすうが ' + nNeed_(m) + ' に なると あきます'; return; }
     if (needsMet_(m, seqOff, tries)) return;
     var nd = m.needs || modeDef_(m.pair).needs;
     out[m.id] = '「' + modeName_(nd.mode) + '」を ' +
@@ -415,6 +446,7 @@ function cfgModeIds_() { return UNIT.modes.filter(function (m) { return !m.pair;
 function classHead_() {
   var head = ['class'].concat(cfgModeIds_().map(function (id) { return 'mode_' + id; }));
   if (hasNeeds_()) head.push('seq_off');
+  if (hasNUnlock_()) head.push('n_unlock');
   return head;
 }
 
@@ -568,7 +600,7 @@ function boot() {
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, titleRuby: UNIT.titleRuby || null, modes: UNIT.modes,
             // 学年の進みの色・まちがいの赤・「？」の印の色。画面は色の値を持たず、ここから受け取る
-            grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, menuFigure: UNIT.menuFigure || '', accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
+            grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, menuFigure: UNIT.menuFigure || '', nUnlock: UNIT.nUnlock || null, accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
@@ -614,7 +646,9 @@ function boot() {
   var b = bests_(mail, cfg.limit_sec);
   base.best = b.best; base.practiceBest = b.practiceBest; base.stars = b.stars;
   base.floor = b.floor;
-  base.locked = lockNotes_(base.open, seqOffFor_(c.grade, c.cls), b.tries);
+  base.nGate = nUnlockFor_(c.grade, c.cls);   // 段階解放のクラス。画面は本番の後に正答回数で開け直す（nUnlockRelock_）
+  base.locked = lockNotes_(base.open, seqOffFor_(c.grade, c.cls), b.tries,
+                           base.nGate ? figCount_(b.floor.tcm) : null);
   base.medals = medals_(classKey_(c), mail, cfg.limit_sec);
   base.coop = coopForChild_(c);   // 協力モード中なら自分の色（なければ active:false）
   return base;
@@ -631,7 +665,7 @@ function nextPracticeItem(mode, type) {
   mode = Number(mode);
   if (modeIds_().indexOf(mode) < 0) return { ok: false };
   if (c && !modeAllowed_(mode, openFor_(c.grade, c.cls),
-                         seqOffFor_(c.grade, c.cls), triesForGate_(mail))) return { ok: false };
+                         seqOffFor_(c.grade, c.cls), triesForGate_(mail), nGateFor_(c, mail))) return { ok: false };
 
   var rand = rng_(Math.floor(Math.random() * 2147483647));
   var it = UNIT.gen(rand, mode);
@@ -671,7 +705,7 @@ function startSession(mode, practice) {
   }
 
   if (!modeAllowed_(mode, openFor_(c.grade, c.cls),
-                    seqOffFor_(c.grade, c.cls), triesForGate_(mail))) {
+                    seqOffFor_(c.grade, c.cls), triesForGate_(mail), nGateFor_(c, mail))) {
     return { ok: false, msg: 'このモードは まだ つかえません。' };
   }
 
@@ -1388,7 +1422,7 @@ function listClasses() {
   var orphans = [];
   for (var k in over) if (!known[k]) orphans.push(k);
 
-  return { classes: classes, modes: UNIT.modes.filter(function (m) { return !m.pair; }), hasNeeds: hasNeeds_(),
+  return { classes: classes, modes: UNIT.modes.filter(function (m) { return !m.pair; }), hasNeeds: hasNeeds_(), nUnlock: UNIT.nUnlock || null,
            orphans: orphans, where: where_() };
 }
 
@@ -1402,6 +1436,7 @@ function saveClassConfig(rows) {
   (rows || []).forEach(function (r) {
     var line = [String(r.cls)].concat(ids.map(function (id) { return !!(r.modes && r.modes[id]); }));
     if (hasNeeds_()) line.push(!!r.seqOff);
+    if (hasNUnlock_()) line.push(!!r.nUnlock);
     out.push(line);
   });
   sh.getRange(1, 1, out.length, 1).setNumberFormat('@');   // クラス名の列は文字列。「3-1」が日付に化けないように
@@ -1451,7 +1486,7 @@ function listClassesCore_(over) {
     if (seen[ck]) { seen[ck].n++; return; }
     var o = over[ck];
     var row = { cls: ck, grade: grade, room: cls, n: 1,
-                modes: {}, seqOff: !!(o && o.seqOff) };
+                modes: {}, seqOff: !!(o && o.seqOff), nUnlock: !!(o && o.nUnlock) };
     cfgModeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
     seen[ck] = row; out.push(row);
   });
@@ -3248,6 +3283,14 @@ function validateUnit_() {
     if (!b) probs.push('モード ' + m.id + ' の pair=' + m.pair + ' は存在しません');
     else if (b.pair) probs.push('モード ' + m.id + ' の pair 先 ' + m.pair + ' も pair を持っています');
     if (m.needs) probs.push('モード ' + m.id + ' は pair を持つので needs は相方に書いてください');
+  });
+  // 段階解放の閾値は、pair を持たない実在のモードに書く
+  Object.keys(UNIT.nUnlock || {}).forEach(function (k) {
+    var b = null;
+    (UNIT.modes || []).forEach(function (x) { if (String(x.id) === String(k)) b = x; });
+    if (!b) probs.push('UNIT.nUnlock のモード ' + k + ' は modes にありません');
+    else if (b.pair) probs.push('UNIT.nUnlock のモード ' + k + ' は pair を持つので、相方に書いてください');
+    else if (!(Number(UNIT.nUnlock[k]) > 0)) probs.push('UNIT.nUnlock のモード ' + k + ' の値は正の数にしてください');
   });
   // ループ検出（AがB、BがA を必要とする形だと永遠に開かない）
   modeIds.forEach(function (id) {
