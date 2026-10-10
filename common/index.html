@@ -423,6 +423,8 @@ body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.
 #figTog[hidden]{display:none}
 #fxDiag{position:absolute;left:1rem;bottom:calc(1rem + 52px);font-size:.75rem;color:var(--mute);z-index:2}
 #fxDiag[hidden]{display:none}
+#pDiag{position:absolute;right:12px;bottom:4px;font-size:.7rem;color:#7F93A8;z-index:6;pointer-events:none}
+#pDiag[hidden]{display:none}
 #figTog button{width:44px;height:44px;padding:0;border-radius:10px;border:1.5px solid var(--line);background:rgba(255,255,255,.85);cursor:pointer;
   display:flex;align-items:center;justify-content:center;touch-action:manipulation;-webkit-tap-highlight-color:transparent;opacity:.5}
 #figTog button[aria-pressed="true"]{opacity:1;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
@@ -537,6 +539,7 @@ body.figoff #primeKeys button:active{background:#0B1A22;border-color:#5FE3FF;box
 </section>
 
 <section id="play" class="screen">
+  <div id="pDiag" hidden></div>
   <div id="bar"></div>
   <div class="hud">
     <div class="medal" id="playMedal"></div>
@@ -3438,24 +3441,38 @@ function practiceRecorded(timed){
 }
 
 /* 記録しない練習（むせいげん）の出題。サーバーから1問ずつ受け取る。
-   1問だけ先読みしておくので、2問目以降は待ち時間が出ない。 */
-var pBuf = null, pFetching = false, pFail = 0, pWaitTimer = 0;
+   GAS の1往復は1〜数秒かかり、素因数分解のように速く解ける問題では1問の先読みでは追いつかず「…」で待たせていた。
+   そこで3問先まで並行して先読みする。応答が8秒来ない時は、その往復を捨てて取り直す（届かないまま止まらないように）。
+   練習を始め直すたびに pGen を進め、前の練習の遅れて届いた問題は捨てる。 */
+var P_AHEAD = 3, P_STALL_MS = 8000;
+var pBuf = [], pFetching = 0, pFail = 0, pWaitTimer = 0, pGen = 0, pWaitFrom = 0;
 
 function pFetch(){
-  if(pFetching || pBuf || !SRV) return;
-  pFetching = true;
+  if(!SRV) return;
+  while(pBuf.length + pFetching < P_AHEAD) pFetchOne_();
+}
+function pFetchOne_(){
+  var gen = pGen, t0 = Date.now();
+  pFetching++;
   google.script.run.withSuccessHandler(function(r){
-    pFetching = false;
+    if(gen !== pGen) return;
+    pFetching = Math.max(0, pFetching - 1);
     if(r && r.ok){
       pFail = 0;
       var a = {};
       r.f.forEach(function(u, i){ a[u] = r.ans[i]; });
       // キュー項目の形は packQueue_（Core.gs の QI_）と同じ。こちらはキーで届く
-      pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
-              rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null, col:!!r.col};
+      pBuf.push({q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
+                 rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null, col:!!r.col});
+      pDiag_('れんしゅうの 1もんの おうふく ' + (Date.now() - t0) + 'ms');
     }else{ pFail++; }
-  }).withFailureHandler(function(){ pFetching = false; pFail++; })
+  }).withFailureHandler(function(){ if(gen !== pGen) return; pFetching = Math.max(0, pFetching - 1); pFail++; })
     .nextPracticeItem(pMode, pType);
+}
+/* 教師が開いた時だけ、往復の時間を出す（GAS の実機でしか測れない待ちを測るため） */
+function pDiag_(t){
+  if(!MENUFIG_FREE) return;
+  var el = $('pDiag'); if(el){ el.textContent = t; el.hidden = false; }
 }
 
 /** 先読みが間に合っていればすぐ描く。間に合わなければ届き次第 描く */
@@ -3463,11 +3480,16 @@ function pServe(){
   clearTimeout(pWaitTimer);
   if(!SRV){ queue = [previewItem()]; qi = 0; ready = true; clearTyped(); draw(); return; }
   if(pFail >= 3){ fatal('つうしんに しっぱいしました。ページを ひらきなおして ください。'); return; }
-  if(pBuf){
-    queue = [pBuf]; qi = 0; pBuf = null;
+  if(pBuf.length){
+    pWaitFrom = 0;
+    queue = [pBuf.shift()]; qi = 0;
     ready = true; clearTyped(); draw();
-    pFetch();                                  // 次の1問を仕込んでおく
+    pFetch();                                  // 減った分を仕込んでおく
     return;
+  }
+  if(!pWaitFrom) pWaitFrom = Date.now();
+  if(Date.now() - pWaitFrom > P_STALL_MS){     // 届かない往復は捨てて取り直す（遅れて届いた分は数に入れない）
+    pGen++; pFetching = 0; pWaitFrom = Date.now();
   }
   ready = false;                               // 到着まで入力を受けない
   eqEl.className = 'eq oneline';
@@ -3516,7 +3538,7 @@ function beginPractice(timed){
       busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
     }).startSession(pMode, true);
   }else{
-    pBuf = null; pFail = 0; ready = false; clearTyped();
+    pGen++; pBuf = []; pFetching = 0; pFail = 0; pWaitFrom = 0; ready = false; clearTyped();
   }
 
   show('play');
