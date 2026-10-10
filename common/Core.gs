@@ -600,7 +600,7 @@ function boot() {
     // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
     unit: { id: UNIT.id, title: UNIT.title, titleRuby: UNIT.titleRuby || null, modes: UNIT.modes,
             // 学年の進みの色・まちがいの赤・「？」の印の色。画面は色の値を持たず、ここから受け取る
-            grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, menuFigure: UNIT.menuFigure || '', nUnlock: UNIT.nUnlock || null, accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
+            grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, menuFigure: UNIT.menuFigure || '', colDir: !!UNIT.colDir, nUnlock: UNIT.nUnlock || null, accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
             units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
             // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
             types: UNIT.types || {}, typesByMode: typesByMode_(),
