@@ -27,6 +27,8 @@ var UNIT = {
   floorPattern: 'borrow',
   floorColor: 'garnet',
 
+  // 筆算の形の答えを、右（一の位）から打つか左から打つか、児童がすうじキーせっていで選べる（index.html の COLDIR）
+  colDir: true,
   units: {},
   modes: [
     { id: 1, name: '1けたの くりさがり', desc: '16−9' },

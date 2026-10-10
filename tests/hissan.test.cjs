@@ -97,6 +97,28 @@ const digits = n => [n % 10, Math.floor(n / 10) % 10, Math.floor(n / 100)];
   ui.queue = [q2]; ui.fi = 0; ui.typed = { '一': '', '十': '', '百': '' };
   ui.handleInput('5'); ui.handleInput('8'); assert.equal(sent, 1);
 
+  // 左から打つ設定（UNIT.colDir の単元で児童が選ぶ）：ふつうの順に打ち、電卓のように右へ詰めて置く
+  {
+    const uiL = uiContext(U, ['isSlotTok_', 'slotIdx_', 'colOrder_', 'colNum_', 'colLeft_', 'colPlace_']);
+    vm.runInContext("var queue, qi = 0, fi = 0, typed = {}, mode = 4, pMode = 4, COLDIR_OK = true, COLDIR = 'L', COLSTR = '';", uiL);
+    let sentL = 0; uiL.submit = () => { sentL++; };
+    uiL.queue = [q2]; uiL.typed = { '一': '', '十': '', '百': '' };
+    uiL.handleInput('8');
+    assert.equal(JSON.stringify(uiL.typed), JSON.stringify({ '一': '8', '十': '', '百': '' }), '1けためは一の位に置く');
+    assert.equal(sentL, 0);
+    uiL.handleInput('5');
+    assert.equal(JSON.stringify(uiL.typed), JSON.stringify({ '一': '5', '十': '8', '百': '' }), '2けためで右へ詰め直す');
+    assert.equal(sentL, 1, '85 がそろった時点で確定');
+    // 3けたの答え：1・2・5 と打つと 百・十・一 に入る。Backspace は最後の1字を消す
+    uiL.vm_reset = vm.runInContext("COLSTR = ''", uiL);
+    uiL.queue = [q]; uiL.typed = { '一': '', '十': '', '百': '' }; sentL = 0;
+    uiL.handleInput('1'); uiL.handleInput('3'); uiL.handleInput('Backspace');
+    assert.equal(JSON.stringify(uiL.typed), JSON.stringify({ '一': '1', '十': '', '百': '' }));
+    uiL.handleInput('2'); uiL.handleInput('5');
+    assert.equal(JSON.stringify(uiL.typed), JSON.stringify({ '一': '5', '十': '2', '百': '1' }));
+    assert.equal(sentL, 1);
+  }
+
   // 描画：筆算の段は升目に並び、答えの段の上に線が入る
   assert.ok(/\.eq\.col \.line[^{]*\{display:grid/.test(src));
   assert.ok(src.includes("(ri === ruleRow ? ' rule' : '')"));

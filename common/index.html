@@ -421,6 +421,10 @@ body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.
 /* 図の列とモードの境界に右端を揃える */
 #figTog{position:absolute;left:calc(min(44vw,600px) - 1rem);transform:translateX(-100%);bottom:1rem;display:flex;gap:.4rem;z-index:2}
 #figTog[hidden]{display:none}
+#fxDiag{position:absolute;left:1rem;bottom:calc(1rem + 52px);font-size:.75rem;color:var(--mute);z-index:2}
+#fxDiag[hidden]{display:none}
+#pDiag{position:absolute;right:12px;bottom:4px;font-size:.7rem;color:#7F93A8;z-index:6;pointer-events:none}
+#pDiag[hidden]{display:none}
 #figTog button{width:44px;height:44px;padding:0;border-radius:10px;border:1.5px solid var(--line);background:rgba(255,255,255,.85);cursor:pointer;
   display:flex;align-items:center;justify-content:center;touch-action:manipulation;-webkit-tap-highlight-color:transparent;opacity:.5}
 #figTog button[aria-pressed="true"]{opacity:1;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
@@ -465,6 +469,7 @@ body.figoff #primeKeys button:active{background:#0B1A22;border-color:#5FE3FF;box
     <div id="menuFigNum" aria-live="polite"></div>
   </div>
   <input id="menuFigN" type="text" inputmode="numeric" autocomplete="off" aria-label="図にする数（せいかいの回数まで）" hidden>
+  <div id="fxDiag" hidden></div>
   <div id="figTog" role="group" aria-label="ずの あり・なし" hidden>
     <button type="button" data-off="0" aria-label="ず あり" aria-pressed="true"></button>
     <button type="button" data-off="1" aria-label="ず なし" aria-pressed="false"></button>
@@ -500,6 +505,10 @@ body.figoff #primeKeys button:active{background:#0B1A22;border-color:#5FE3FF;box
     <div style="font-size:.76rem;color:var(--mute);font-weight:700;letter-spacing:.14em;margin-bottom:.5rem;text-align:center">おおきさ</div>
     <div id="keysetSizeGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem"></div>
   </div>
+  <div id="keysetDir" style="width:min(420px,90vw)" hidden>
+    <div style="font-size:.76rem;color:var(--mute);font-weight:700;letter-spacing:.14em;margin-bottom:.5rem;text-align:center">こたえの うちかた</div>
+    <div id="keysetDirGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:.6rem"></div>
+  </div>
   <div class="hint tap" data-back="1">Esc でもどる</div>
 </section>
 
@@ -534,6 +543,7 @@ body.figoff #primeKeys button:active{background:#0B1A22;border-color:#5FE3FF;box
 </section>
 
 <section id="play" class="screen">
+  <div id="pDiag" hidden></div>
   <div id="bar"></div>
   <div class="hud">
     <div class="medal" id="playMedal"></div>
@@ -2432,14 +2442,26 @@ function figSet_(off, from){
   var apply = function(){ figTogPaint_(); renderMenu(); menuFigDraw_(); };
   // 動きを減らす設定の端末と、View Transitions の無いブラウザでは、すぐ切り替える
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(reduce || !document.startViewTransition){ apply(); return; }
+  if(reduce){ apply(); figFxDiag_('なし（端末が「動きを減らす」設定）'); return; }
+  if(!document.startViewTransition){ apply(); figFxDiag_('なし（このブラウザに View Transitions が無い）'); return; }
   var box = from ? from.getBoundingClientRect() : { left: 0, top: innerHeight, width: 0, height: 0 };
   var ox = box.left + box.width / 2, oy = box.top + box.height / 2;
-  var vt = document.startViewTransition(apply);
+  var vt;
+  try { vt = document.startViewTransition(apply); }
+  catch (e) { apply(); figFxDiag_('なし（開始できない：' + (e && e.message) + '）'); return; }
   vt.ready.then(function(){
-    document.documentElement.animate(figFxFrames_(ox, oy),
-      { duration: 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
-  }).catch(function(){});
+    try {
+      var an = document.documentElement.animate(figFxFrames_(ox, oy),
+        { duration: 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
+      figFxDiag_('あり（' + (an && an.playState) + '）');
+    } catch (e) { figFxDiag_('なし（動かせない：' + (e && e.message) + '）'); }
+  }).catch(function(e){ figFxDiag_('なし（取り消された：' + (e && (e.name + ' ' + e.message)) + '）'); });
+}
+/* 切り替えの演出が出なかった理由。GAS の実機でしか起きない不具合を測るため、教師が開いた時だけ画面に出す */
+function figFxDiag_(t){
+  if(!MENUFIG_FREE) return;
+  var el = $('fxDiag');
+  if(el){ el.textContent = '切り替えの演出：' + t; el.hidden = false; }
 }
 function isLocked(m){ return !!LOCKED[m]; }
 
@@ -3084,7 +3106,7 @@ function paintSlots(){
   }
 }
 function clearTyped(){
-  typed = {}; fi = 0;
+  typed = {}; fi = 0; COLSTR = '';
   var q = queue[qi];
   if(q) q.f.forEach(function(u){ typed[u] = ''; });
 }
@@ -3240,6 +3262,19 @@ function handleInput(k){
   var unit = q.f[fi];
   var curMode = practice ? pMode : mode;        // beginPractice は mode を更新しないため
 
+  if(q.col && typeof colLeft_ === 'function' && colLeft_() && q.f.length > 1){
+    if(k>='0' && k<='9'){
+      if(!firstKeyAt) firstKeyAt = performance.now();
+      if(COLSTR.length < q.f.length){ COLSTR += k; colPlace_(q); paintSlots(); }
+      if(isRight()){ submit(); return; }
+      if(COLSTR.length >= q.f.length) submit();      // 欄が全部埋まったら確定（右から打つ時と同じ）
+    }else if(k === 'Backspace'){
+      COLSTR = COLSTR.slice(0, -1); colPlace_(q); paintSlots();
+    }else if(k === 'Enter'){
+      submit();
+    }
+    return;
+  }
   if(k>='0' && k<='9'){
     // 提示から最初の数字キーまで＝想起（＋手続きの組み立て）にかかった時間。
     // 送信までの時間には打鍵と欄移動が乗るので、型ごとに答えの桁数が違うと
@@ -3379,6 +3414,15 @@ function layoutRow(){
 }
 function renderKeyset(){
   var cur = effectiveLayout_();
+  var cd = $('keysetDir');
+  if(cd){
+    cd.hidden = !COLDIR_OK;
+    $('keysetDirGrid').innerHTML = [['R', 7, 'みぎから', 'いちの くらいから'], ['L', 8, 'ひだりから', 'ふつうの じゅん']].map(function(o){
+      var on = COLDIR === o[0];
+      return '<div class="szbtn" data-coldir="'+o[0]+'" style="'+(on?'border-color:var(--acc);color:var(--acc)':'')+'">'+
+        '<span class="k2">'+o[1]+'</span>'+o[2]+'<div style="font-size:.7rem;font-weight:700;color:var(--mute)">'+o[3]+'</div></div>';
+    }).join('');
+  }
   $('keysetGrid').innerHTML = availableLayouts_().map(function(v, i){
     var on = v===cur;
     return '<div class="card" data-layout="'+v+'" style="'+(on?'border-color:var(--acc);':'')+'">'+
@@ -3423,24 +3467,38 @@ function practiceRecorded(timed){
 }
 
 /* 記録しない練習（むせいげん）の出題。サーバーから1問ずつ受け取る。
-   1問だけ先読みしておくので、2問目以降は待ち時間が出ない。 */
-var pBuf = null, pFetching = false, pFail = 0, pWaitTimer = 0;
+   GAS の1往復は1〜数秒かかり、素因数分解のように速く解ける問題では1問の先読みでは追いつかず「…」で待たせていた。
+   そこで3問先まで並行して先読みする。応答が8秒来ない時は、その往復を捨てて取り直す（届かないまま止まらないように）。
+   練習を始め直すたびに pGen を進め、前の練習の遅れて届いた問題は捨てる。 */
+var P_AHEAD = 3, P_STALL_MS = 8000;
+var pBuf = [], pFetching = 0, pFail = 0, pWaitTimer = 0, pGen = 0, pWaitFrom = 0;
 
 function pFetch(){
-  if(pFetching || pBuf || !SRV) return;
-  pFetching = true;
+  if(!SRV) return;
+  while(pBuf.length + pFetching < P_AHEAD) pFetchOne_();
+}
+function pFetchOne_(){
+  var gen = pGen, t0 = Date.now();
+  pFetching++;
   google.script.run.withSuccessHandler(function(r){
-    pFetching = false;
+    if(gen !== pGen) return;
+    pFetching = Math.max(0, pFetching - 1);
     if(r && r.ok){
       pFail = 0;
       var a = {};
       r.f.forEach(function(u, i){ a[u] = r.ans[i]; });
       // キュー項目の形は packQueue_（Core.gs の QI_）と同じ。こちらはキーで届く
-      pBuf = {q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
-              rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null, col:!!r.col};
+      pBuf.push({q:r.q, f:r.f, ans:a, ruler:r.ruler||null, t:r.t||null, dial:r.dial||null,
+                 rows:r.rows||null, veil:(r.veil == null ? null : r.veil), fig:r.fig||null, col:!!r.col});
+      pDiag_('れんしゅうの 1もんの おうふく ' + (Date.now() - t0) + 'ms');
     }else{ pFail++; }
-  }).withFailureHandler(function(){ pFetching = false; pFail++; })
+  }).withFailureHandler(function(){ if(gen !== pGen) return; pFetching = Math.max(0, pFetching - 1); pFail++; })
     .nextPracticeItem(pMode, pType);
+}
+/* 教師が開いた時だけ、往復の時間を出す（GAS の実機でしか測れない待ちを測るため） */
+function pDiag_(t){
+  if(!MENUFIG_FREE) return;
+  var el = $('pDiag'); if(el){ el.textContent = t; el.hidden = false; }
 }
 
 /** 先読みが間に合っていればすぐ描く。間に合わなければ届き次第 描く */
@@ -3448,11 +3506,16 @@ function pServe(){
   clearTimeout(pWaitTimer);
   if(!SRV){ queue = [previewItem()]; qi = 0; ready = true; clearTyped(); draw(); return; }
   if(pFail >= 3){ fatal('つうしんに しっぱいしました。ページを ひらきなおして ください。'); return; }
-  if(pBuf){
-    queue = [pBuf]; qi = 0; pBuf = null;
+  if(pBuf.length){
+    pWaitFrom = 0;
+    queue = [pBuf.shift()]; qi = 0;
     ready = true; clearTyped(); draw();
-    pFetch();                                  // 次の1問を仕込んでおく
+    pFetch();                                  // 減った分を仕込んでおく
     return;
+  }
+  if(!pWaitFrom) pWaitFrom = Date.now();
+  if(Date.now() - pWaitFrom > P_STALL_MS){     // 届かない往復は捨てて取り直す（遅れて届いた分は数に入れない）
+    pGen++; pFetching = 0; pWaitFrom = Date.now();
   }
   ready = false;                               // 到着まで入力を受けない
   eqEl.className = 'eq oneline';
@@ -3501,7 +3564,7 @@ function beginPractice(timed){
       busy('サーバーが こんでいます。すこし まってから もういちど おしてね');
     }).startSession(pMode, true);
   }else{
-    pBuf = null; pFail = 0; ready = false; clearTyped();
+    pGen++; pBuf = []; pFetching = 0; pFail = 0; pWaitFrom = 0; ready = false; clearTyped();
   }
 
   show('play');
@@ -3606,8 +3669,25 @@ function begin(m){
 }
 /* 桁数が揃わず自動確定できないモードは、Unit.gs が help に案内文を持つ */
 function setHelp(){
-  var m = practice ? pMode : mode;
-  $('footnote').textContent = (MODES[m] && MODES[m].help) || '';
+  var m = practice ? pMode : mode, h = (MODES[m] && MODES[m].help) || '';
+  if(colLeft_() && /いちの くらいから/.test(h)) h = 'ひだりから じゅんに うとう';   // 左から打つ設定では、案内も合わせる
+  $('footnote').textContent = h;
+}
+/* ---- 筆算の形の問題（q.col）で、答えを右から打つか左から打つか（UNIT.colDir の単元だけ。児童が選び、端末に覚える） ----
+ * みぎから（既定）：一の位の欄から順に打つ。頭の中の筆算と同じ順。
+ * ひだりから：ふつうに数を書く順で打つ。打った数字は電卓のように右へ詰めて並べる（85 なら 8・5 と打つと十・一に入る）。
+ *   百の欄を空けるかどうかを先に決めさせないため（先に決めさせると、答えの桁数を打つ前に考えることになる）。 */
+var COLDIR_OK = false, COLDIR = 'R', COLSTR = '';
+function colLeft_(){ return COLDIR_OK && COLDIR === 'L'; }
+function colDirSet_(v){
+  COLDIR = v === 'L' ? 'L' : 'R';
+  try { localStorage.setItem('coldir:' + APP_ID, COLDIR); } catch (e) {}
+}
+/* 左から打った数字列 COLSTR を、一の位から順の欄（q.f）へ右詰めで置く */
+function colPlace_(q){
+  var ord = colOrder_(q).slice().reverse();        // 画面の右（一の位）の欄から
+  ord.forEach(function(ix, i){ var c = COLSTR.charAt(COLSTR.length - 1 - i); typed[q.f[ix]] = c || ''; });
+  fi = 0;
 }
 function countdown(n){
   var el = $('countdown');
@@ -3720,6 +3800,7 @@ document.addEventListener('keydown', function(e){
   if(scr === 'keyset'){
     if(k>='1' && k<='3'){ var layouts=availableLayouts_(); if(layouts[+k-1]){e.preventDefault(); setLayout(layouts[+k-1]); renderKeyset();} }
     else if(k>='4' && k<='6'){ e.preventDefault(); setSize(SIZES[+k-4]); renderKeyset(); }
+    else if(COLDIR_OK && (k === '7' || k === '8')){ e.preventDefault(); colDirSet_(k === '8' ? 'L' : 'R'); renderKeyset(); }
     else if(k === 'Escape'){ e.preventDefault(); goBack(); }
     return;
   }
@@ -3788,7 +3869,9 @@ document.addEventListener('click', function(e){
     var lc = t.closest('[data-layout]');
     if(lc){ setLayout(lc.dataset.layout); renderKeyset(); return; }
     var sz = t.closest('[data-size]');
-    if(sz){ setSize(sz.dataset.size); renderKeyset(); }
+    if(sz){ setSize(sz.dataset.size); renderKeyset(); return; }
+    var cdv = t.closest('[data-coldir]');
+    if(cdv){ colDirSet_(cdv.dataset.coldir); renderKeyset(); }
   }else if(scr === 'popt'){
     var pc = t.closest('[data-pmode]');
     if(pc) pickPractice(+pc.dataset.pmode);
@@ -3841,6 +3924,9 @@ function applyBoot(r, live){
   MODES = {}; MODES_ALL = []; PAIR_OF = {};
   (r.unit.modes||[]).forEach(function(m){ MODES[m.id]=m; MODES_ALL.push(m.id); if(m.pair) PAIR_OF[m.pair] = m.id; });
   INTERACTION = r.unit.interaction || null;
+  COLDIR_OK = !!r.unit.colDir;
+  COLDIR = 'R';
+  if(COLDIR_OK){ try { if(localStorage.getItem('coldir:' + APP_ID) === 'L') COLDIR = 'L'; } catch (e) {} }
   document.body.classList.toggle('special-unit',r.unit.category === 'special');
   primeKeys_();
   UNITS = r.unit.units || {};
