@@ -421,6 +421,8 @@ body.special-unit #start,body.special-unit #keyset,body.special-unit #popt,body.
 /* 図の列とモードの境界に右端を揃える */
 #figTog{position:absolute;left:calc(min(44vw,600px) - 1rem);transform:translateX(-100%);bottom:1rem;display:flex;gap:.4rem;z-index:2}
 #figTog[hidden]{display:none}
+#fxDiag{position:absolute;left:1rem;bottom:calc(1rem + 52px);font-size:.75rem;color:var(--mute);z-index:2}
+#fxDiag[hidden]{display:none}
 #figTog button{width:44px;height:44px;padding:0;border-radius:10px;border:1.5px solid var(--line);background:rgba(255,255,255,.85);cursor:pointer;
   display:flex;align-items:center;justify-content:center;touch-action:manipulation;-webkit-tap-highlight-color:transparent;opacity:.5}
 #figTog button[aria-pressed="true"]{opacity:1;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
@@ -465,6 +467,7 @@ body.figoff #primeKeys button:active{background:#0B1A22;border-color:#5FE3FF;box
     <div id="menuFigNum" aria-live="polite"></div>
   </div>
   <input id="menuFigN" type="text" inputmode="numeric" autocomplete="off" aria-label="図にする数（せいかいの回数まで）" hidden>
+  <div id="fxDiag" hidden></div>
   <div id="figTog" role="group" aria-label="ずの あり・なし" hidden>
     <button type="button" data-off="0" aria-label="ず あり" aria-pressed="true"></button>
     <button type="button" data-off="1" aria-label="ず なし" aria-pressed="false"></button>
@@ -2432,14 +2435,26 @@ function figSet_(off, from){
   var apply = function(){ figTogPaint_(); renderMenu(); menuFigDraw_(); };
   // 動きを減らす設定の端末と、View Transitions の無いブラウザでは、すぐ切り替える
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(reduce || !document.startViewTransition){ apply(); return; }
+  if(reduce){ apply(); figFxDiag_('なし（端末が「動きを減らす」設定）'); return; }
+  if(!document.startViewTransition){ apply(); figFxDiag_('なし（このブラウザに View Transitions が無い）'); return; }
   var box = from ? from.getBoundingClientRect() : { left: 0, top: innerHeight, width: 0, height: 0 };
   var ox = box.left + box.width / 2, oy = box.top + box.height / 2;
-  var vt = document.startViewTransition(apply);
+  var vt;
+  try { vt = document.startViewTransition(apply); }
+  catch (e) { apply(); figFxDiag_('なし（開始できない：' + (e && e.message) + '）'); return; }
   vt.ready.then(function(){
-    document.documentElement.animate(figFxFrames_(ox, oy),
-      { duration: 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
-  }).catch(function(){});
+    try {
+      var an = document.documentElement.animate(figFxFrames_(ox, oy),
+        { duration: 1100, easing: 'linear', pseudoElement: '::view-transition-new(root)' });
+      figFxDiag_('あり（' + (an && an.playState) + '）');
+    } catch (e) { figFxDiag_('なし（動かせない：' + (e && e.message) + '）'); }
+  }).catch(function(e){ figFxDiag_('なし（取り消された：' + (e && (e.name + ' ' + e.message)) + '）'); });
+}
+/* 切り替えの演出が出なかった理由。GAS の実機でしか起きない不具合を測るため、教師が開いた時だけ画面に出す */
+function figFxDiag_(t){
+  if(!MENUFIG_FREE) return;
+  var el = $('fxDiag');
+  if(el){ el.textContent = '切り替えの演出：' + t; el.hidden = false; }
 }
 function isLocked(m){ return !!LOCKED[m]; }
 
