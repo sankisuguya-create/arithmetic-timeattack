@@ -2893,7 +2893,7 @@ function markSelfSlow_(t) {
 function typeStat_(e) {
   var p = String(e).split(':');
   if (p.length < 6 || !p[0]) return null;
-  var o = { t: p[0], ntk: Number(p[3]) || 0, tk: Number(p[4]) || 0, tk2: Number(p[5]) || 0, ln: 0, ln2: 0 };
+  var o = { t: p[0], nq: Number(p[1]) || 0, ntk: Number(p[3]) || 0, tk: Number(p[4]) || 0, tk2: Number(p[5]) || 0, ln: 0, ln2: 0 };
   if (p.length >= 8) { o.ln = Number(p[6]) || 0; o.ln2 = Number(p[7]) || 0; }
   else if (o.ntk > 0 && o.tk > 0) { var l = Math.log(o.tk / o.ntk); o.ln = o.ntk * l; o.ln2 = o.ntk * l * l; }
   return o;
@@ -2904,13 +2904,17 @@ function typeStat_(e) {
  * ms は代表値＝幾何平均（初打鍵まで）。cv は標準偏差÷平均（%、ゆらぎ）。sl は対数時間の標準偏差。
  */
 function recallOut_(acc, miss) {
-  if (!acc || !acc.ntk) return { n: 0, ms: 0, cv: 0, sl: 0, miss: miss || 0 };
+  // mr: 型の誤答率（%）。分母は1回目正解の数＋誤答の数＝その型の出題数。
+  // 出題数の多い型ほど誤答の件数が増えるので、件数のままでは型どうしを比べられない
+  var den = acc ? acc.nq + acc.mq : 0;
+  var mr = den > 0 ? Math.round(acc.mq / den * 1000) / 10 : null;
+  if (!acc || !acc.ntk) return { n: 0, ms: 0, cv: 0, sl: 0, miss: miss || 0, mr: mr };
   var mean = acc.tk / acc.ntk;
   var vr = acc.tk2 / acc.ntk - mean * mean;
   var cv = mean > 0 ? Math.round((vr > 0 ? Math.sqrt(vr) : 0) / mean * 100) : 0;
   var lm = acc.ln / acc.ntk, lv = acc.ln2 / acc.ntk - lm * lm;
   return { n: acc.ntk, ms: Math.round(Math.exp(lm)), cv: cv,
-           sl: Math.round((lv > 0 ? Math.sqrt(lv) : 0) * 1000) / 1000, miss: miss || 0 };
+           sl: Math.round((lv > 0 ? Math.sqrt(lv) : 0) * 1000) / 1000, miss: miss || 0, mr: mr };
 }
 
 /**
@@ -2918,8 +2922,8 @@ function recallOut_(acc, miss) {
  * 今年度は「window_days 日前」と年度始まり（4/1）の遅い方を窓の下端にする。
  * 過去年度はその年度の4/1〜翌3/31の全体を参考用に集計する。
  */
-function newAcc_() { return { ntk: 0, tk: 0, tk2: 0, ln: 0, ln2: 0, miss: 0 }; }
-function addAcc_(a, x) { a.ntk += x.ntk; a.tk += x.tk; a.tk2 += x.tk2; a.ln += x.ln; a.ln2 += x.ln2; }
+function newAcc_() { return { nq: 0, mq: 0, ntk: 0, tk: 0, tk2: 0, ln: 0, ln2: 0, miss: 0 }; }
+function addAcc_(a, x) { a.nq += x.nq || 0; a.mq += x.mq || 0; a.ntk += x.ntk; a.tk += x.tk; a.tk2 += x.tk2; a.ln += x.ln; a.ln2 += x.ln2; }
 
 function buildAnalysis_(fyear) {
   var cfg = config_();
@@ -3003,9 +3007,11 @@ function buildAnalysis_(fyear) {
     st.tries++;
 
     // type_stats … "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2"
+    var hasStat = false;                       // 誤答率の分母が取れる行か（古い行は誤答の件数だけ数える）
     String(row[LOG_COL_.TSTAT] || '').split(',').forEach(function (e) {
       var x = typeStat_(e);
       if (!x) return;                          // 初打鍵の無い古い行は想起の集計に入れない
+      hasStat = true;
       var ty = x.t;
       var acc = b.types[ty] || (b.types[ty] = newAcc_());
       var sa = st.t[ty] || (st.t[ty] = newAcc_());
@@ -3018,6 +3024,7 @@ function buildAnalysis_(fyear) {
       var acc = b.types[ty] || (b.types[ty] = newAcc_());
       acc.miss++;
       st.miss++;
+      if (hasStat) acc.mq++;
     });
 
     splitCellItems_(row[LOG_COL_.WRONG], typeSet).forEach(function (e) {

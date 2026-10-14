@@ -1656,17 +1656,18 @@ function renderAnalysis(){
       return { label: r.types[ty] || ty, val: o.ms/1000,
                valTxt: (o.ms/1000).toFixed(1) + '秒・' + o.n + '回', over: o.b >= 2 };
     }).sort(function(a, b){ return b.val - a.val; });
-  var miss = r.order.filter(function(ty){ return sc.types[ty] && sc.types[ty].miss > 0; })
+  var miss = r.order.filter(function(ty){ return sc.types[ty] && sc.types[ty].mr > 0; })
     .map(function(ty){
-      return { label: r.types[ty] || ty, val: sc.types[ty].miss,
-               valTxt: sc.types[ty].miss + '件', over: false };
+      var o = sc.types[ty];
+      return { label: r.types[ty] || ty, val: o.mr,
+               valTxt: o.mr.toFixed(1) + '%', over: false };
     }).sort(function(a, b){ return b.val - a.val; });
 
   $('anaBody').innerHTML =
     '<h3 class="sec">型ごとのおもいだす時間（平均）' + qh('問題が出てから最初のキーを押すまでの時間の平均（正確には幾何平均。極端に遅い1回に引っぱられにくい値）。棒が長いほど時間がかかる型です。橙の棒は、同じ学年の児童とくらべて特に遅い型です。') + '</h3>' +
     '<div class="note">打鍵している時間は含みません。強調した棒は、同じ学年の児童の分布で＋標準偏差1つを超える型。</div>' +
     hbarChart(recall, {}) +
-    '<h3 class="sec">型ごとのまちがいの数' + qh('まちがえた回数の合計を型ごとに集計しています。棒が長い型ほど、つまずきが多いです。') + '</h3>' +
+    '<h3 class="sec">型ごとのまちがいの割合' + qh('その型の問題のうち、まちがえた（やり直した・答えを見た）問題の割合です。出題数の多い型ほど件数が増えるので、割合でくらべます。棒が長い型ほど、つまずきが多いです。') + '</h3>' +
     hbarChart(miss, {}) +
     '<h3 class="sec">日ごとの実施回数' + qh('その日に記録された本番の回数（れんしゅうは記録されません）。授業や宿題でどれだけ使われたかの目安です。') + '</h3>' +
     colChart(sc.daily) +

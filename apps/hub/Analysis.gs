@@ -108,7 +108,7 @@ var AN_LOG_WIDTH_ = 15;
 function anTypeStat_(e) {
   var p = String(e).split(':');
   if (p.length < 6 || !p[0]) return null;
-  var o = { t: p[0], ntk: Number(p[3]) || 0, tk: Number(p[4]) || 0, tk2: Number(p[5]) || 0, ln: 0, ln2: 0 };
+  var o = { t: p[0], nq: Number(p[1]) || 0, ntk: Number(p[3]) || 0, tk: Number(p[4]) || 0, tk2: Number(p[5]) || 0, ln: 0, ln2: 0 };
   if (p.length >= 8) { o.ln = Number(p[6]) || 0; o.ln2 = Number(p[7]) || 0; }
   else if (o.ntk > 0 && o.tk > 0) { var l = Math.log(o.tk / o.ntk); o.ln = o.ntk * l; o.ln2 = o.ntk * l * l; }
   return o;
