@@ -169,7 +169,7 @@ function ciChoice_(rand, t, ask, kinds, right, draw) {
   order.forEach(function (k, i) {
     var cx = i * W + W / 2, cy = H / 2 + 12;
     body += '<g data-pick="' + (i + 1) + '">' +
-            '<rect x="' + (i * W) + '" y="0" width="' + W + '" height="' + H + '" fill="#000" fill-opacity="0" stroke="none"/>' +
+            '<rect x="' + (i * W) + '" y="0" width="' + W + '" height="' + H + '" fill="none" stroke="none" pointer-events="all"/>' +
             ciText_(i * W + 22, 24, CI_MARK[i], 32) + draw(k, cx, cy, r) + '</g>';
   });
   return {
