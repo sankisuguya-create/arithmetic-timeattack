@@ -172,14 +172,14 @@ function baLine_(x1, y1, x2, y2, color, w) {
 function baPlain_(lines, choices) {
   var W = 960, t = baLines_(lines, 50), body = t.svg, y = t.y + 10;
   if (choices) {
-    var boxW = 260, boxH = 96, gap = 60;
+    var boxW = choices.length === 2 ? 330 : 260, boxH = 96, gap = choices.length === 2 ? 80 : 60;
     var x = (W - (choices.length * boxW + (choices.length - 1) * gap)) / 2;
     choices.forEach(function (c, i) {
       body += '<g data-pick="' + (i + 1) + '">' +
               '<rect class="pkb" x="' + baR_(x) + '" y="' + baR_(y) + '" width="' + boxW + '" height="' + boxH +
               '" rx="6" fill="#000" fill-opacity="0" stroke="' + BA_LINE + '" stroke-width="3"/>' +
               baText1_(x + 22, y + boxH / 2, BA_MARK[i], 40, BA_SUB) +
-              baText1_(x + boxW / 2 + 32, y + boxH / 2, c, 48, BA_SUB, 'middle') +
+              baText1_(x + boxW / 2 + 24, y + boxH / 2, c, 48, BA_SUB, 'middle') +
               '</g>';
       x += boxW + gap;
     });
