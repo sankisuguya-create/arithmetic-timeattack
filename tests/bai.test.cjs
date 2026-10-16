@@ -8,12 +8,32 @@ const unit = ctx.UNIT;
 const ALLOWED = { 1: 'A', 2: 'DE', 3: 'S', 4: 'FGH', 5: 'IJ', 6: 'ADESFGHIJ' };
 const num = (tag, key) => Number((tag.match(new RegExp(' ' + key + '(\\d+)')) || [])[1]);
 const seen = new Set(), ords = { o: 0, r: 0 }, uses = { 1: 0, 2: 0, 3: 0 };
+const PICK_COUNTS = { A: 2, S: 3 };
+
+function checkPickFigure(item, n) {
+  const picks = [...item.fig.matchAll(/data-pick="(\d+)"/g)].map(m => Number(m[1]));
+  const marks = [...item.fig.matchAll(/[①②③④⑤⑥⑦⑧⑨]/g)].map(m => m[0]);
+  for (let k = 1; k <= n; k++) assert.equal(picks.filter(p => p === k).length, 1, item.tag + ' pick ' + k);
+  for (let k = 1; k <= n; k++) {
+    const group = item.fig.match(new RegExp('<g data-pick="' + k + '">([\\s\\S]*?)</g>'));
+    assert.ok(group, item.tag + ' missing pick group ' + k);
+    assert.equal(group[1].split('①②③④⑤⑥⑦⑧⑨'[k - 1]).length - 1, 1, item.tag + ' pick mark ' + k);
+  }
+  assert.equal(picks.length, n, item.tag + ' pick count');
+  assert.equal(marks.length, n, item.tag + ' mark count');
+  for (let k = 1; k <= n; k++) assert.equal(marks.filter(mark => mark === '①②③④⑤⑥⑦⑧⑨'[k - 1]).length, 1, item.tag + ' mark ' + k);
+  assert.equal((item.fig.match(/class="pkb"/g) || []).length, n, item.tag + ' pkb count');
+  assert.equal((item.fig.match(/<rect\b[^>]*class="pkb"[^>]*>/g) || []).length, n, item.tag + ' pkb rects');
+  assert.ok(Number.isInteger(item.ans['']) && item.ans[''] >= 1 && item.ans[''] <= n, item.tag + ' answer position');
+}
 
 function check(it, mode) {
   assert.ok(ALLOWED[mode].includes(it.t), mode + ' ' + it.t);
   seen.add(it.t);
   assert.ok(!/[,|]/.test(it.tag), it.tag);
   assert.ok(it.fig.startsWith('<svg') && it.fig.length < 4000 && !/NaN|undefined/.test(it.fig), it.tag);
+  if (PICK_COUNTS[it.t]) checkPickFigure(it, PICK_COUNTS[it.t]);
+  else assert.ok(!/data-pick=/.test(it.fig), it.tag + ' unexpected data-pick');
   const f = it.f[0], a = it.ans[f];
   assert.ok(Number.isInteger(a) && a >= 1 && a <= 99, it.tag + ' ' + a);
   const m = num(it.tag, 'm'), k = num(it.tag, 'k');
@@ -82,4 +102,21 @@ for (let i = 0; i < 2000; i++) {
     assert.equal(ui.typed[f], wrong);
   }
 }
+
+const tapUi = uiContext(unit, ['isPick_', 'pickTap_']);
+let tappedSubmit = 0;
+tapUi.submit = () => { tappedSubmit++; };
+const pickItem = unit.gen(ctx.rng_(42), 1);
+tapUi.mode = 1; tapUi.queue = [pickItem]; tapUi.qi = 0; tapUi.fi = 0;
+tapUi.ready = true; tapUi.locked = false;
+tapUi.typed = { '': String(pickItem.ans[''] === 1 ? 2 : 1) };
+tapUi.pickTap_(pickItem.ans['']);
+assert.equal(tapUi.typed[''], String(pickItem.ans['']));
+assert.equal(tappedSubmit, 1);
+
+const numericItem = unit.gen(ctx.rng_(43), 4), unchangedTyped = { [numericItem.f[0]]: '7' };
+tapUi.queue = [numericItem]; tapUi.qi = 0; tapUi.fi = 0; tapUi.typed = unchangedTyped;
+tapUi.pickTap_(1);
+assert.equal(tapUi.typed[numericItem.f[0]], '7');
+assert.equal(tappedSubmit, 1);
 console.log(`bai: ${6 * 5002} questions, order ${JSON.stringify(ords)}, uses ${JSON.stringify(uses)}, keys ${ok} right / ${ng} wrong.`);
