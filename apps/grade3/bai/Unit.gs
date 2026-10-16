@@ -3,7 +3,7 @@
  *
  * モードは前提スキルの依存順。型の混在は最後の「ぜんぶ」だけ。
  *
- *   ① もとにする大きさ  「赤は 青の 4倍」→ もとにする大きさは どちら？（番号）
+ *   ① もとにする大きさ  「赤は 青の 4倍」→ もとにする大きさは どちら？（タップ）
  *   ② ずに かく         文と図（テープ図／関係図）→ 図の ア に入る数は？
  *   ③ しきを えらぶ      文 → ① 24×4 ② 24÷4 ③ 24＋4 から選ぶ（計算はさせない）
  *   ④ なんばい けいさん  第1・第2・第3用法を 1:1:1
@@ -32,7 +32,6 @@
 var BA_INK = '#FFFFFF';
 var BA_SUB = '#C9D1E8';
 var BA_LINE = '#8C93AC';
-var BA_MARK = ['①', '②', '③'];
 var BA_NAMES = [['赤', '青'], ['白', '黄'], ['ながい', 'みじかい']];
 
 var UNIT = {
@@ -44,7 +43,7 @@ var UNIT = {
   units: { cm: '', '倍': '' },
 
   modes: [
-    { id: 1, name: 'もとにする大きさ', desc: '赤は 青の 4倍 → もとにする大きさは？（番号）' },
+    { id: 1, name: 'もとにする大きさ', desc: '赤は 青の 4倍 → もとにする大きさは？（タップ）' },
     { id: 2, name: 'ずに かく', desc: 'テープ図・関係図の ア に入る数', needs: { mode: 1, tries: 3 },
       help: 'Enter で こたえあわせ' },
     { id: 3, name: 'しきを えらぶ', desc: '24×4 ／ 24÷4 ／ 24＋4 から選ぶ', needs: { mode: 2, tries: 3 } },
@@ -75,7 +74,7 @@ var UNIT = {
         'r だけで誤る児童は、出てきた順に式を立てている可能性がある。' +
         '第3用法（H）の誤答が正答×倍×倍（くらべる量×倍）なら「倍ならかける」、' +
         '倍の倍（I）の誤答が2つの倍の和なら、倍を足している。' +
-        'しき えらび（S）の誤りは、tag の並び（例 S:mul-div-add）と答えた番号で読む。',
+        'しき えらび（S）の誤りは、tag の並び（例 S:mul-div-add）と答えた位置（左から何番目）で読む。',
 
   gen: function (rand, mode) {
     switch (mode) {
@@ -172,12 +171,17 @@ function baLine_(x1, y1, x2, y2, color, w) {
 function baPlain_(lines, choices) {
   var W = 960, t = baLines_(lines, 50), body = t.svg, y = t.y + 10;
   if (choices) {
-    var x = 40;
+    var boxW = 270, boxH = 96, gap = 40;
+    var x = (W - (choices.length * boxW + (choices.length - 1) * gap)) / 2;
     choices.forEach(function (c, i) {
-      body += baText1_(x, y, BA_MARK[i] + ' ' + c, 48, BA_SUB);
-      x += 300;
+      body += '<g data-pick="' + (i + 1) + '">' +
+              '<rect class="pkb" x="' + baR_(x) + '" y="' + baR_(y) + '" width="' + boxW + '" height="' + boxH +
+              '" rx="6" fill="#000" fill-opacity="0" stroke="' + BA_LINE + '" stroke-width="3"/>' +
+              baText1_(x + boxW / 2, y + boxH / 2, c, 48, BA_SUB, 'middle') +
+              '</g>';
+      x += boxW + gap;
     });
-    y += 60;
+    y += boxH + 10;
   }
   return baSvg_(W, y, body);
 }

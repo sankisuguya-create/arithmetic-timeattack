@@ -9,10 +9,21 @@ vm.runInContext(read('common/Core.gs') + '\n' + read(require('./lib/kit.cjs').un
 const unit = ctx.UNIT;
 const seen = new Set();
 
-// 番号で答える型の正答（tag の並びの中で、この種類の位置＋1が答え）
+// タップで答える型の正答（tag の並びの中で、この種類の位置＋1が答え）
 const RIGHT = { A: 'center', B: 'rad', C: 'dia', F: 'mid' };
+const PICK_TYPES = new Set(Object.keys(RIGHT));
 // モードごとに出てよい型
 const ALLOWED = { 1: 'AB', 2: 'C', 3: 'DE', 4: 'FGH', 5: 'IJK', 6: 'ABCDEFGHIJK' };
+
+function checkPickFigure(item) {
+  const picks = [...item.fig.matchAll(/data-pick="(\d+)"/g)].map(m => Number(m[1]));
+  for (let k = 1; k <= 4; k++) assert.equal(picks.filter(p => p === k).length, 1, item.tag + ' pick ' + k);
+  assert.equal(picks.length, 4, item.tag + ' pick count');
+  assert.equal((item.fig.match(/class="pkb"/g) || []).length, 4, item.tag + ' pkb count');
+  assert.equal((item.fig.match(/<circle\b[^>]*class="pkb"[^>]*>/g) || []).length, 4, item.tag + ' pkb circles');
+  assert.ok(!/[①②③④]/.test(item.fig), item.tag + ' circled choice marks remain');
+  assert.ok(Number.isInteger(item.ans['']) && item.ans[''] >= 1 && item.ans[''] <= 4, item.tag + ' answer position');
+}
 
 function check(item, mode) {
   assert.ok(unit.types[item.t], 'unknown type ' + item.t); seen.add(item.t);
@@ -22,6 +33,8 @@ function check(item, mode) {
   assert.ok(typeof item.fig === 'string' && item.fig.startsWith('<svg') && item.fig.endsWith('</svg>'));
   assert.ok(!/NaN|undefined/.test(item.fig), item.fig);
   assert.ok(item.fig.length < 4000, 'fig too large: ' + item.fig.length);
+  if (PICK_TYPES.has(item.t)) checkPickFigure(item);
+  else assert.ok(!/data-pick=/.test(item.fig), item.tag + ' unexpected data-pick');
   const f = item.f[0], a = item.ans[f];
   const cap = unit.digitCap[item.t][f];
   if (RIGHT[item.t]) {

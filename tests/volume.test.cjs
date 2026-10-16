@@ -9,6 +9,16 @@ const seen = new Set();
 const ALLOWED = { 1: 'A', 2: 'BCD', 3: 'EJKN', 4: 'FG', 5: 'HI', 6: 'ABCDEJKNFGHI' };
 const CHOICE = 'EJKN';
 
+function checkPickFigure(item) {
+  const picks = [...item.fig.matchAll(/data-pick="(\d+)"/g)].map(m => Number(m[1]));
+  for (let k = 1; k <= 4; k++) assert.equal(picks.filter(p => p === k).length, 1, item.tag + ' pick ' + k);
+  assert.equal(picks.length, 4, item.tag + ' pick count');
+  assert.equal((item.fig.match(/class="pkb"/g) || []).length, 4, item.tag + ' pkb count');
+  assert.equal((item.fig.match(/<rect\b[^>]*class="pkb"[^>]*>/g) || []).length, 4, item.tag + ' pkb rects');
+  assert.ok(!/[①②③④]/.test(item.fig), item.tag + ' circled choice marks remain');
+  assert.ok(Number.isInteger(item.ans['']) && item.ans[''] >= 1 && item.ans[''] <= 4, item.tag + ' answer position');
+}
+
 function check(item, mode) {
   assert.ok(unit.types[item.t], 'unknown type ' + item.t); seen.add(item.t);
   assert.ok(ALLOWED[mode].includes(item.t), mode + ' ' + item.t);
@@ -16,6 +26,8 @@ function check(item, mode) {
   assert.ok(item.fig.startsWith('<svg') && item.fig.endsWith('</svg>'));
   assert.ok(!/NaN|undefined/.test(item.fig), item.tag);
   assert.ok(item.fig.length < 6000, 'fig too large: ' + item.fig.length);
+  if (CHOICE.includes(item.t)) checkPickFigure(item);
+  else assert.ok(!/data-pick=/.test(item.fig), item.tag + ' unexpected data-pick');
   assert.equal(item.f.length, 1);
   const f = item.f[0], a = item.ans[f], cap = unit.digitCap[item.t][f];
   assert.ok(Number.isInteger(a) && a > 0, item.tag);

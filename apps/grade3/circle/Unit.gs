@@ -4,8 +4,8 @@
  * モードは前提スキルの依存順に並べ、土台に近いものを先に置く。
  * 型の混在（ランダム出題）は最後の「ぜんぶ」だけ。
  *
- *   ① ちゅうしん・はんけい  中心はどれ／半径はどれ（番号で答える）
- *   ② ちょっけい            直径はどれ（番号で答える）
+ *   ① ちゅうしん・はんけい  中心はどれ／半径はどれ（タップで答える）
+ *   ② ちょっけい            直径はどれ（タップで答える）
  *   ③ はんけい⇄ちょっけい   半径→直径／直径→半径（同じモードに両向きを混ぜる）
  *   ④ きゅう                いちばん大きい切り口はどれ／球の半径⇄直径
  *   ⑤ ならんだ まる          箱に並んだボールの長さ（1列・たてよこ・逆算）
@@ -15,8 +15,8 @@
  * 「半径は右向きの1本」「直径は横の端から端」という典型図への固着を
  * 練習がかえって強める（推定）。「ランダムは最後」は型の混在のことで、図の向きのことではない。
  *
- * 番号で答える問いの誤答の選択肢は、誤概念ごとに1つずつ置く。
- * 並びは毎問入れ替わるので、打った番号だけでは何を選んだか分からない。
+ * タップで答える問いの誤答の選択肢は、誤概念ごとに1つずつ置く。
+ * 並びは毎問入れ替わるので、答えた位置だけでは何を選んだか分からない。
  * tag に並び（例 'B:chord-rad-short-off'）を入れておき、mistakes シートの
  * 「もんだい」と「こたえた値」から、どの誤りの選択肢を選んだかを読めるようにしている。
  *
@@ -31,10 +31,9 @@
  * （docs/ADD_UNIT.md 3章）。半径を答える問いは直径を偶数に限る（小数は未習）。
  */
 
-var CI_MARK = ['①', '②', '③', '④'];
 var CI_LINE = '#8C93AC';    // 円の輪郭（背景の図）
 var CI_INK = '#FFFFFF';     // 選ぶ対象の線・点
-var CI_LABEL = '#C9D1E8';   // 番号と長さ
+var CI_LABEL = '#C9D1E8';   // 長さの字
 
 var UNIT = {
   id: 'circle',
@@ -68,8 +67,8 @@ var UNIT = {
   units: { cm: '' },
 
   modes: [
-    { id: 1, name: 'ちゅうしん・はんけい', desc: '中心はどれ？／半径はどれ？（番号）' },
-    { id: 2, name: 'ちょっけい', desc: '直径はどれ？（番号）', needs: { mode: 1, tries: 3 } },
+    { id: 1, name: 'ちゅうしん・はんけい', desc: '中心はどれ？／半径はどれ？（タップ）' },
+    { id: 2, name: 'ちょっけい', desc: '直径はどれ？（タップ）', needs: { mode: 1, tries: 3 } },
     { id: 3, name: 'はんけい⇄ちょっけい', desc: '半径12cm → 直径は？', needs: { mode: 2, tries: 3 } },
     { id: 4, name: 'きゅう', desc: 'いちばん大きい切り口／球の半径⇄直径', needs: { mode: 3, tries: 3 } },
     { id: 5, name: 'ならんだ まる', desc: '箱に並んだボールの長さ', needs: { mode: 4, tries: 3 } },
@@ -89,9 +88,9 @@ var UNIT = {
     I: { cm: 2 }, J: { cm: 2 }, K: { cm: 2 }
   },
 
-  tips: '番号の問い（中心・半径・直径・切り口）の誤りは mistakes シートで読む。' +
+  tips: 'タップの問い（中心・半径・直径・切り口）の誤りは mistakes シートで読む。' +
         '「もんだい」の欄が選択肢の並び（例 B:chord-rad-short-off）で、' +
-        '「こたえた値」が3なら3番目の short（円周まで届かない線）を選んだ、と読む。' +
+        '「こたえた値」が3なら左から3番目の short（円周まで届かない線）を選んだ、と読む。' +
         'ならび（I・J）で答えが正答のちょうど半分なら、ボール1こ分を半径で数えている可能性がある。',
 
   gen: function (rand, mode) {
@@ -132,9 +131,10 @@ function ciSvg_(w, h, body) {
   return '<svg viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" ' +
          'font-family="sans-serif" font-weight="800">' + body + '</svg>';
 }
-function ciCircle_(cx, cy, r, stroke, width) {
+function ciCircle_(cx, cy, r, stroke, width, className) {
   return '<circle cx="' + ciR_(cx) + '" cy="' + ciR_(cy) + '" r="' + ciR_(r) +
-         '" fill="none" stroke="' + (stroke || CI_LINE) + '" stroke-width="' + (width || 4) + '"/>';
+         '" fill="none" stroke="' + (stroke || CI_LINE) + '" stroke-width="' + (width || 4) +
+         '"' + (className ? ' class="' + className + '"' : '') + '/>';
 }
 function ciDot_(p) {
   return '<circle cx="' + ciR_(p[0]) + '" cy="' + ciR_(p[1]) + '" r="6" fill="' + CI_INK + '"/>';
@@ -159,15 +159,17 @@ function ciLenLabel_(p, q, s, d) {
 }
 
 /**
- * 番号で答える問い。4つの小さな図を横に並べ、左上に①〜④を置く。
+ * タップで答える問い。4つの小さな図を横に並べる。
  * draw(kind, cx, cy, r) が1枚分の図を返す。
  */
 function ciChoice_(rand, t, ask, kinds, right, draw) {
   var order = ciShuffle_(rand, kinds);
   var W = 200, H = 220, r = 78, body = '';
   order.forEach(function (k, i) {
-    var cx = i * W + W / 2, cy = H / 2 + 12;
-    body += ciText_(i * W + 22, 24, CI_MARK[i], 32) + draw(k, cx, cy, r);
+    var cx = i * W + W / 2, cy = H / 2;
+    body += '<g data-pick="' + (i + 1) + '">' +
+            '<rect x="' + (i * W) + '" y="0" width="' + W + '" height="' + H + '" fill="#000" fill-opacity="0" stroke="none"/>' +
+            draw(k, cx, cy, r) + '</g>';
   });
   return {
     t: t, q: ask, f: [''], ans: { '': order.indexOf(right) + 1 },
@@ -186,7 +188,7 @@ function ciCenter_(rand) {
   var off = { center: 0, near: 0.32, mid: 0.5, edge: 0.7 };
   return ciChoice_(rand, 'A', ['ちゅうしんは', 'どれ？'], ['center', 'near', 'mid', 'edge'], 'center',
     function (k, cx, cy, r) {
-      return ciCircle_(cx, cy, r) + ciDot_(ciAt_(cx, cy, r * off[k], ciAngle_(rand)));
+      return ciCircle_(cx, cy, r, CI_LINE, 4, 'pkb') + ciDot_(ciAt_(cx, cy, r * off[k], ciAngle_(rand)));
     });
 }
 
@@ -198,7 +200,7 @@ function ciRadius_(rand) {
       else if (k === 'short') s = ciSeg_(c, ciAt_(cx, cy, r * 0.55, th));
       else if (k === 'chord') s = ciSeg_(ciAt_(cx, cy, r, th), ciAt_(cx, cy, r, th + Math.PI / 3));
       else s = ciSeg_(ciAt_(cx, cy, r * 0.45, th), ciAt_(cx, cy, r, th + Math.PI / 2));
-      return ciCircle_(cx, cy, r) + s + ciDot_(c);
+      return ciCircle_(cx, cy, r, CI_LINE, 4, 'pkb') + s + ciDot_(c);
     });
 }
 
@@ -217,7 +219,7 @@ function ciDiameter_(rand) {
         s = ciSeg_([cx - hw, y], [cx + hw, y]);
       } else if (k === 'rad') s = ciSeg_(c, ciAt_(cx, cy, r, th));
       else s = ciSeg_(ciAt_(cx, cy, r * 0.6, th), ciAt_(cx, cy, r * 0.6, th + Math.PI));
-      return ciCircle_(cx, cy, r) + s + ciDot_(c);
+      return ciCircle_(cx, cy, r, CI_LINE, 4, 'pkb') + s + ciDot_(c);
     });
 }
 
@@ -249,9 +251,9 @@ function ciConvert_(rand) {
  * ============================================================ */
 
 /** 球（輪郭）と、高さ h（-1〜1、上が正）の水平な切り口 */
-function ciBall_(cx, cy, r, h) {
+function ciBall_(cx, cy, r, h, className) {
   var rx = r * Math.sqrt(1 - h * h), ry = Math.max(4, rx * 0.28), y = cy - h * r;
-  return ciCircle_(cx, cy, r) +
+  return ciCircle_(cx, cy, r, CI_LINE, 4, className) +
          '<ellipse cx="' + ciR_(cx) + '" cy="' + ciR_(y) + '" rx="' + ciR_(rx) + '" ry="' + ciR_(ry) +
          '" fill="rgba(255,255,255,.18)" stroke="' + CI_INK + '" stroke-width="5"/>';
 }
@@ -259,7 +261,7 @@ function ciBall_(cx, cy, r, h) {
 function ciCut_(rand) {
   var h = { mid: 0, up: 0.5, top: 0.8, down: -0.6 };
   return ciChoice_(rand, 'F', ['いちばん大きい', 'きり口は？'], ['mid', 'up', 'top', 'down'], 'mid',
-    function (k, cx, cy, r) { return ciBall_(cx, cy, r, h[k]); });
+    function (k, cx, cy, r) { return ciBall_(cx, cy, r, h[k], 'pkb'); });
 }
 
 /** 球を中心で切った切り口に、半径か直径を引いて長さを書く */
@@ -284,7 +286,7 @@ function ciSphere_(rand) {
  * 点線（線分）で示すと、図の中の半径・直径の線と同じ「線」に見え、
  * 「箱の辺に線が引いてある＝その線の長さ」と、長さを線そのものと取り違えさせる。
  * 括弧は「ここからここまで」という範囲の記号で、線分の仲間に見えない。
- * 色も選ぶ対象の線（白）と分けて、番号・長さと同じ色にする。
+ * 色も選ぶ対象の線（白）と分けて、長さの字と同じ色にする。
  */
 function ciBrace_(p, q, side) {
   var dx = q[0] - p[0], dy = q[1] - p[1], L = Math.sqrt(dx * dx + dy * dy);

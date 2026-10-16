@@ -216,6 +216,12 @@ body.coopPast #coop:active{background:#E1E4E8}
 #play.fig-mode .cntbox .l{font-size:.6rem;margin-top:.15rem}
 .figbox{flex:1 1 auto;min-height:0;width:100%;display:flex;align-items:center;justify-content:center}
 .figbox svg{display:block;max-width:100%;max-height:100%;width:100%;height:100%}
+#play.pick-mode #pad{visibility:hidden}
+#play.pick-mode .slot{display:none}
+.figbox [data-pick]{cursor:pointer}
+.figbox [data-pick]:active .pkb{stroke:#fff}
+.figbox .pick-ans .pkb{stroke:var(--alert);stroke-width:8}
+.figbox.revealing [data-pick]:not(.pick-ans){opacity:.3}
 
 /* まきじゃく */
 .ruler{width:min(98%,1300px);margin:0 auto}
@@ -2992,11 +2998,13 @@ function draw(){
   $('play').classList.toggle('ruler-mode', !!(q.ruler || q.dial));
   $('play').classList.toggle('dial-mode', !!q.dial);
   $('play').classList.toggle('fig-mode', !!q.fig);
+  $('play').classList.toggle('pick-mode', isPick_(q));
+  setHelp();
 
   if(q.fig){
     /*
      * 単元が描いた図（SVG文字列）をそのまま置く。上に問い＋欄、下に図。
-     * 共通画面は図の中身（円・箱・番号）を知らない。まきじゃく・文字盤と違って
+     * 共通画面は図の中身（円・箱・選択肢）を知らない。まきじゃく・文字盤と違って
      * 描画を単元側に持たせるのは、図の種類が単元ごとに違い、ここに足していくと
      * 共通画面が単元を知ることになるため。問いには「＝」を付けない（式ではない）。
      */
@@ -3202,7 +3210,7 @@ function submit(){
     // 次の問題を描く前に写す。draw() が eqEl を書き換えると欄が消える。
     // 残像は別の層なので、次の問題の描画は1msも遅れない
     // （遅らせると60秒あたりの問題数が減り、過去のベストと比べられなくなる）
-    ghostAnswer_(q);
+    if(!isPick_(q)) ghostAnswer_(q);
     if(!practice || pRecorded) pushItem();
     miss = 0;
     nextQuestion();
@@ -3213,15 +3221,23 @@ function submit(){
     // 2回目から正しい答えを赤で見せる。1回で次へ進む設定（missLimit=1）なら、進む前に見せる
     var reveal = miss >= 2 || miss >= CFG.missLimit;
     if(reveal){
-      q.f.forEach(function(u){ typed[u] = String(q.ans[u]); });
-      // 筆算は上の位の0を書かない（85 を 085 と見せない）
-      if(q.col){ var ord = colOrder_(q);
-        for(var k=0; k<ord.length-1 && q.ans[q.f[ord[k]]] === 0; k++) typed[q.f[ord[k]]] = ''; }
-      fi = q.f.length - 1;
-      paintSlots();
-      eqEl.classList.add('reveal');
-      $('footnote').textContent = 'こたえは ' + (q.col ? colNum_(q, q.ans) :
-        q.f.map(function(u){ return glyph_(u, String(q.ans[u])) + u; }).join(' '));
+      if(isPick_(q)){
+        var box = eqEl.querySelector('.figbox');
+        var answer = box && box.querySelector('[data-pick="' + q.ans[q.f[0]] + '"]');
+        if(answer) answer.classList.add('pick-ans');
+        if(box) box.classList.add('revealing');
+        $('footnote').textContent = 'こたえは これ';
+      }else{
+        q.f.forEach(function(u){ typed[u] = String(q.ans[u]); });
+        // 筆算は上の位の0を書かない（85 を 085 と見せない）
+        if(q.col){ var ord = colOrder_(q);
+          for(var k=0; k<ord.length-1 && q.ans[q.f[ord[k]]] === 0; k++) typed[q.f[ord[k]]] = ''; }
+        fi = q.f.length - 1;
+        paintSlots();
+        eqEl.classList.add('reveal');
+        $('footnote').textContent = 'こたえは ' + (q.col ? colNum_(q, q.ans) :
+          q.f.map(function(u){ return glyph_(u, String(q.ans[u])) + u; }).join(' '));
+      }
     }
     setTimeout(function(){
       locked = false;
@@ -3670,8 +3686,20 @@ function begin(m){
 /* 桁数が揃わず自動確定できないモードは、Unit.gs が help に案内文を持つ */
 function setHelp(){
   var m = practice ? pMode : mode, h = (MODES[m] && MODES[m].help) || '';
+  var q = queue[qi];
+  if(isPick_(q)){ $('footnote').textContent = 'こたえを タップ'; return; }
   if(colLeft_() && /いちの くらいから/.test(h)) h = 'ひだりから じゅんに うとう';   // 左から打つ設定では、案内も合わせる
   $('footnote').textContent = h;
+}
+function isPick_(q){
+  return !!(q && q.fig && q.f.length === 1 && /data-pick=/.test(q.fig));
+}
+function pickTap_(n){
+  var q = queue[qi];
+  if(!q || locked || !ready || !isPick_(q) || !(n >= 1 && n <= 9 && Math.floor(n) === n)) return;
+  typed[q.f[0]] = '';
+  fi = 0;
+  handleInput(String(n));
 }
 /* ---- 筆算の形の問題（q.col）で、答えを右から打つか左から打つか（UNIT.colDir の単元だけ。児童が選び、端末に覚える） ----
  * みぎから（既定）：一の位の欄から順に打つ。頭の中の筆算と同じ順。
@@ -3885,6 +3913,8 @@ document.addEventListener('click', function(e){
     var yc = t.closest('[data-ptype]');
     if(yc){ pType = yc.dataset.ptype || ''; beginPractice(false); }
   }else if(scr === 'play'){
+    var pk = t.closest('[data-pick]');
+    if(pk){ pickTap_(+pk.getAttribute('data-pick')); return; }
     var slot = t.closest('.slot');
     if(slot){ setField(+slot.dataset.fi); return; }   // 解答欄をタップして移動
     var key = t.closest('.key');
