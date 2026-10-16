@@ -32,6 +32,7 @@
 var BA_INK = '#FFFFFF';
 var BA_SUB = '#C9D1E8';
 var BA_LINE = '#8C93AC';
+var BA_MARK = ['①', '②', '③'];
 var BA_NAMES = [['赤', '青'], ['白', '黄'], ['ながい', 'みじかい']];
 
 var UNIT = {
@@ -74,7 +75,7 @@ var UNIT = {
         'r だけで誤る児童は、出てきた順に式を立てている可能性がある。' +
         '第3用法（H）の誤答が正答×倍×倍（くらべる量×倍）なら「倍ならかける」、' +
         '倍の倍（I）の誤答が2つの倍の和なら、倍を足している。' +
-        'しき えらび（S）の誤りは、tag の並び（例 S:mul-div-add）と答えた位置（左から何番目）で読む。',
+        'しき えらび（S）の誤りは、tag の並び（例 S:mul-div-add）と答えた番号で読む。',
 
   gen: function (rand, mode) {
     switch (mode) {
@@ -171,13 +172,14 @@ function baLine_(x1, y1, x2, y2, color, w) {
 function baPlain_(lines, choices) {
   var W = 960, t = baLines_(lines, 50), body = t.svg, y = t.y + 10;
   if (choices) {
-    var boxW = 270, boxH = 96, gap = 40;
+    var boxW = 260, boxH = 96, gap = 60;
     var x = (W - (choices.length * boxW + (choices.length - 1) * gap)) / 2;
     choices.forEach(function (c, i) {
       body += '<g data-pick="' + (i + 1) + '">' +
               '<rect class="pkb" x="' + baR_(x) + '" y="' + baR_(y) + '" width="' + boxW + '" height="' + boxH +
               '" rx="6" fill="#000" fill-opacity="0" stroke="' + BA_LINE + '" stroke-width="3"/>' +
-              baText1_(x + boxW / 2, y + boxH / 2, c, 48, BA_SUB, 'middle') +
+              baText1_(x + 22, y + boxH / 2, BA_MARK[i], 40, BA_SUB) +
+              baText1_(x + boxW / 2 + 32, y + boxH / 2, c, 48, BA_SUB, 'middle') +
               '</g>';
       x += boxW + gap;
     });

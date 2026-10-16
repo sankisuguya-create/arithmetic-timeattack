@@ -17,11 +17,18 @@ const ALLOWED = { 1: 'AB', 2: 'C', 3: 'DE', 4: 'FGH', 5: 'IJK', 6: 'ABCDEFGHIJK'
 
 function checkPickFigure(item) {
   const picks = [...item.fig.matchAll(/data-pick="(\d+)"/g)].map(m => Number(m[1]));
+  const marks = [...item.fig.matchAll(/[①②③④⑤⑥⑦⑧⑨]/g)].map(m => m[0]);
   for (let k = 1; k <= 4; k++) assert.equal(picks.filter(p => p === k).length, 1, item.tag + ' pick ' + k);
+  for (let k = 1; k <= 4; k++) {
+    const group = item.fig.match(new RegExp('<g data-pick="' + k + '">([\\s\\S]*?)</g>'));
+    assert.ok(group, item.tag + ' missing pick group ' + k);
+    assert.equal(group[1].split('①②③④⑤⑥⑦⑧⑨'[k - 1]).length - 1, 1, item.tag + ' pick mark ' + k);
+  }
   assert.equal(picks.length, 4, item.tag + ' pick count');
+  assert.equal(marks.length, 4, item.tag + ' mark count');
+  for (let k = 1; k <= 4; k++) assert.equal(marks.filter(mark => mark === '①②③④⑤⑥⑦⑧⑨'[k - 1]).length, 1, item.tag + ' mark ' + k);
   assert.equal((item.fig.match(/class="pkb"/g) || []).length, 4, item.tag + ' pkb count');
   assert.equal((item.fig.match(/<circle\b[^>]*class="pkb"[^>]*>/g) || []).length, 4, item.tag + ' pkb circles');
-  assert.ok(!/[①②③④]/.test(item.fig), item.tag + ' circled choice marks remain');
   assert.ok(Number.isInteger(item.ans['']) && item.ans[''] >= 1 && item.ans[''] <= 4, item.tag + ' answer position');
 }
 

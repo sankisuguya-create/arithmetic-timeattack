@@ -26,6 +26,7 @@
  *   A 2桁 / B・F・G・H 3桁（cm³） / C 2桁（cm） / 4択 1桁 / I 1桁（L）
  */
 
+var VO_MARK = ['①', '②', '③', '④'];
 var VO_LINE = '#8C93AC';    // 立体の辺
 var VO_INK = '#FFFFFF';     // 強調する線
 var VO_LABEL = '#C9D1E8';   // 長さの字
@@ -68,7 +69,7 @@ var UNIT = {
 
   tips: 'つみき（A）で答えが tag の「みえる」の数なら、見えている立方体だけを数えている。' +
         '直方体・立方体（B・C）で答えが2辺の積なら、高さをかけ忘れている（面積との混同）。' +
-        'たんい（E・J・K・N）は tag に選択肢の並びが残る。「こたえた値」が3なら左上から3番目を選んだ、と読む。' +
+        'たんい（E・J・K・N）は tag に選択肢の並びが残る。「こたえた値」が3なら③を選んだ、と読む。' +
         '1m³=100cm³ や 10000cm³ を選ぶのは、長さや面積の倍率で換えている。' +
         '容積（H・I）で答えが外のりの積に近いなら、板の厚さを引いていない。',
 
@@ -277,13 +278,14 @@ function voUnit_(rand) {
   }
   var order = voShuffle_(rand, [right].concat(wrong));
   // 2×2 に並べる。横1列だと図が横長になり、数字が小さく縮む
-  var W = 330, H = 130, body = '';
+  var W = 360, H = 140, body = '';
   order.forEach(function (val, i) {
     var x = (i % 2) * W, y = Math.floor(i / 2) * H;
     body += '<g data-pick="' + (i + 1) + '">' +
-            '<rect class="pkb" x="' + (x + 8) + '" y="' + (y + 8) + '" width="' + (W - 16) + '" height="' + (H - 16) +
+            '<rect class="pkb" x="' + (x + 20) + '" y="' + (y + 20) + '" width="' + (W - 40) + '" height="' + (H - 40) +
             '" rx="6" fill="#000" fill-opacity="0" stroke="' + VO_LINE + '" stroke-width="3"/>' +
-            voText_(x + W / 2, y + H / 2, String(val), 48) + '</g>';
+            voText_(x + 64, y + H / 2, VO_MARK[i], 40) +
+            voText_(x + W / 2 + 24, y + H / 2, String(val), 48) + '</g>';
   });
   return {
     t: t, q: ask, f: [''], ans: { '': order.indexOf(right) + 1 },

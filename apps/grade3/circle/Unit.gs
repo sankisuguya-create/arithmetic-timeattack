@@ -16,7 +16,7 @@
  * 練習がかえって強める（推定）。「ランダムは最後」は型の混在のことで、図の向きのことではない。
  *
  * タップで答える問いの誤答の選択肢は、誤概念ごとに1つずつ置く。
- * 並びは毎問入れ替わるので、答えた位置だけでは何を選んだか分からない。
+ * 並びは毎問入れ替わるので、答えた番号だけでは何を選んだか分からない。
  * tag に並び（例 'B:chord-rad-short-off'）を入れておき、mistakes シートの
  * 「もんだい」と「こたえた値」から、どの誤りの選択肢を選んだかを読めるようにしている。
  *
@@ -31,6 +31,7 @@
  * （docs/ADD_UNIT.md 3章）。半径を答える問いは直径を偶数に限る（小数は未習）。
  */
 
+var CI_MARK = ['①', '②', '③', '④'];
 var CI_LINE = '#8C93AC';    // 円の輪郭（背景の図）
 var CI_INK = '#FFFFFF';     // 選ぶ対象の線・点
 var CI_LABEL = '#C9D1E8';   // 長さの字
@@ -90,7 +91,7 @@ var UNIT = {
 
   tips: 'タップの問い（中心・半径・直径・切り口）の誤りは mistakes シートで読む。' +
         '「もんだい」の欄が選択肢の並び（例 B:chord-rad-short-off）で、' +
-        '「こたえた値」が3なら左から3番目の short（円周まで届かない線）を選んだ、と読む。' +
+        '「こたえた値」が3なら③の short（円周まで届かない線）を選んだ、と読む。' +
         'ならび（I・J）で答えが正答のちょうど半分なら、ボール1こ分を半径で数えている可能性がある。',
 
   gen: function (rand, mode) {
@@ -164,12 +165,12 @@ function ciLenLabel_(p, q, s, d) {
  */
 function ciChoice_(rand, t, ask, kinds, right, draw) {
   var order = ciShuffle_(rand, kinds);
-  var W = 200, H = 220, r = 78, body = '';
+  var W = 240, H = 220, r = 78, body = '';
   order.forEach(function (k, i) {
-    var cx = i * W + W / 2, cy = H / 2;
+    var cx = i * W + W / 2, cy = H / 2 + 12;
     body += '<g data-pick="' + (i + 1) + '">' +
             '<rect x="' + (i * W) + '" y="0" width="' + W + '" height="' + H + '" fill="#000" fill-opacity="0" stroke="none"/>' +
-            draw(k, cx, cy, r) + '</g>';
+            ciText_(i * W + 22, 24, CI_MARK[i], 32) + draw(k, cx, cy, r) + '</g>';
   });
   return {
     t: t, q: ask, f: [''], ans: { '': order.indexOf(right) + 1 },
