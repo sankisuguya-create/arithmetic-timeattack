@@ -45,9 +45,10 @@ function ocEsc_(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function ocText_(x, y, text, size, anchor, color) {
+function ocText_(x, y, text, size, anchor, color, useAccent) {
   return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" text-anchor="' + (anchor || 'start') +
-    '" dominant-baseline="middle" fill="' + (color || OC_INK) + '">' + ocEsc_(text) + '</text>';
+    '" dominant-baseline="middle" fill="' + (color || OC_INK) + '"' +
+    (useAccent ? ' style="fill:var(--acc)"' : '') + '>' + ocEsc_(text) + '</text>';
 }
 
 function ocSvg_(body, height) {
@@ -61,7 +62,7 @@ function ocPickBox_(x, y, w, h, i, label, size, centeredLabel) {
   return '<g data-pick="' + (i + 1) + '">' +
     '<rect class="pkb" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h +
     '" rx="6" fill="#000" fill-opacity="0" stroke="' + OC_LINE + '" stroke-width="3"/>' +
-    ocText_(x + 24, y + h / 2, OC_MARK[i], 32, 'start', OC_SUB) +
+    ocText_(x + 24, y + h / 2, OC_MARK[i], 32, 'start', '#35D0A5', true) +
     ocText_(centeredLabel ? x + w / 2 : x + w / 2 + 24, y + h / 2, label, size, 'middle', OC_INK) +
     '</g>';
 }
