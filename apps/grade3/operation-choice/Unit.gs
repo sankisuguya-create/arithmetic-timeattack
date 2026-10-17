@@ -187,9 +187,9 @@ function ocTapeLine_(x1, y1, x2, y2) {
 }
 
 function ocBracket_(y0, whole) {
-  var y = y0 + 36, tapeY = y0 + 64;
-  return ocText_(520, y0 + 16, whole, 28, 'middle') +
-    ocTapeLine_(130, y, 910, y) + ocTapeLine_(130, y, 130, tapeY) + ocTapeLine_(910, y, 910, tapeY);
+  var y = y0 + 30;
+  return ocText_(520, y0 + 14, whole, 28, 'middle') +
+    ocTapeLine_(130, y, 910, y) + ocTapeLine_(130, y, 130, y0 + 44) + ocTapeLine_(910, y, 910, y0 + 44);
 }
 
 function ocTapeLabel_(x, y, label) {
@@ -197,10 +197,10 @@ function ocTapeLabel_(x, y, label) {
 }
 
 function ocPw_(y0, whole, parts) {
-  var y = y0 + 64, body = ocBracket_(y0, whole) + ocTapeRect_(130, y, 780, 56);
+  var y = y0 + 56, body = ocBracket_(y0, whole) + ocTapeRect_(130, y, 780, 56);
   body += ocTapeLine_(600, y, 600, y + 56);
   body += ocTapeLabel_(365, y + 28, parts[0]) + ocTapeLabel_(755, y + 28, parts[1]);
-  return body;
+  return { body: body, bottom: y + 56 };
 }
 
 function ocCmp_(y0, top, bottom, diff) {
@@ -209,17 +209,18 @@ function ocCmp_(y0, top, bottom, diff) {
   body += ocTapeRect_(130, y0 + 96, 470, 50);
   body += ocTapeRect_(600, y0 + 96, 310, 50, true);
   body += ocTapeLabel_(365, y0 + 121, bottom) + ocTapeLabel_(755, y0 + 121, diff);
-  return body;
+  return { body: body, bottom: y0 + 146 };
 }
 
 function ocEq_(y0, cell, count, whole, divisions) {
-  var y = y0 + 64, body = ocBracket_(y0, whole) + ocTapeRect_(130, y, 780, 56);
+  var y = y0 + 56, body = ocBracket_(y0, whole) + ocTapeRect_(130, y, 780, 56);
   var parts = divisions === 'unknown' ? 5 : divisions, width = 780 / parts;
   for (var i = 1; i < parts; i++) body += ocTapeLine_(130 + width * i, y, 130 + width * i, y + 56);
   body += ocTapeLabel_(130 + width / 2, y + 28, cell);
   if (divisions === 'unknown') body += ocText_(130 + width * 3.5, y + 28, '…', 28, 'middle', OC_INK);
-  body += ocText_(520, y0 + 150, count, 26, 'middle', OC_SUB);
-  return body;
+  var countY = y0 + 56 + 56 + 30;
+  body += ocText_(520, countY, count, 26, 'middle', OC_SUB);
+  return { body: body, bottom: countY + 14 };
 }
 
 function ocExpressionList_(x, y) {
@@ -275,8 +276,8 @@ function ocOp_(rand) {
 
 function ocExpr_(rand) {
   var selected = ocTemplate_(rand), scene = ocScene_(rand, selected.type, selected.n);
-  var lines = ocLines_(scene.lines, 32), y0 = lines.lastY + 30, choicesY = y0 + 170 + 24;
-  var body = lines.body + ocDiagram_(scene, y0);
+  var lines = ocLines_(scene.lines, 32), y0 = lines.lastY + 30, diagram = ocDiagram_(scene, y0);
+  var choicesY = diagram.bottom + 32, body = lines.body + diagram.body;
   var expressions = ocExpressionList_(scene.x, scene.y);
   return ocItem_(scene.type, 'あう しきは？', OC_OPS.indexOf(scene.op) + 1, 'ex ' + scene.id + scene.cue,
     body + ocExprChoices_(expressions, choicesY), choicesY + 104 + 88);
