@@ -28,6 +28,7 @@ function checkPickFigure(item) {
   assert.equal(marks.length, 4, item.tag + ' mark count');
   for (let k = 1; k <= 4; k++) assert.equal(marks.filter(mark => mark === '①②③④⑤⑥⑦⑧⑨'[k - 1]).length, 1, item.tag + ' mark ' + k);
   assert.equal((item.fig.match(/class="pkb"/g) || []).length, 4, item.tag + ' pkb count');
+  assert.ok(!/class="pkv"/.test(item.fig), item.tag + ' unexpected pkv');
   assert.equal((item.fig.match(/<circle\b[^>]*class="pkb"[^>]*>/g) || []).length, 4, item.tag + ' pkb circles');
   assert.ok(Number.isInteger(item.ans['']) && item.ans[''] >= 1 && item.ans[''] <= 4, item.tag + ' answer position');
 }

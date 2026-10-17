@@ -148,8 +148,8 @@ function baSvg_(w, h, body) {
   return '<svg viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" ' +
          'font-family="sans-serif" font-weight="800">' + body + '</svg>';
 }
-function baText1_(x, y, s, size, fill, anchor) {
-  return '<text x="' + baR_(x) + '" y="' + baR_(y) + '" font-size="' + (size || 44) +
+function baText1_(x, y, s, size, fill, anchor, cls) {
+  return '<text' + (cls ? ' class="' + cls + '"' : '') + ' x="' + baR_(x) + '" y="' + baR_(y) + '" font-size="' + (size || 44) +
          '" fill="' + (fill || BA_INK) + '" text-anchor="' + (anchor || 'start') +
          '" dominant-baseline="middle">' + s + '</text>';
 }
@@ -179,7 +179,7 @@ function baPlain_(lines, choices) {
               '<rect class="pkb" x="' + baR_(x) + '" y="' + baR_(y) + '" width="' + boxW + '" height="' + boxH +
               '" rx="6" fill="#000" fill-opacity="0" stroke="' + BA_LINE + '" stroke-width="3"/>' +
               baText1_(x + 22, y + boxH / 2, BA_MARK[i], 40, BA_SUB) +
-              baText1_(x + boxW / 2 + 24, y + boxH / 2, c, 48, BA_SUB, 'middle') +
+              baText1_(x + boxW / 2 + 24, y + boxH / 2, c, 48, BA_SUB, 'middle', 'pkv') +
               '</g>';
       x += boxW + gap;
     });

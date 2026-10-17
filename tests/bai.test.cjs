@@ -18,11 +18,15 @@ function checkPickFigure(item, n) {
     const group = item.fig.match(new RegExp('<g data-pick="' + k + '">([\\s\\S]*?)</g>'));
     assert.ok(group, item.tag + ' missing pick group ' + k);
     assert.equal(group[1].split('①②③④⑤⑥⑦⑧⑨'[k - 1]).length - 1, 1, item.tag + ' pick mark ' + k);
+    const values = [...group[1].matchAll(/<text\b(?=[^>]*class="pkv")[^>]*>([\s\S]*?)<\/text>/g)];
+    assert.equal(values.length, 1, item.tag + ' pkv ' + k);
+    assert.notEqual(values[0][1], '①②③④⑤⑥⑦⑧⑨'[k - 1], item.tag + ' pkv is not the mark ' + k);
   }
   assert.equal(picks.length, n, item.tag + ' pick count');
   assert.equal(marks.length, n, item.tag + ' mark count');
   for (let k = 1; k <= n; k++) assert.equal(marks.filter(mark => mark === '①②③④⑤⑥⑦⑧⑨'[k - 1]).length, 1, item.tag + ' mark ' + k);
   assert.equal((item.fig.match(/class="pkb"/g) || []).length, n, item.tag + ' pkb count');
+  assert.equal((item.fig.match(/class="pkv"/g) || []).length, n, item.tag + ' pkv count');
   assert.equal((item.fig.match(/<rect\b[^>]*class="pkb"[^>]*>/g) || []).length, n, item.tag + ' pkb rects');
   assert.ok(Number.isInteger(item.ans['']) && item.ans[''] >= 1 && item.ans[''] <= n, item.tag + ' answer position');
 }
@@ -119,4 +123,18 @@ tapUi.queue = [numericItem]; tapUi.qi = 0; tapUi.fi = 0; tapUi.typed = unchanged
 tapUi.pickTap_(1);
 assert.equal(tapUi.typed[numericItem.f[0]], '7');
 assert.equal(tappedSubmit, 1);
+
+const commonUi = require('./lib/kit.cjs').read('common/index.html');
+assert.ok(commonUi.includes('function pickOk_('), '選択肢の正答エフェクト関数がある');
+const pickOkStart = commonUi.indexOf('function pickOk_(');
+const pickOkEnd = commonUi.indexOf('\n}', pickOkStart);
+assert.ok(commonUi.slice(pickOkStart, pickOkEnd).includes("grp.querySelector('.pkv')"), '正答エフェクトが値文字の位置を使う');
+assert.ok(commonUi.includes('if(isPick_(q)) pickOk_(q); else ghostAnswer_(q);'), '正答時に問題型に合うエフェクトを出す');
+const pickOkCss = commonUi.match(/\.pick-ok\{([^}]*)\}/);
+assert.ok(pickOkCss && pickOkCss[1].includes('pointer-events:none') && pickOkCss[1].includes('var(--acc)'), '○がタップを妨げず学年色を使う');
+const reducedMotionStart = commonUi.lastIndexOf('@media (prefers-reduced-motion:reduce){');
+const reducedMotionEnd = commonUi.indexOf('\n}', reducedMotionStart);
+assert.ok(reducedMotionStart >= 0 && reducedMotionEnd > reducedMotionStart &&
+  commonUi.slice(reducedMotionStart, reducedMotionEnd).includes('.pick-ok{animation:ghostfade .55s linear forwards!important}'),
+  '動きを減らす設定では○をその場で薄くする');
 console.log(`bai: ${6 * 5002} questions, order ${JSON.stringify(ords)}, uses ${JSON.stringify(uses)}, keys ${ok} right / ${ng} wrong.`);
