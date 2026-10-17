@@ -17,11 +17,15 @@ function checkPickFigure(item) {
     const group = item.fig.match(new RegExp('<g data-pick="' + k + '">([\\s\\S]*?)</g>'));
     assert.ok(group, item.tag + ' missing pick group ' + k);
     assert.equal(group[1].split('①②③④⑤⑥⑦⑧⑨'[k - 1]).length - 1, 1, item.tag + ' pick mark ' + k);
+    const values = [...group[1].matchAll(/<text\b(?=[^>]*class="pkv")[^>]*>([\s\S]*?)<\/text>/g)];
+    assert.equal(values.length, 1, item.tag + ' pkv ' + k);
+    assert.notEqual(values[0][1], '①②③④⑤⑥⑦⑧⑨'[k - 1], item.tag + ' pkv is not the mark ' + k);
   }
   assert.equal(picks.length, 4, item.tag + ' pick count');
   assert.equal(marks.length, 4, item.tag + ' mark count');
   for (let k = 1; k <= 4; k++) assert.equal(marks.filter(mark => mark === '①②③④⑤⑥⑦⑧⑨'[k - 1]).length, 1, item.tag + ' mark ' + k);
   assert.equal((item.fig.match(/class="pkb"/g) || []).length, 4, item.tag + ' pkb count');
+  assert.equal((item.fig.match(/class="pkv"/g) || []).length, 4, item.tag + ' pkv count');
   assert.equal((item.fig.match(/<rect\b[^>]*class="pkb"[^>]*>/g) || []).length, 4, item.tag + ' pkb rects');
   assert.ok(Number.isInteger(item.ans['']) && item.ans[''] >= 1 && item.ans[''] <= 4, item.tag + ' answer position');
 }

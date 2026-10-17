@@ -2887,7 +2887,8 @@ function ghostAnswer_(q){
  */
 function pickOk_(q){
   var stage = eqEl.parentNode;
-  var pkb = eqEl.querySelector('.figbox [data-pick="' + q.ans[q.f[0]] + '"] .pkb');
+  var grp = eqEl.querySelector('.figbox [data-pick="' + q.ans[q.f[0]] + '"]');
+  var pkb = grp && grp.querySelector('.pkb'), pkv = grp && grp.querySelector('.pkv');
   if(!stage || !pkb) return;
   var r = pkb.getBoundingClientRect(), sr = stage.getBoundingClientRect();
   if(!r.width || !r.height || !sr.width || !sr.height) return;
@@ -2895,13 +2896,16 @@ function pickOk_(q){
   if(ghostEl){ ghostEl.remove(); ghostEl = null; }
   clearTimeout(ghostTimer);
 
-  var d = Math.min(r.width, r.height) * 1.15;
+  var v = pkv ? pkv.getBoundingClientRect() : null;
+  var base = Math.min(r.width, r.height) * 1.15;
+  var d = pkv ? Math.min(Math.max(base, v.width * 1.25), r.height * 1.6) : base;
+  var c = v || r;
   var g = document.createElement('div');
   g.className = 'pick-ok';
   g.style.width = d + 'px';
   g.style.height = d + 'px';
-  g.style.left = (r.left + r.width / 2 - sr.left) + 'px';
-  g.style.top = (r.top + r.height / 2 - sr.top) + 'px';
+  g.style.left = (c.left + c.width / 2 - sr.left) + 'px';
+  g.style.top = (c.top + c.height / 2 - sr.top) + 'px';
   g.style.borderWidth = Math.max(6, Math.round(d * 0.08)) + 'px';
   stage.appendChild(g);
   ghostEl = g;

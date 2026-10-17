@@ -126,8 +126,8 @@ function voPoly_(pts, fill, stroke, width) {
   return '<polygon points="' + voPts_(pts) + '" fill="' + fill + '" stroke="' + (stroke || VO_LINE) +
          '" stroke-width="' + (width || 4) + '" stroke-linejoin="round"/>';
 }
-function voText_(x, y, s, size) {
-  return '<text x="' + voR_(x) + '" y="' + voR_(y) + '" font-size="' + (size || 30) +
+function voText_(x, y, s, size, cls) {
+  return '<text' + (cls ? ' class="' + cls + '"' : '') + ' x="' + voR_(x) + '" y="' + voR_(y) + '" font-size="' + (size || 30) +
          '" fill="' + VO_LABEL + '" text-anchor="middle" dominant-baseline="middle">' + s + '</text>';
 }
 
@@ -285,7 +285,7 @@ function voUnit_(rand) {
             '<rect class="pkb" x="' + (x + 20) + '" y="' + (y + 20) + '" width="' + (W - 40) + '" height="' + (H - 40) +
             '" rx="6" fill="#000" fill-opacity="0" stroke="' + VO_LINE + '" stroke-width="3"/>' +
             voText_(x + 64, y + H / 2, VO_MARK[i], 40) +
-            voText_(x + W / 2 + 24, y + H / 2, String(val), 48) + '</g>';
+            voText_(x + W / 2 + 24, y + H / 2, String(val), 48, 'pkv') + '</g>';
   });
   return {
     t: t, q: ask, f: [''], ans: { '': order.indexOf(right) + 1 },
