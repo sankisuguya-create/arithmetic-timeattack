@@ -91,7 +91,7 @@ function ocPickItem_(type, question, choices, correct, tag, body, mode) {
     q: [question],
     f: [''],
     ans: { '': ans },
-    tag: tag + ':' + order.join('|'),
+    tag: tag + ':' + order.join('_'),
     fig: ocSvg_(body, mode.height || 620)
   };
 }
@@ -156,9 +156,7 @@ function ocDiagram_(rand) {
     for (var i = 0; i < count; i++) {
       var x = x0 + i * 142;
       body += '<g><rect x="' + x + '" y="132" width="126" height="86" rx="8" fill="#000" fill-opacity="0" stroke="' + OC_LINE + '" stroke-width="3"/>';
-      for (var j = 0; j < each; j++) {
-        body += '<line x1="' + (x + 28 + j * 19) + '" y1="154" x2="' + (x + 28 + j * 19) + '" y2="198" stroke="' + OC_SUB + '" stroke-width="7" stroke-linecap="round"/>';
-      }
+      body += ocText_(x + 63, 175, new Array(each + 1).join('● '), 26, 'middle', OC_SUB);
       body += '</g>';
     }
     body += ocText_(520, 250, '同じ数のまとまりが ' + count + 'つ', 28, 'middle', OC_SUB);
@@ -167,10 +165,7 @@ function ocDiagram_(rand) {
     for (var g = 0; g < groups; g++) {
       var cx = gx + g * 108 + 44;
       body += '<circle cx="' + cx + '" cy="172" r="42" fill="#000" fill-opacity="0" stroke="' + OC_LINE + '" stroke-width="3"/>';
-      for (var d = 0; d < s.result; d++) {
-        var angle = (Math.PI * 2 * d / Math.max(1, s.result)) - Math.PI / 2;
-        body += '<circle cx="' + (cx + Math.cos(angle) * 22) + '" cy="' + (172 + Math.sin(angle) * 22) + '" r="4.5" fill="' + OC_SUB + '"/>';
-      }
+      body += ocText_(cx, 172, new Array(s.result + 1).join('●'), 17, 'middle', OC_SUB);
     }
     body += ocText_(520, 250, s.a + '本を ' + groups + 'つのグループに分ける', 28, 'middle', OC_SUB);
   }
