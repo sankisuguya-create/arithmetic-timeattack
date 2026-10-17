@@ -192,6 +192,16 @@ body.coopPast #coop:active{background:#E1E4E8}
 }
 .ghost .u{font-size:.62em;color:var(--acc);opacity:.7;margin-right:.22em;margin-left:.02em}
 
+/* 色は学年色（せいかい数・残像と同じ）。意味は○の形と動きにも持たせる */
+.pick-ok{position:absolute;pointer-events:none;z-index:2;box-sizing:border-box;border-style:solid;
+  border-color:var(--acc);border-radius:50%;transform:translate(-50%,-50%);
+  animation:pickup .55s ease-out forwards}
+@keyframes pickup{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.8)}
+  25%{opacity:.95;transform:translate(-50%,-50%) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-60%) scale(1)}
+}
+
 /* 式：数字は大きく、単位はやや小さく落ち着かせる */
 .eq{font-size:clamp(2.2rem,7.5vw,4.6rem);font-weight:800;line-height:1.15;
   display:flex;flex-direction:column;align-items:center;gap:.12em}
@@ -388,11 +398,12 @@ body.practice-result .stats,body.practice-result .rank{display:none}
   background:var(--paper);padding:2rem;text-align:center;font-weight:700;line-height:1.9;z-index:9}
 #msg.on{display:flex}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-/* 動きを減らす設定でも、答えの残像は薄れて消える。
+/* 動きを減らす設定でも、答えの残像と選択肢の○は薄れて消える。
    動かさずに置くと次の問題に重なったまま残り、読めなくなるため。
-   `*` の !important より .ghost のほうが詳細度が高いので、順番によらずこちらが効く */
+   `*` の !important より .ghost / .pick-ok のほうが詳細度が高いので、順番によらずこちらが効く */
 @media (prefers-reduced-motion:reduce){
   .ghost{animation:ghostfade .42s linear forwards!important}
+  .pick-ok{animation:ghostfade .55s linear forwards!important}
 }
 @keyframes ghostfade{0%{opacity:.8}100%{opacity:0}}
 /* 学年なしの特殊枠。黒いプレイ面と紙面で読める独立の青。 */
@@ -2872,6 +2883,35 @@ function ghostAnswer_(q){
 }
 
 /**
+ * 正答すると次の問題がすぐ描かれるため、pkb の上に○を別の層で表示する（待ち時間は加えない）。
+ */
+function pickOk_(q){
+  var stage = eqEl.parentNode;
+  var pkb = eqEl.querySelector('.figbox [data-pick="' + q.ans[q.f[0]] + '"] .pkb');
+  if(!stage || !pkb) return;
+  var r = pkb.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+  if(!r.width || !r.height || !sr.width || !sr.height) return;
+
+  if(ghostEl){ ghostEl.remove(); ghostEl = null; }
+  clearTimeout(ghostTimer);
+
+  var d = Math.min(r.width, r.height) * 1.15;
+  var g = document.createElement('div');
+  g.className = 'pick-ok';
+  g.style.width = d + 'px';
+  g.style.height = d + 'px';
+  g.style.left = (r.left + r.width / 2 - sr.left) + 'px';
+  g.style.top = (r.top + r.height / 2 - sr.top) + 'px';
+  g.style.borderWidth = Math.max(6, Math.round(d * 0.08)) + 'px';
+  stage.appendChild(g);
+  ghostEl = g;
+  ghostTimer = setTimeout(function(){
+    if(ghostEl === g) ghostEl = null;
+    g.remove();
+  }, 600);
+}
+
+/**
  * 覆う段かどうか。
  * q.veil は「この番号以降の欄は、そこに着くまで見せない」という宣言で、
  * 段の中に入っている欄の番号で判定する。欄の無い段は覆わない。
@@ -3213,10 +3253,10 @@ function submit(){
 
   if(isRight()){
     correct++; countEl.textContent = correct; bumpCount();
-    // 次の問題を描く前に写す。draw() が eqEl を書き換えると欄が消える。
-    // 残像は別の層なので、次の問題の描画は1msも遅れない
+    // 次の問題を描く前に写す。draw() が式や図を書き換えるので、演出は別の層に置く。
+    // 次の問題の描画は1msも遅れない
     // （遅らせると60秒あたりの問題数が減り、過去のベストと比べられなくなる）
-    if(!isPick_(q)) ghostAnswer_(q);
+    if(isPick_(q)) pickOk_(q); else ghostAnswer_(q);
     if(!practice || pRecorded) pushItem();
     miss = 0;
     nextQuestion();
