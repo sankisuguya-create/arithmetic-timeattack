@@ -81,7 +81,11 @@ function checkCommon(item, mode) {
   assert.equal(item.ans[''], OP_NUMBER[expected], item.tag + ' 正解演算');
 
   for (let k = 1; k <= 4; k++) {
-    const label = textValues(pickGroup(item.fig, k))[1];
+    const group = pickGroup(item.fig, k);
+    const number = group.match(/<text\b([^>]*)>([①②③④])<\/text>/);
+    assert.ok(number && number[1].includes('fill="#35D0A5"') &&
+      number[1].includes('style="fill:var(--acc)"'), item.tag + ' 選択肢番号の色 ' + k);
+    const label = textValues(group)[1];
     assert.ok(label.includes(OPS[k - 1]), item.tag + ' 選択肢位置 ' + k + ': ' + label);
   }
   assert.ok(item.fig.startsWith('<svg') && !/NaN|undefined/.test(item.fig), item.tag + ' SVG');
