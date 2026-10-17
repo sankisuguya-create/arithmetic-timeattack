@@ -114,7 +114,11 @@ function ocScene_(rand) {
     return { type: 'C', op: '×', a: each, b: boxes, result: each * boxes,
       question: '1箱に鉛筆が ' + each + '本ずつ入っています。' + boxes + '箱では全部で何本？' };
   }
-  var people = ri_(rand, 2, 8), perPerson = ri_(rand, 2, 9), pencils = people * perPerson;
+  var people = ri_(rand, 2, 8), perPerson = ri_(rand, 2, 9);
+  // 2人に4本を分ける場面では「4−2」と「4÷2」が同じ数になるため、
+  // 演算を選ぶ問題で数値結果が重なる誤答を作らない。
+  if (people === 2 && perPerson === 2) perPerson = 3;
+  var pencils = people * perPerson;
   return { type: 'D', op: '÷', a: pencils, b: people, result: perPerson,
     question: '鉛筆 ' + pencils + '本を ' + people + '人に同じ数ずつ分けます。1人分は何本？' };
 }
