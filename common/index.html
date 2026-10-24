@@ -2320,6 +2320,8 @@ var MENUFIG_TOK = {};      // 玉の絵の控え（段・大きさごと）。1�
 // 段は大きさ・形（10万は1万の玉10個の輪）・位置（上下）でも区別しており、色はその二重の手がかり。
 // 暗い側は紙色の地に 3:1 以上、強度2色覚の見えでも金と紫は明度差で分かれる（color-coding の check-palette で確認）
 var MENUFIG_TOK_COLOR = { 1: ['#F4D27A', '#B07D0A', '#6E4A00'], 2: ['#C9A6F0', '#5B2A86', '#2E1048'] };
+// 図なし（body.figoff）は地が黒になる。上の暗い側は黒に沈む（#5B2A86 で 2.0:1）ので、全体を明るい側へずらす（暗い側でも 4:1 以上）
+var MENUFIG_TOK_COLOR_DARK = { 1: ['#FFE9A8', '#E0B23A', '#B07D0A'], 2: ['#E6D4FF', '#B58AE8', '#8E5BC8'] };
 var MENUFIG_FREE = false;   // 教師が開いた時 true（boot の teacher）
 function menuFigCount_(){
   var n = 0;
@@ -2343,7 +2345,7 @@ function menuFigDraw_(){
   if(FIGOFF) g.drawImage(batsu_(W, Hh), 0, 0);    // 図なしの時だけ、図形の後ろに絵筆のばつ印
   var acc = getComputedStyle($('start')).getPropertyValue('--acc').trim() || '#245BC2';   // 数字は沈めた色なので、図は強調色を直接読む
   // 玉は左の列に縦に積む（上が10万、下が1万）。玉がある時だけ図を右へ寄せて縮める
-  var toks = [], i;
+  var toks = [], i, paper = getComputedStyle(document.body).getPropertyValue('--paper').trim() || '#05060A';
   for(i = 0; i < juman; i++) toks.push(2);
   for(i = 0; i < man; i++) toks.push(1);
   var cx = W / 2, R = Math.min(W, Hh) * 0.48;
@@ -2351,8 +2353,13 @@ function menuFigDraw_(){
     var colW = Math.min(W, Hh) * 0.16, sz = Math.min(colW, Hh * 0.94 / toks.length);
     var y0 = Hh / 2 - sz * toks.length / 2;
     toks.forEach(function(lv, j){
-      var px = Math.max(4, Math.round(sz * (lv === 2 ? 1 : 0.86))), t = menuFigTok_(lv, px);
-      g.drawImage(t, colW / 2 - px / 2, y0 + sz * j + (sz - px) / 2);
+      var px = Math.max(4, Math.round(sz * (lv === 2 ? 1 : 0.86))), t = menuFigTok_(lv, px, FIGOFF);
+      var tx = colW / 2 - px / 2, ty = y0 + sz * j + (sz - px) / 2;
+      if(FIGOFF){
+        // 後ろのばつ印の線（鉄色）と玉が重なると玉が読めないので、玉の下だけ地の色の丸で線を隠す
+        g.fillStyle = paper; g.beginPath(); g.arc(tx + px / 2, ty + px / 2, px * 0.52, 0, Math.PI * 2); g.fill();
+      }
+      g.drawImage(t, tx, ty);
     });
     cx = colW + (W - colW) / 2; R = Math.min(W - colW, Hh) * 0.46;
   }
@@ -2370,26 +2377,26 @@ function menuFigDraw_(){
   g.restore();
 }
 /** 玉の絵。段1＝10000 の図を縮めたもの、段2＝段1の玉10個を輪にしたもの。裏の canvas に一度だけ描いて控える */
-function menuFigTok_(lv, px){
-  var key = lv + ':' + px;
+function menuFigTok_(lv, px, dark){
+  var key = lv + ':' + px + ':' + (dark ? 1 : 0), pal = dark ? MENUFIG_TOK_COLOR_DARK : MENUFIG_TOK_COLOR;
   if(MENUFIG_TOK[key]) return MENUFIG_TOK[key];
   var c = document.createElement('canvas'); c.width = c.height = px;
   var g = c.getContext('2d'); g.translate(px / 2, px / 2);
   if(lv === 1){
-    var cs = MENUFIG_TOK_COLOR[1], gr = g.createLinearGradient(-px / 2, -px / 2, px / 2, px / 2);
+    var cs = pal[1], gr = g.createLinearGradient(-px / 2, -px / 2, px / 2, px / 2);
     gr.addColorStop(0, cs[0]); gr.addColorStop(0.5, cs[1]); gr.addColorStop(1, cs[2]);
     g.fillStyle = gr;
     GrowingFigures.factorPoints(MENUFIG_MAX, px * 0.48).forEach(function(d){
       g.globalAlpha = d.cls ? 0.8 : 1; g.beginPath(); g.arc(d.x, d.y, Math.max(0.5, d.r * 0.95 / 0.72), 0, Math.PI * 2); g.fill();
     });
   }else{
-    var t = menuFigTok_(1, Math.max(4, Math.round(px * 0.3)));
+    var t = menuFigTok_(1, Math.max(4, Math.round(px * 0.3)), dark);
     for(var i = 0; i < 10; i++){
       var a = -Math.PI / 2 + i * Math.PI / 5;
       g.drawImage(t, Math.cos(a) * px * 0.34 - t.width / 2, Math.sin(a) * px * 0.34 - t.height / 2);
     }
     // 金の玉を並べた形だけを残して紫水晶に塗り替える（形は1万の玉10個のまま）
-    var cv2 = MENUFIG_TOK_COLOR[2], gr2 = g.createLinearGradient(-px / 2, -px / 2, px / 2, px / 2);
+    var cv2 = pal[2], gr2 = g.createLinearGradient(-px / 2, -px / 2, px / 2, px / 2);
     gr2.addColorStop(0, cv2[0]); gr2.addColorStop(0.5, cv2[1]); gr2.addColorStop(1, cv2[2]);
     g.globalCompositeOperation = 'source-in'; g.fillStyle = gr2; g.fillRect(-px / 2, -px / 2, px, px);
   }
