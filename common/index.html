@@ -2315,7 +2315,11 @@ function floorReplayEnd_(){
  * 左下の欄に正答回数以下の数を入れると、その数の図に変わる（空にすると正答回数の図に戻る） */
 var MENUFIG = '';
 var MENUFIG_MAX = 10000;   // 1つの図に描く上限。これに届くごとに玉1つにまとめる
-var MENUFIG_TOK = {};      // 玉の絵の控え（段・大きさ・色ごと）。1万個の粒を毎回描かない
+var MENUFIG_TOK = {};      // 玉の絵の控え（段・大きさごと）。1万個の粒を毎回描かない
+// 玉の色。金属の光沢に見えるよう、左上の明るい色から右下の暗い色へ塗る。1万＝金、10万＝紫水晶。
+// 段は大きさ・形（10万は1万の玉10個の輪）・位置（上下）でも区別しており、色はその二重の手がかり。
+// 暗い側は紙色の地に 3:1 以上、強度2色覚の見えでも金と紫は明度差で分かれる（color-coding の check-palette で確認）
+var MENUFIG_TOK_COLOR = { 1: ['#F4D27A', '#B07D0A', '#6E4A00'], 2: ['#C9A6F0', '#5B2A86', '#2E1048'] };
 var MENUFIG_FREE = false;   // 教師が開いた時 true（boot の teacher）
 function menuFigCount_(){
   var n = 0;
@@ -2347,7 +2351,7 @@ function menuFigDraw_(){
     var colW = Math.min(W, Hh) * 0.16, sz = Math.min(colW, Hh * 0.94 / toks.length);
     var y0 = Hh / 2 - sz * toks.length / 2;
     toks.forEach(function(lv, j){
-      var px = Math.max(4, Math.round(sz * (lv === 2 ? 1 : 0.86))), t = menuFigTok_(lv, px, acc);
+      var px = Math.max(4, Math.round(sz * (lv === 2 ? 1 : 0.86))), t = menuFigTok_(lv, px);
       g.drawImage(t, colW / 2 - px / 2, y0 + sz * j + (sz - px) / 2);
     });
     cx = colW + (W - colW) / 2; R = Math.min(W - colW, Hh) * 0.46;
@@ -2366,22 +2370,28 @@ function menuFigDraw_(){
   g.restore();
 }
 /** 玉の絵。段1＝10000 の図を縮めたもの、段2＝段1の玉10個を輪にしたもの。裏の canvas に一度だけ描いて控える */
-function menuFigTok_(lv, px, acc){
-  var key = lv + ':' + px + ':' + acc;
+function menuFigTok_(lv, px){
+  var key = lv + ':' + px;
   if(MENUFIG_TOK[key]) return MENUFIG_TOK[key];
   var c = document.createElement('canvas'); c.width = c.height = px;
   var g = c.getContext('2d'); g.translate(px / 2, px / 2);
   if(lv === 1){
-    g.fillStyle = acc;
+    var cs = MENUFIG_TOK_COLOR[1], gr = g.createLinearGradient(-px / 2, -px / 2, px / 2, px / 2);
+    gr.addColorStop(0, cs[0]); gr.addColorStop(0.5, cs[1]); gr.addColorStop(1, cs[2]);
+    g.fillStyle = gr;
     GrowingFigures.factorPoints(MENUFIG_MAX, px * 0.48).forEach(function(d){
       g.globalAlpha = d.cls ? 0.8 : 1; g.beginPath(); g.arc(d.x, d.y, Math.max(0.5, d.r * 0.95 / 0.72), 0, Math.PI * 2); g.fill();
     });
   }else{
-    var t = menuFigTok_(1, Math.max(4, Math.round(px * 0.3)), acc);
+    var t = menuFigTok_(1, Math.max(4, Math.round(px * 0.3)));
     for(var i = 0; i < 10; i++){
       var a = -Math.PI / 2 + i * Math.PI / 5;
       g.drawImage(t, Math.cos(a) * px * 0.34 - t.width / 2, Math.sin(a) * px * 0.34 - t.height / 2);
     }
+    // 金の玉を並べた形だけを残して紫水晶に塗り替える（形は1万の玉10個のまま）
+    var cv2 = MENUFIG_TOK_COLOR[2], gr2 = g.createLinearGradient(-px / 2, -px / 2, px / 2, px / 2);
+    gr2.addColorStop(0, cv2[0]); gr2.addColorStop(0.5, cv2[1]); gr2.addColorStop(1, cv2[2]);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = gr2; g.fillRect(-px / 2, -px / 2, px, px);
   }
   return MENUFIG_TOK[key] = c;
 }
