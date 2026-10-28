@@ -454,6 +454,19 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   ctx.coopSavePlan('3-1', 5, Array.from(legacy.gi));
   assert.ok(!('coop_plan_3-1_5' in props));
   assert.equal(gs.values.slice(1).filter(r => Number(r[1]) === 5).length, 8);
+  // 進行中の回はシートを直接直しても変わらない。coopLivePlan で回の並びに合わせて読み、coopSetGroups で効かせる
+  ctx.coopSavePlan('3-1', 3, [0, 0, 0, 1, 1, 1, 2, 2]);
+  assert.ok(ctx.coopStart({ cls: '3-1', mode: 'group', gn: 3, minutes: 5 }).ok);
+  gs.values.slice(1).filter(r => r[0] === '3-1' && r[1] === 3)[0][4] = 'C';
+  assert.equal(J(ctx.coopLive_().gi), '[0,0,0,1,1,1,2,2]');
+  const lp = ctx.coopLivePlan();
+  assert.ok(lp.ok && lp.saved); assert.equal(J(lp.gi), '[2,0,0,1,1,1,2,2]');
+  assert.equal(J(ctx.coopLive_().gi), '[0,0,0,1,1,1,2,2]');           // 読むだけでは回に書かない
+  ctx.coopStop();
+  assert.ok(!ctx.coopLivePlan().ok || ctx.coopLive_().status !== 'run');
+  // 画面：見本はシートの編成で描く。映している回は「シートから読み込む」→「保存」
+  assert.ok(/function coopPrevSession_\(\)\{[\s\S]*?prevPlanGi_\(/.test(tui));
+  assert.ok(tui.includes('}).coopLivePlan();'));
   // 画面：保存ボタンを押すまで書かない（チップを動かしただけでは保存しない）
   assert.ok(tui.includes('id="coopPlanSave"') && /function planMove\(i, g\)\{[\s\S]*?planSetDirty\(true\)/.test(tui));
   assert.ok(!/planMove[\s\S]{0,300}coopSavePlan/.test(tui.match(/function planMove\(i, g\)\{[\s\S]*?\n\}/)[0]));

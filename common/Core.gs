@@ -2135,6 +2135,20 @@ function coopSetGroups(gi) {
   });
 }
 
+/**
+ * 「グループ分け」シートの内容を、進行中（映している）回の児童の並びに合わせて読む。回には書かない。
+ * 回の編成は開始の時点でシートから写すので、あとでシートを直接直しても回には届かない。
+ * 教師画面はこれを窓に読み込み、「保存」（coopSetGroups）で回に効かせる。
+ */
+function coopLivePlan() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var s = coopLive_();
+  if (!s || s.mode !== 'group' || !s.order) return { ok: false, msg: 'グループの協力プレイがありません。' };
+  var kids = s.order.map(function (m, i) { return { mail: m, no: s.nos[i] }; });
+  var plan = coopPlanGet_(s.cls, s.gn, kids);
+  return { ok: true, gi: plan || coopPlanDefault_(s.gn, kids), saved: !!plan, sheetUrl: coopGroupUrl_() };
+}
+
 /** いまのセッションを再生データとして保存する。終了前でもその時点までを保存 */
 function coopSave(name) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
