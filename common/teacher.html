@@ -2193,6 +2193,8 @@ function coopPrevSession_(){
   var gn = Number($('coopGn').value) || 6, minutes = coopMinVal(), lim = 60, pace = 20;
   var names = [], nos = [], gi = [], i;
   for(i = 0; i < n; i++){ names.push(''); nos.push(i + 1); gi.push(Math.min(gn - 1, Math.floor(i * gn / n))); }
+  // グループの時は「グループ分け」シートの編成で描く（まだ読んでいなければ等分で描き、読めたら描き直す）
+  if(mode === 'group'){ var pg = prevPlanGi_(cls.value, gn); if(pg && pg.length === n) gi = pg.slice(); }
   var s = { id: 'preview', cls: cls.value, pat: $('coopPat').value, seed: 1, mode: mode, gn: gn,
             org: coopOrgVal(), orgPts: coopOrgCustomFit_(coopOrgVal()), start: 0, end: minutes * 60000, status: 'done', total: 0, names: names, nos: nos, gi: gi,
             pace: pace, minutes: minutes, lim: lim, skip: 0, prior: null, gw: GROW_SAVED };
@@ -2206,6 +2208,24 @@ function coopPrevSession_(){
   ev.sort(function(a, b){ return a[0] - b[0]; });
   s.total = ev.reduce(function(a, e){ return a + e[2]; }, 0);
   return { s: s, ev: ev };
+}
+/* 見本に使う「グループ分け」シートの編成（クラス×グループ数ごとに1回だけ読む。保存・読み直しで捨てる） */
+var PREVPLAN = { key: '', gi: null, ver: 0 };
+function prevPlanGi_(cls, gn){
+  var key = cls + '|' + gn;
+  if(PREVPLAN.key === key) return PREVPLAN.gi;
+  PREVPLAN.key = key; PREVPLAN.gi = null;
+  var ver = ++PREVPLAN.ver;
+  google.script.run.withSuccessHandler(function(r){
+    if(ver !== PREVPLAN.ver || !r || !r.ok) return;
+    PREVPLAN.gi = r.gi.slice();
+    if(CP.prev) coopPreview(CP.prev === 'user');
+  }).coopPlan(cls, gn);
+  return null;
+}
+function prevPlanSet_(cls, gn, gi){
+  PREVPLAN.ver++; PREVPLAN.key = cls + '|' + gn; PREVPLAN.gi = gi ? gi.slice() : null;
+  if(CP.prev) coopPreview(CP.prev === 'user');
 }
 function coopPrevOff_(){
   CP.prev = false;
@@ -2473,10 +2493,11 @@ function planLoad(){
   var cls = $('coopCls').value, gn = Number($('coopGn').value);
   // 映している回がこのクラスのグループの回なら、その回のグループを直す（開始前の予定ではなく）
   PLAN.live = planLiveShown() && CP.sess.cls === cls;
-  $('coopPlanSheet').style.display = PLAN.live ? 'none' : '';
-  $('coopPlanReload').style.display = PLAN.live ? 'none' : '';
+  // 映している回でも、シートを直接直した分を「シートから読み込む」で窓に入れ、「保存」で回に効かせられる
+  $('coopPlanSheet').style.display = PLAN.live && !$('coopPlanSheet').getAttribute('href') ? 'none' : '';
+  $('coopPlanReload').lastChild.textContent = PLAN.live ? 'シートから読み込む' : 'シートから読み直す';
   $('coopPlanHint').textContent = PLAN.live
-    ? '映している回のグループを直します。名前をつまんで別のグループへ運び（押して選び、行き先のグループを押してもよい）、「保存」で反映します。児童の画面の色は、その子が次に本番を始めた時に変わります。'
+    ? '映している回のグループを直します。名前をつまんで別のグループへ運び（押して選び、行き先のグループを押してもよい）、「保存」で反映します。シートを直接直した時は「シートから読み込む」を押してから「保存」します。児童の画面の色は、その子が次に本番を始めた時に変わります。'
     : '名前をつまんで別のグループへ運びます（押して選び、行き先のグループを押してもよい）。「保存」すると「グループ分け」シートに書かれ、次に開始した時このグループで始まります。';
   if(PLAN.live){
     PLAN.cls = cls; PLAN.gn = CP.GN; PLAN.gi = CP.gi.map(function(x){ return Math.max(0, Math.min(CP.GN - 1, Number(x) || 0)); });
@@ -2493,6 +2514,7 @@ function planLoad(){
     var a = $('coopPlanSheet');
     if(r.sheetUrl){ a.href = r.sheetUrl; a.style.display = ''; } else a.style.display = 'none';
     planSetDirty(false);
+    prevPlanSet_(r.cls, r.gn, r.saved ? r.gi : null);   // 見本もシートの今の中身で描き直す
     $('coopPlanDirty').textContent = r.saved ? '' : 'このグループ数のグループ分けはまだ保存されていません（番号順の等分を表示中）';
     planRender();
   }).withFailureHandler(function(e){
@@ -2589,8 +2611,10 @@ $('coopPlanSave').onclick = function(){
       // 映している回にもすぐ効かせる（3秒ごとの問い合わせを待たない）
       CP.gi = gi.slice(); if(CP.sess) CP.sess.gi = gi.slice(); CP.giVer++;
       coopRoster(); coopGiRedraw();
+      PREVPLAN.key = '';   // サーバーがシートにも書いた。次の見本は読み直す
       return { msg: '保存しました。児童の画面の色は、その子が次に本番を始めた時に変わります。', keep: true };
     }
+    prevPlanSet_(PLAN.cls, PLAN.gn, gi);
     return { msg: '保存しました（「グループ分け」シート）。次に開始した時、このグループで始まります。', keep: true };
   });
 };
@@ -2600,7 +2624,28 @@ $('coopPlanReset').onclick = function(){
   PLAN.gi = PLAN.gi.map(function(x, i){ return Math.min(PLAN.gn - 1, Math.floor(i * PLAN.gn / n)); });
   PLAN.sel = -1; planSetDirty(true); planRender();
 };
-$('coopPlanReload').onclick = function(){ if(planCanDiscard()) planLoad(); };
+$('coopPlanReload').onclick = function(){
+  if(!planCanDiscard()) return;
+  if(!PLAN.live){ planLoad(); return; }
+  // 映している回：シートの編成を回の児童の並びで読み、窓に入れる（回に効かせるのは「保存」）
+  var btn = this, ver = ++PLAN.ver;
+  btn.disabled = true;
+  google.script.run.withSuccessHandler(function(r){
+    btn.disabled = false;
+    if(ver !== PLAN.ver || !PLAN.live) return;
+    if(!r || !r.ok){ $('coopPlanDirty').textContent = (r && r.msg) || '読み込めません'; return; }
+    if(r.sheetUrl){ $('coopPlanSheet').href = r.sheetUrl; $('coopPlanSheet').style.display = ''; }
+    if(!r.saved){ $('coopPlanDirty').textContent = 'シートにこのクラス・グループ数の行がありません'; return; }
+    if(r.gi.length !== PLAN.gi.length){ $('coopPlanDirty').textContent = '名簿が変わりました。画面を開き直してください。'; return; }
+    var same = JSON.stringify(r.gi) === JSON.stringify(PLAN.gi);
+    PLAN.gi = r.gi.slice(); PLAN.sel = -1; planRender();
+    planSetDirty(!same);
+    if(same) $('coopPlanDirty').textContent = 'シートとこの回のグループは同じです';
+  }).withFailureHandler(function(e){
+    btn.disabled = false;
+    $('coopPlanDirty').textContent = '読み込めません：' + (e.message || e);
+  }).coopLivePlan();
+};
 /* クラスやグループ数を変えた時、保存していない変更があれば確かめる。やめたら元の値に戻す */
 ['coopCls', 'coopGn'].forEach(function(id){
   $(id).addEventListener('change', function(){
