@@ -835,7 +835,8 @@ function submitSession(token, items) {
    *
    * 諦めても失われない。token をキャッシュから消すのはロックの内側なので、
    * ここで抜けた回は何も書いていない。端末は未送信として持ち続け、
-   * 次の起動でそのまま送り直す（pendFlush）。
+   * 数秒〜十数秒ばらけた間を置いて自分から送り直す（index.html の pendRetry_）。
+   * 協力プレイは終了から10分以内に届いた回しか数えないので、次の起動まで待つと間に合わない。
    */
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
@@ -1160,30 +1161,51 @@ function triesByMode_(mail) {
  * 記録を更新して { best, star, updated } を返す。
  * star は本番だけ増える（練習で増やすと個人内評価の意味が薄れる）。
  */
+/*
+ * summary の行の位置の覚え書き（キー：メール・モード・制限秒・kind → 行番号）。
+ * 提出はロックの内側で summary を書き換える。以前は毎回シート全体を読んで行を探しており、
+ * 名簿×モード×種類で行が増えるほど、1人あたりのロックの時間が伸びていた。
+ * 一斉に送る協力プレイでは、その時間の積み重ねが10秒の待ちを越え、後ろに並んだ児童の記録が弾かれていた。
+ * 覚えた行は、読んだ1行がキーと一致する時だけ使う（並べ替え・年度の切り替えで位置が変わっても、ずれた行には書かない）。
+ */
+function sumRowKey_(mail, mode, limitSec, kind) { return 'sumrow_' + mail + '_' + mode + '_' + Number(limitSec) + '_' + kind; }
+function sumRowIs_(r, mail, mode, limitSec, kind) {
+  return String(r[SUM.MAIL]).toLowerCase() === mail && Number(r[SUM.MODE]) === mode &&
+         Number(r[SUM.LIM]) === Number(limitSec) && String(r[SUM.KIND]) === kind;
+}
+
 function updateSummary_(mail, mode, limitSec, kind, correct, attempts) {
   var sh = sh_(SHEETS.SUMMARY);
-  var v = sh.getDataRange().getValues();
-  for (var i = 1; i < v.length; i++) {
-    if (String(v[i][SUM.MAIL]).toLowerCase() === mail &&
-        Number(v[i][SUM.MODE]) === mode &&
-        Number(v[i][SUM.LIM]) === Number(limitSec) &&
-        String(v[i][SUM.KIND]) === kind) {
-      var prev = Number(v[i][SUM.BEST]) || 0;
-      var updated = correct > prev;
-      var star = Number(v[i][SUM.COUNT]) || 0;
-      if (updated && kind === 'r') star = Math.min(star + 1, STAR_MAX);
-      sh.getRange(i + 1, SUM.TRIES + 1, 1, 5).setValues([[
-        Number(v[i][SUM.TRIES]) + 1,
-        Number(v[i][SUM.TC]) + correct,
-        Number(v[i][SUM.TA]) + attempts,
-        Math.max(prev, correct),
-        star
-      ]]);
-      return { best: Math.max(prev, correct), star: star, updated: updated };
+  var key = sumRowKey_(mail, mode, limitSec, kind);
+  var row = Number(cache_().get(key)) || 0, r = null;
+  if (row >= 2 && row <= sh.getLastRow()) {
+    r = sh.getRange(row, 1, 1, SUM.COUNT + 1).getValues()[0];
+    if (!sumRowIs_(r, mail, mode, limitSec, kind)) r = null;
+  }
+  if (!r) {
+    var v = sh.getDataRange().getValues();
+    for (var i = 1; i < v.length; i++) {
+      if (sumRowIs_(v[i], mail, mode, limitSec, kind)) { row = i + 1; r = v[i]; break; }
     }
+  }
+  if (r) {
+    var prev = Number(r[SUM.BEST]) || 0;
+    var updated = correct > prev;
+    var star = Number(r[SUM.COUNT]) || 0;
+    if (updated && kind === 'r') star = Math.min(star + 1, STAR_MAX);
+    sh.getRange(row, SUM.TRIES + 1, 1, 5).setValues([[
+      Number(r[SUM.TRIES]) + 1,
+      Number(r[SUM.TC]) + correct,
+      Number(r[SUM.TA]) + attempts,
+      Math.max(prev, correct),
+      star
+    ]]);
+    cache_().put(key, String(row), TTL.session);
+    return { best: Math.max(prev, correct), star: star, updated: updated };
   }
   var first = (kind === 'r') ? 1 : 0;      // 初回の記録も「自己ベスト更新」と数える
   sh.appendRow([mail, mode, modeName_(mode), Number(limitSec), kind, 1, correct, attempts, correct, first]);
+  cache_().put(key, String(sh.getLastRow()), TTL.session);
   return { best: correct, star: first, updated: true };
 }
 

@@ -757,12 +757,26 @@ function pendFlush(){
         if(r.ok){
           if(r.practice){ PBEST[r.mode]=r.best; }
           else { BEST[r.mode]=r.best; MEDAL[r.mode]=r.medal; if(r.star) STARS[r.mode]=r.star; floorAdd(r.mode, r.score); }
-          renderMenu(); pendClear(p.token);
+          renderMenu(); pendClear(p.token); PEND_TRY = 0;
+          if(p.token === PEND_SHOWN && scr === 'result') $('saving').textContent = 'きろく できました';
         }
         else if(r.code==='gone' || r.code==='bad'){ pendClear(p.token); }
-      }).withFailureHandler(function(){}).submitSession(p.token, p.items);
+        else pendRetry_();                // 混んでいて弾かれた：間を置いてもう一度
+      }).withFailureHandler(function(){ pendRetry_(); }).submitSession(p.token, p.items);
     }, k * 3000);
   });
+}
+/* 弾かれた記録を、間を置いて自分から送り直す。
+   クラス全員が同じ1分の終わりに送ると、サーバーの順番待ち（10秒）を越えた児童の記録が弾かれる。
+   以前は次に記録が通った時か次の起動まで待っていたが、次の回もまた一斉に終わるので同じ児童が弾かれ続け、
+   協力プレイの締め切り（終了から10分）に間に合わず「参加していない」ことになっていた。
+   一斉の送信が引いた後に通るよう、間は 4〜16秒でばらけさせ、回を重ねるごとに伸ばす。予約は1つだけ持つ */
+var PEND_TRY = 0, PEND_T = 0, PEND_SHOWN = '', PEND_MAX = 8;
+function pendRetry_(){
+  if(PEND_T || PEND_TRY >= PEND_MAX || !pendLoad().length) return;
+  var wait = (4000 + Math.random() * 12000) * Math.min(4, 1 + PEND_TRY * 0.5);
+  PEND_TRY++;
+  PEND_T = setTimeout(function(){ PEND_T = 0; pendFlush(); }, wait);
 }
 
 /** 学年の色を画面に入れる。値は Core.gs（GRADE_ACCENT_ 等）が正本で、ここは受け取るだけ */
@@ -3729,7 +3743,7 @@ function finishPractice(){
   pendSave(sent);
   google.script.run.withSuccessHandler(function(r){
     if(r.ok){
-      pendClear(sent.token);
+      pendClear(sent.token); PEND_TRY = 0;
       pendFlush();                   // 前に送れなかった回が残っていれば、通ったこの機に送る
       PBEST[r.mode] = r.best;
       renderMenu();
@@ -3737,9 +3751,11 @@ function finishPractice(){
       $('saving').textContent = r.updated ? 'じこベスト こうしん！' : '';
     }else{
       if(r.code==='gone'||r.code==='bad') pendClear(sent.token);
+      else { PEND_SHOWN = sent.token; pendRetry_(); }
       $('saving').textContent = r.msg || '';
     }
   }).withFailureHandler(function(){
+    PEND_SHOWN = sent.token; pendRetry_();
     $('saving').textContent = 'あとで ほぞんします';
   }).submitSession(sent.token, sent.items);
 }
@@ -3875,7 +3891,7 @@ function finish(){
   pendSave(sent);
   google.script.run.withSuccessHandler(function(r){
     if(r.ok){
-      pendClear(sent.token);
+      pendClear(sent.token); PEND_TRY = 0;
       pendFlush();                   // 前に送れなかった回が残っていれば、通ったこの機に送る
       BEST[r.mode]=r.best; MEDAL[r.mode]=r.medal;
       if(r.star) STARS[r.mode] = r.star;
@@ -3890,9 +3906,11 @@ function finish(){
       $('saving').textContent = r.updated ? 'じこベスト こうしん！ ★'+r.star : '';
     }else{
       if(r.code==='gone'||r.code==='bad') pendClear(sent.token);
+      else { PEND_SHOWN = sent.token; pendRetry_(); }
       $('saving').textContent = r.msg || '';
     }
   }).withFailureHandler(function(){
+    PEND_SHOWN = sent.token; pendRetry_();
     $('saving').textContent = 'あとで ほぞんします';
   }).submitSession(sent.token, sent.items);
 }
