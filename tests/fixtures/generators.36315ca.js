@@ -982,6 +982,97 @@
     });
   }
 
+  /* かけ算の渦（kake1／kake2）。ピルの区間の関数は ideas/pill-math.js（二心の二重渦）と同じもの */
+  var KS = (function(){
+  function arcSeg(c, ri, ro, a0, d) {
+    return {
+      len: Math.abs(d) * (ri + ro) / 2,
+      st: function (s) {
+        var a = a0 + d * s, ca = Math.cos(a), sa = Math.sin(a), sg = d > 0 ? 1 : -1;
+        return { O: [c[0] + ro * ca, c[1] + ro * sa], I: [c[0] + ri * ca, c[1] + ri * sa], t: [-sa * sg, ca * sg] };
+      },
+      side: function (outer, s0, s1) {   // s0 から s1 へ（s0 を含み s1 を含まない）
+        var r = outer ? ro : ri;
+        if (r < 1e-9) return [c.slice()];
+        var da = d * (s1 - s0), n = Math.max(1, Math.ceil(Math.abs(da) / Math.min(0.25, Math.sqrt(0.2 / r)))), o = [];
+        for (var k = 0; k < n; k++) { var a = a0 + d * s0 + da * k / n; o.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]); }
+        return o;
+      }
+    };
+  }  function cap(q) {
+    var c = [(q.O[0] + q.I[0]) / 2, (q.O[1] + q.I[1]) / 2], ux = q.O[0] - c[0], uy = q.O[1] - c[1], h = Math.hypot(ux, uy);
+    ux /= h; uy /= h;
+    var n = Math.max(6, Math.ceil(Math.PI * h / 2.5)), o = [];
+    for (var k = 0; k < n; k++) {
+      var a = Math.PI * k / n;
+      o.push([c[0] + h * (Math.cos(a) * ux - Math.sin(a) * q.t[0]), c[1] + h * (Math.cos(a) * uy - Math.sin(a) * q.t[1])]);
+    }
+    return o;
+  }  function emit(g, out, seg, cuts, clsOf, dirOf) {
+    var qs = cuts.map(function (s) { return seg.st(s); });
+    for (var j = 0; j + 1 < cuts.length; j++) {
+      var a = qs[j], b = qs[j + 1];
+      if (!onScreen(g, [a.O, a.I, b.O, b.I], seg.len / (cuts.length - 1) + 40)) continue;
+      var rc = cap(a), poly = seg.side(true, cuts[j], cuts[j + 1]).concat(cap(b), seg.side(false, cuts[j + 1], cuts[j]), [a.I].concat(rc.slice(1).reverse()));
+      if (onScreen(g, poly, 0)) out.push({ p: poly, cls: clsOf(j), dir: dirOf(j) });
+    }
+  }  function even(n) { var o = []; for (var i = 0; i <= n; i++) o.push(i / n); return o; }
+
+  /* ---------- 二心の二重渦 ---------- */
+  function spiral2(g) {
+    var w = g.edge * 0.72, L = 2.5 * w, far = farthest(g) + w * 3, out = [];
+    var A = [g.ox - w / 2, g.oy], B = [g.ox + w / 2, g.oy], K = Math.ceil(far / w) + 1;
+    for (var k = 0; k <= K; k++) {
+      var ri = k * w, ro = ri + w, rm = (ri + ro) / 2, n = Math.max(1, Math.round(Math.PI * rm / L));
+      // 上（画面の上）：中心 A、右端（角0）から左端（角−π）へ。下：中心 B、左端（角π）から右端（角0）へ
+      var top = arcSeg(A, ri, ro, 0, -Math.PI), bot = arcSeg(B, ri, ro, Math.PI, -Math.PI);
+      var ct = k & 1, cb = (k & 1) ^ 1;
+      emit(g, out, top, even(n), function () { return ct; }, function (j) { return (k + j) % 5; });
+      emit(g, out, bot, even(n), function () { return cb; }, function (j) { return (k + j + 2) % 5; });
+    }
+    return out;
+  }  function carries(a, b) { var c = 0, k = 0; for (; a > 0; a = Math.floor(a / 10)) { var v = (a % 10) * b + c; c = Math.floor(v / 10); if (v >= 10) k++; } return k; }
+  function kakeSpiral(two) {
+    return function (g) {
+      var w = g.edge * 0.72, L = 2.5 * w, far = farthest(g) + w * 3, out = [];
+      var d = two ? w : w / 2, A = [g.ox - d / 2, g.oy], B = [g.ox + d / 2, g.oy], K = Math.ceil(far / w) + 1;
+      var cnt = [0, 0];   // 腕ごとの通し番号
+      function prob(arm, n) {
+        var a = 10 + n % 90, st = Math.floor(n / 90);
+        var b = arm === 0 ? 2 + st % 8 : 1 + (st * 3) % 9;   // 腕B（十の位の段）は別の順で段を巡る
+        return carries(a, b);
+      }
+      function run(seg, arm, rm, k, sh) {
+        var n = Math.max(1, Math.round(Math.PI * rm / L)), base = cnt[arm];
+        cnt[arm] += n;
+        emit(g, out, seg, even(n), function (j) { return prob(arm, base + j) >= 2 ? 0 : 1; },
+          function (j) { var c = prob(arm, base + j); return c ? Math.min(4, 2 * c + (arm & 1)) : (k + j + sh) % 2; });
+      }
+      for (var k = 0; k <= K; k++) {
+        if (two) {
+          var ri = k * w, ro = ri + w;
+          run(arcSeg(A, ri, ro, 0, -Math.PI), k & 1, ri + w / 2, k, 0);
+          run(arcSeg(B, ri, ro, Math.PI, -Math.PI), (k + 1) & 1, ri + w / 2, k, 1);
+        } else {
+          var r1 = k * w, r2 = (k + 0.5) * w;
+          run(arcSeg(A, r1, r1 + w, 0, -Math.PI), 0, r1 + w / 2, k, 0);
+          run(arcSeg(B, r2, r2 + w, Math.PI, -Math.PI), 0, r2 + w / 2, k, 1);
+        }
+      }
+      return out;
+    };
+  }  /* ---------- かけ算の渦（1けた・2けた）。二心渦巻き線をピルでたどる「筆算のテープ」 ----------
+     テープの n 枚目のピル＝筆算1問 a×b。a は 10〜99 を順に、90枚ごとに かける数 b が次の段へ進む。
+     色2＝くり上がりが2回以上ある問題（第6時の 43×6 の型）。明暗の段＝くり上がる位の数。
+     一の位のくり上がりは10枚ごとにくり返すが、1周の枚数が10の倍数でないので、周ごとに色がずれて渦の腕が浮かぶ。
+     かける数の段（90枚ごと）で くり上がりの濃さが変わるので、場所で見え方が変わる。
+     1けた：腕1本（中心を w/2 ずらし、下の半円を半幅ずらす）。
+     2けた：腕2本（spiral2 と同じ幾何）。腕A＝かける数の一の位の段（1けた版と同じ列）、腕B＝十の位の段 */
+
+
+  return kakeSpiral;
+  })();
+
   var GENERATORS = {
     factor720: { name: '素因数分解720（5方向の円）', make: factor720, coverage: 'sparse', tileCount: 720 },
     penrose:   { name: 'ペンローズ（5回対称）', make: penrose },
@@ -1007,7 +1098,9 @@
     scalefib:   { name: '鱗のピル・フィボナッチ（同じ向き・フィボナッチ語で染め分け）', make: makeScales('same', 'fib') },
     circlesphere: { name: '円と球（起点2つ：鱗のピルの渦とフィボナッチ球）', make: circleSphere },
     carry:     { name: 'くり上がりの六角（たし算）',             make: carry },
-    borrow:    { name: 'くり下がりの三角（ひき算）',             make: borrow }
+    borrow:    { name: 'くり下がりの三角（ひき算）',             make: borrow },
+    kake1:     { name: 'かけ算の渦（1けた）', make: KS(false) },
+    kake2:     { name: 'かけ算の渦（2けた）', make: KS(true) }
   };
 
   var api = { GENERATORS: GENERATORS, multigrid: multigrid, factorPoints: factorPoints };

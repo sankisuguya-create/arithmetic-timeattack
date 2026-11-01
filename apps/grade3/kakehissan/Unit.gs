@@ -24,7 +24,7 @@ var UNIT = {
       min: 0.05, max: 10, step: 0.05 }
   ],
   /** 床の図形と第二の色（台帳は design リポジトリの growing-figures/COLORS.md。3年の他サイトと図形を変える） */
-  floorPattern: 'pascal',
+  floorPattern: 'kake1',   // かけ算の渦（1けた・腕1本）。2けたをかけるサイトは kake2（腕2本）で一組
   floorColor: 'amethyst',
 
   // 筆算の形の答えを、右（一の位）から打つか左から打つか、児童がすうじキーせっていで選べる（index.html の COLDIR）
