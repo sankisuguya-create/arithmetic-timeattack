@@ -31,8 +31,8 @@ var UNIT = {
   colDir: true,
   units: {},
   modes: [
-    { id: 1, name: 'なんじゅう・なんびゃく', desc: '20×3 ／ 300×4（第1時）',
-      help: 'いちの くらいから うとう', enterKey: true },
+    { id: 1, name: 'なんじゅう・なんびゃく', desc: '20×3 ／ 300×4（第1時。筆算でなく ふつうの式）',
+      help: 'うったら こたえあわせ', enterKey: true },
     { id: 2, name: '2けた くりあがり なし', desc: '12×4（第2・3時）',
       needs: { mode: 1, tries: 3 }, help: 'いちの くらいから うとう', enterKey: true },
     { id: 3, name: '2けた くりあがり', desc: '24×3 ／ 32×4 ／ 43×6（第4〜6時）',
@@ -50,10 +50,10 @@ var UNIT = {
 
   // 欄は各1けた。欄の数は型で決まり、答えの大きさでは変わらない
   digitCap: {
-    N: { '一': 1, '十': 1, '百': 1 },
+    N: { '': 3 },                     // 何十×1けた はふつうの式。答えは最大 90×9=810 の3けた
     A: { '一': 1, '十': 1, '百': 1 }, B: { '一': 1, '十': 1, '百': 1 },
     C: { '一': 1, '十': 1, '百': 1 }, D: { '一': 1, '十': 1, '百': 1 },
-    M: { '一': 1, '十': 1, '百': 1, '千': 1 },
+    M: { '': 4 },                     // 何百×1けた。最大 900×9=8100 の4けた
     E: { '一': 1, '十': 1, '百': 1, '千': 1 }, F: { '一': 1, '十': 1, '百': 1, '千': 1 },
     G: { '一': 1, '十': 1, '百': 1, '千': 1 }
   },
@@ -66,6 +66,7 @@ var UNIT = {
 
   // 誤答明細は欄の順（一/十/百/千）で届く。教師には普通の数で見せる
   fmtAnswer: function (type, vals) {
+    if (type === 'N' || type === 'M') return vals.join('');
     var s = 0;
     for (var i = vals.length - 1; i >= 0; i--) s = s * 10 + Number(vals[i] || 0);
     return String(s);
@@ -98,6 +99,11 @@ var UNIT = {
       if (kakeKind_(d, b) !== t) throw new Error('かけ算の筆算: 型 ' + t + ' の問題が作れません');
     }
 
+    if (t === 'N' || t === 'M') {
+      // 第1時は「10や100のいくつ分」で九九に帰着させる。筆算の形にせず、ふつうの式で出す
+      var a0 = d[d.length - 1] * Math.pow(10, d.length - 1);
+      return { t: t, q: [String(a0), '×', String(b)], f: [''], ans: { '': a0 * b }, tag: t + a0 + 'x' + b };
+    }
     var a = 0;
     for (var i = d.length - 1; i >= 0; i--) a = a * 10 + d[i];
     var p = a * b;
