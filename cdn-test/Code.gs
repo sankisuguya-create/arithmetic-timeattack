@@ -1,5 +1,5 @@
 // jsDelivr 読込試験（スプレッドシートに紐づけて使う）
-var CDN_TAG = 'ddb3fa3b7494299bd4dc4db2d795a4a46cc11d9d';
+var CDN_TAG = 'eb3bb39a1f955306e419dd9c53ec452b19dbf3b7';
 var CDN_URL = 'https://cdn.jsdelivr.net/gh/sankisuguya-create/arithmetic-timeattack@' + CDN_TAG + '/cdn-test/test.js';
 
 // 初回に1回だけ実行して承認する（シート「結果」も作る）

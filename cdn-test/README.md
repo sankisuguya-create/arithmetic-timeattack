@@ -23,7 +23,7 @@
 ブラウザのアドレス欄に次を入れて開く。
 
 ```
-https://cdn.jsdelivr.net/gh/sankisuguya-create/arithmetic-timeattack@ddb3fa3b7494299bd4dc4db2d795a4a46cc11d9d/cdn-test/test.js
+https://cdn.jsdelivr.net/gh/sankisuguya-create/arithmetic-timeattack@eb3bb39a1f955306e419dd9c53ec452b19dbf3b7/cdn-test/test.js
 ```
 
 - 英数字がびっしり並んだ画面が出る → 通る
@@ -55,7 +55,7 @@ https://cdn.jsdelivr.net/gh/sankisuguya-create/arithmetic-timeattack@<最新>/cd
 |---|---|---|
 | `コード.gs` | 最初からある | `Code.gs` の中身で**全部置き換える** |
 | `Shell` | 「ファイル ＋ → HTML」。名前は `Shell` だけ（`.html` は付けない） | `Shell.html` |
-| `Inline` | 同上。名前は `Inline` | `Inline.html`（約14万字。比較のため本番アプリと同じくらいの大きさにしてある） |
+| `Inline` | 同上。名前は `Inline` | `Inline.html`（約34万字。本番の児童画面と同じ文面・大きさにしてある） |
 
 4. 上の保存ボタン（💾）を押す
 5. 関数の選択欄で `setup` を選んで「実行」→ 承認の画面が出る
