@@ -414,6 +414,12 @@ details.more[open] summary{border-color:var(--ink)}
   border:1.5px solid var(--ink);background:#fff;box-shadow:0 4px 14px rgba(16,23,40,.25);transform:translate(-50%,-60%)}
 #coopPlanDirty{font-size:.8rem;font-weight:700}
 #coopPlanHint{margin:.1rem 0 .5rem}
+#coopPlanTxt{margin-top:.5rem;border-top:1px solid var(--line);padding-top:.4rem}
+#coopPlanTxt summary{cursor:pointer;font-weight:700;font-size:.88rem;min-height:32px;display:flex;align-items:center}
+#coopPlanIn{width:100%;box-sizing:border-box;font:inherit;font-size:.9rem;margin:.35rem 0;padding:.4rem;border:1.5px solid var(--line);border-radius:8px;resize:vertical}
+#coopPlanTxt .trow{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+#coopPlanTxtMsg.bad{color:#B42318;font-weight:700}
+#coopGnNote{font-size:.8rem;color:var(--mute);margin-left:.4rem}
 #coopGuide,#coopRateTag,#coopRvMineStat,#coopRvPickStat{margin:0}
 .coopBox #coopRvPick{flex:1;min-width:0;max-width:16rem}
 #coopRate{width:4.5rem}
@@ -637,7 +643,7 @@ details.more[open] summary{border-color:var(--ink)}
               <select id="coopMode" style="display:none" aria-hidden="true"><option value="child">児童ごと</option><option value="group">グループ</option></select></span></div>
             <div class="frow" id="coopGnRow" style="display:none"><span class="ctl">グループ数</span>
               <span class="grp"><select id="coopGn"></select>
-              <button id="coopPlanBtn" class="ghost" type="button">グループ編成を確認・編集…</button></span></div>
+              <button id="coopPlanBtn" class="ghost" type="button">グループ編成を確認・編集…</button><span id="coopGnNote"></span></span></div>
             <div class="frow"><span class="ctl">起点の数</span>
               <span class="grp"><button id="coopOrgDn" class="ghost step" type="button" aria-label="起点を1つ減らす">−</button>
               <input id="coopOrg" type="number" min="1" step="1" value="1" class="minIn" aria-label="起点の数">
@@ -698,7 +704,7 @@ details.more[open] summary{border-color:var(--ink)}
     </section>
   </div>
 
-  <!-- グループの編集はポップアップ。開始前の予定（「グループ分け」シート）も、映している回のグループも、ここで直して「保存」 -->
+  <!-- グループの編集はポップアップ。開始前の編成（クラスごとに1つ）も、映している回のグループも、ここで直して「保存」 -->
   <div id="coopPlanModal" class="cmodal" hidden>
     <div id="coopPlan" class="cdlg" role="dialog" aria-modal="true" aria-labelledby="coopPlanTitle">
       <div class="dhead">
@@ -708,13 +714,22 @@ details.more[open] summary{border-color:var(--ink)}
       </div>
       <div class="note" id="coopPlanHint">名前をつまんで別のグループへ運びます（押して選び、行き先のグループを押してもよい）。</div>
       <div id="coopPlanBody"></div>
+      <details id="coopPlanTxt">
+        <summary>文字で貼り付ける・写し取る</summary>
+        <div class="note">1行に1グループ。出席番号か氏名を、空白・「、」・カンマで区切ります。行の頭の「A:」「1班」などは無くてもかまいません。行の数がグループ数になります。<br>例）<code>1 5 9 13</code>（改行）<code>2 6 10 14</code> …</div>
+        <textarea id="coopPlanIn" rows="5" spellcheck="false" placeholder="A: 1 5 9 13&#10;B: 2 6 10 14&#10;C: 3 7 11 15"></textarea>
+        <div class="trow">
+          <button id="coopPlanParse" class="bstep" type="button">読み取る</button>
+          <button id="coopPlanCopy" class="bview sm" type="button">いまの編成を文字でコピー</button>
+          <span id="coopPlanTxtMsg" class="note"></span>
+        </div>
+      </details>
       <div class="dfoot">
         <button id="coopPlanSave" class="bkey go" type="button" disabled><span class="ic" aria-hidden="true">⤓</span>保存</button>
         <span id="coopPlanDirty"></span>
         <span class="sp"></span>
         <button id="coopPlanReset" class="bstep" type="button">番号順に分け直す</button>
-        <a id="coopPlanSheet" target="_blank" rel="noopener">シートで編集↗</a>
-        <button id="coopPlanReload" class="bview sm" type="button"><span class="ic" aria-hidden="true">↻</span>シートから読み直す</button>
+        <button id="coopPlanReload" class="bview sm" type="button"><span class="ic" aria-hidden="true">↻</span>保存した編成を読み込む</button>
       </div>
     </div>
   </div>
@@ -2193,7 +2208,7 @@ function coopPrevSession_(){
   var gn = Number($('coopGn').value) || 6, minutes = coopMinVal(), lim = 60, pace = 20;
   var names = [], nos = [], gi = [], i;
   for(i = 0; i < n; i++){ names.push(''); nos.push(i + 1); gi.push(Math.min(gn - 1, Math.floor(i * gn / n))); }
-  // グループの時は「グループ分け」シートの編成で描く（まだ読んでいなければ等分で描き、読めたら描き直す）
+  // グループの時は保存した編成で描く（まだ読んでいなければ等分で描き、読めたら描き直す）
   if(mode === 'group'){ var pg = prevPlanGi_(cls.value, gn); if(pg && pg.length === n) gi = pg.slice(); }
   var s = { id: 'preview', cls: cls.value, pat: $('coopPat').value, seed: 1, mode: mode, gn: gn,
             org: coopOrgVal(), orgPts: coopOrgCustomFit_(coopOrgVal()), start: 0, end: minutes * 60000, status: 'done', total: 0, names: names, nos: nos, gi: gi,
@@ -2209,23 +2224,30 @@ function coopPrevSession_(){
   s.total = ev.reduce(function(a, e){ return a + e[2]; }, 0);
   return { s: s, ev: ev };
 }
-/* 見本に使う「グループ分け」シートの編成（クラス×グループ数ごとに1回だけ読む。保存・読み直しで捨てる） */
-var PREVPLAN = { key: '', gi: null, ver: 0 };
+/* 見本に使う、保存した編成（クラスごとに1回だけ読む。保存・読み直しで差し替える）。
+   保存した編成があれば、グループ数はその編成の数に合わせる（開始もサーバーがその数で始める）。
+   欄の数と編成の数が食い違うと、見本と開始が番号順の等分に戻っていた */
+var PREVPLAN = { key: '', gi: null, gn: 0, ver: 0 };
 function prevPlanGi_(cls, gn){
-  var key = cls + '|' + gn;
-  if(PREVPLAN.key === key) return PREVPLAN.gi;
-  PREVPLAN.key = key; PREVPLAN.gi = null;
+  if(PREVPLAN.key === cls) return PREVPLAN.gn === gn ? PREVPLAN.gi : null;
+  PREVPLAN.key = cls; PREVPLAN.gi = null; PREVPLAN.gn = 0;
   var ver = ++PREVPLAN.ver;
   google.script.run.withSuccessHandler(function(r){
     if(ver !== PREVPLAN.ver || !r || !r.ok) return;
-    PREVPLAN.gi = r.gi.slice();
-    if(CP.prev) coopPreview(CP.prev === 'user');
+    prevPlanSet_(cls, r.gn, r.saved ? r.gi : null);
   }).coopPlan(cls, gn);
   return null;
 }
 function prevPlanSet_(cls, gn, gi){
-  PREVPLAN.ver++; PREVPLAN.key = cls + '|' + gn; PREVPLAN.gi = gi ? gi.slice() : null;
+  PREVPLAN.ver++; PREVPLAN.key = cls; PREVPLAN.gi = gi ? gi.slice() : null; PREVPLAN.gn = gi ? gn : 0;
+  gnNoteShow_();
   if(CP.prev) coopPreview(CP.prev === 'user');
+}
+/* 保存した編成があるクラスでは、グループ数の欄をその数にして、そのことを横に書く */
+function gnNoteShow_(){
+  var saved = PREVPLAN.key === $('coopCls').value && PREVPLAN.gi;
+  if(saved && !$('coopGn').disabled && Number($('coopGn').value) !== PREVPLAN.gn){ $('coopGn').value = String(PREVPLAN.gn); coopOrgSet(coopOrgVal()); }
+  $('coopGnNote').textContent = saved ? '保存した編成（' + PREVPLAN.gn + 'グループ）で始めます' : '';
 }
 function coopPrevOff_(){
   CP.prev = false;
@@ -2460,8 +2482,8 @@ $('coopMode').onchange = function(){
 
 /* ---- グループの編集（ポップアップ） ----
  * 2つの使い方を1つの窓で受ける。
- *  - 開始前：選んでいるクラス×グループ数の予定を「グループ分け」シートから読み、「保存」でシートへ書く（coopPlan / coopSavePlan）
- *  - 映している回（進行中・終わった回）：その回のグループを直し、「保存」でその回に効かせる（coopSetGroups。サーバーがシートにも書く）
+ *  - 開始前：選んでいるクラスの編成（クラスごとに1つ。グループ数も編成が持つ）を読み、「保存」で書く（coopPlan / coopSavePlan）
+ *  - 映している回（進行中・終わった回）：その回のグループを直し、「保存」でその回に効かせる（coopSetGroups。サーバーが開始前の編成にも書く）
  * どちらも「保存」を押すまでは窓の中だけの変更。ステージとは別の窓にしてある（ステージは進行中の回を3秒ごとに映し直すため）。 */
 var PLAN = { open: false, cls: '', gn: 0, gi: [], names: [], nos: [], ver: 0, dirty: false, sel: -1, live: false };
 function planRunning(){ return !!(CP.sess && CP.sess.status === 'run'); }
@@ -2493,12 +2515,12 @@ function planLoad(){
   var cls = $('coopCls').value, gn = Number($('coopGn').value);
   // 映している回がこのクラスのグループの回なら、その回のグループを直す（開始前の予定ではなく）
   PLAN.live = planLiveShown() && CP.sess.cls === cls;
-  // 映している回でも、シートを直接直した分を「シートから読み込む」で窓に入れ、「保存」で回に効かせられる
-  $('coopPlanSheet').style.display = PLAN.live && !$('coopPlanSheet').getAttribute('href') ? 'none' : '';
-  $('coopPlanReload').lastChild.textContent = PLAN.live ? 'シートから読み込む' : 'シートから読み直す';
+  // 映している回では、開始前に保存した編成を「保存した編成を読み込む」で窓に入れ、「保存」で回に効かせられる
+  $('coopPlanReload').style.display = PLAN.live ? '' : 'none';
+  $('coopPlanTxtMsg').textContent = ''; $('coopPlanTxtMsg').className = 'note';
   $('coopPlanHint').textContent = PLAN.live
-    ? '映している回のグループを直します。名前をつまんで別のグループへ運び（押して選び、行き先のグループを押してもよい）、「保存」で反映します。シートを直接直した時は「シートから読み込む」を押してから「保存」します。児童の画面の色は、その子が次に本番を始めた時に変わります。'
-    : '名前をつまんで別のグループへ運びます（押して選び、行き先のグループを押してもよい）。「保存」すると「グループ分け」シートに書かれ、次に開始した時このグループで始まります。';
+    ? '映している回のグループを直します。名前をつまんで別のグループへ運び（押して選び、行き先のグループを押してもよい）、「保存」で反映します。児童の画面の色は、その子が次に本番を始めた時に変わります。'
+    : '名前をつまんで別のグループへ運ぶか、下の「文字で貼り付ける」で班の表を貼ります。「保存」すると、このクラスは次からこの編成（グループ数も）で始まります。';
   if(PLAN.live){
     PLAN.cls = cls; PLAN.gn = CP.GN; PLAN.gi = CP.gi.map(function(x){ return Math.max(0, Math.min(CP.GN - 1, Number(x) || 0)); });
     PLAN.names = CP.names.slice(); PLAN.nos = CP.nos.slice(); PLAN.sel = -1;
@@ -2511,11 +2533,9 @@ function planLoad(){
     if(ver !== PLAN.ver) return;                       // 読み込み中にクラスやグループ数を変えた
     if(!r || !r.ok){ $('coopPlanBody').innerHTML = '<div class="note">' + esc((r && r.msg) || '読み込めません') + '</div>'; return; }
     PLAN.cls = r.cls; PLAN.gn = r.gn; PLAN.gi = r.gi.slice(); PLAN.names = r.names; PLAN.nos = r.nos; PLAN.sel = -1;
-    var a = $('coopPlanSheet');
-    if(r.sheetUrl){ a.href = r.sheetUrl; a.style.display = ''; } else a.style.display = 'none';
     planSetDirty(false);
-    prevPlanSet_(r.cls, r.gn, r.saved ? r.gi : null);   // 見本もシートの今の中身で描き直す
-    $('coopPlanDirty').textContent = r.saved ? '' : 'このグループ数のグループ分けはまだ保存されていません（番号順の等分を表示中）';
+    prevPlanSet_(r.cls, r.gn, r.saved ? r.gi : null);   // 見本とグループ数の欄も、保存した編成に合わせる
+    $('coopPlanDirty').textContent = r.saved ? '' : 'このクラスの編成はまだ保存されていません（番号順の等分を表示中）';
     planRender();
   }).withFailureHandler(function(e){
     $('coopPlanBody').innerHTML = '<div class="note">読み込めません：' + esc(e.message || e) + '</div>';
@@ -2611,15 +2631,85 @@ $('coopPlanSave').onclick = function(){
       // 映している回にもすぐ効かせる（3秒ごとの問い合わせを待たない）
       CP.gi = gi.slice(); if(CP.sess) CP.sess.gi = gi.slice(); CP.giVer++;
       coopRoster(); coopGiRedraw();
-      PREVPLAN.key = '';   // サーバーがシートにも書いた。次の見本は読み直す
+      PREVPLAN.key = '';   // サーバーが開始前の編成にも書いた。次の見本は読み直す
       return { msg: '保存しました。児童の画面の色は、その子が次に本番を始めた時に変わります。', keep: true };
     }
     prevPlanSet_(PLAN.cls, PLAN.gn, gi);
-    return { msg: '保存しました（「グループ分け」シート）。次に開始した時、このグループで始まります。', keep: true };
+    return { msg: '保存しました。次に開始した時、この' + PLAN.gn + 'グループで始まります。', keep: true };
   });
 };
-/* 番号順の等分にする（保存するまでは画面の中だけ） */
+/* ---- 文字で貼り付ける・写し取る ----
+   1行＝1グループ。行の頭の「A:」「グループB」「3班」「1)」は読み飛ばす。区切りは空白・「、」・カンマ・「・」。
+   出席番号（全角も可）か氏名（空白は無視）で児童を照らす。行の数がグループ数（開始前。映している回はその回の数に合わせる） */
+function planParse_(text){
+  var z2h = function(t){ return t.replace(/[０-９Ａ-Ｚａ-ｚ]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }); };
+  var lines = String(text || '').split(/\r?\n/).map(function(l){ return z2h(l).trim(); }).filter(function(l){ return l; });
+  var byNo = {}, byName = {};
+  PLAN.nos.forEach(function(no, i){ byNo[String(no)] = i; });
+  PLAN.names.forEach(function(nm, i){ byName[String(nm || '').replace(/\s/g, '')] = i; });
+  var gi = PLAN.gi.map(function(){ return -1; }), bad = [], dup = [];
+  lines.forEach(function(l, g){
+    l = l.replace(/^(?:グループ|班)?\s*[A-Za-z0-9]{1,2}\s*(?:班|グループ|組)\s*[:：.)）]?\s*/, '')
+         .replace(/^(?:グループ|班)?\s*[A-Za-z0-9]{1,2}\s*[:：.)）]\s*/, '')
+         .replace(/^(?:グループ|班)\s*[A-Za-z0-9]{1,2}\s+/, '');
+    l.split(/[\s,、，・;；\/]+/).forEach(function(t){
+      if(!t) return;
+      var i = /^\d+$/.test(t) ? byNo[String(Number(t))] : byName[t];
+      if(i === undefined){ bad.push(t); return; }
+      if(gi[i] >= 0) dup.push(t);
+      gi[i] = g;
+    });
+  });
+  return { gn: lines.length, gi: gi, bad: bad, dup: dup };
+}
+function planTxtMsg_(t, bad){ var el = $('coopPlanTxtMsg'); el.textContent = t; el.className = 'note' + (bad ? ' bad' : ''); }
+$('coopPlanParse').onclick = function(){
+  var r = planParse_($('coopPlanIn').value);
+  if(PLAN.live && r.gn !== PLAN.gn){ planTxtMsg_('この回は ' + PLAN.gn + 'グループです。' + PLAN.gn + '行にしてください（いまは ' + r.gn + '行）。', true); return; }
+  if(r.gn < 2 || r.gn > COOP_LETTERS.length){ planTxtMsg_('グループは2〜' + COOP_LETTERS.length + '行で書いてください（いまは ' + r.gn + '行）。', true); return; }
+  if(r.bad.length){ planTxtMsg_('名簿に無い番号・名前があります：' + r.bad.slice(0, 8).join('、') + (r.bad.length > 8 ? ' ほか' : ''), true); return; }
+  if(r.dup.length){ planTxtMsg_('2回書かれている児童がいます：' + r.dup.slice(0, 8).join('、'), true); return; }
+  // 書かれていない児童（欠席など）は、人数の少ないグループに入れる。窓で運んで直せる
+  var cnt = []; for(var g = 0; g < r.gn; g++) cnt.push(0);
+  r.gi.forEach(function(x){ if(x >= 0) cnt[x]++; });
+  var miss = [];
+  r.gi = r.gi.map(function(x, i){
+    if(x >= 0) return x;
+    var m = 0; for(var j = 1; j < r.gn; j++) if(cnt[j] < cnt[m]) m = j;
+    cnt[m]++; miss.push(PLAN.nos[i] || i + 1); return m;
+  });
+  PLAN.gn = r.gn; PLAN.gi = r.gi; PLAN.sel = -1;
+  planSetDirty(true); planRender();
+  planTxtMsg_(r.gn + 'グループで読み取りました。' + (miss.length ? '書かれていない ' + miss.join('、') + '番は人数の少ないグループに入れました（運んで直せます）。' : '') + '「保存」で決まります。', false);
+};
+$('coopPlanCopy').onclick = function(){
+  var rows = [];
+  for(var g = 0; g < PLAN.gn; g++){
+    var ks = [];
+    PLAN.gi.forEach(function(x, i){ if(x === g) ks.push(PLAN.nos[i] || i + 1); });
+    rows.push(COOP_LETTERS[g] + ': ' + ks.join(' '));
+  }
+  var txt = rows.join('\n');
+  $('coopPlanIn').value = txt;
+  var done = function(){ planTxtMsg_('コピーしました（上の欄にも出しています）。', false); };
+  try { navigator.clipboard.writeText(txt).then(done, function(){ $('coopPlanIn').select(); planTxtMsg_('上の欄を選びました。Ctrl+C でコピーしてください。', false); }); }
+  catch(e){ $('coopPlanIn').select(); planTxtMsg_('上の欄を選びました。Ctrl+C でコピーしてください。', false); }
+};
+/* 番号順の等分にする。開始前は保存した編成を消し、グループ数の欄の数で分ける（欄で数を選べるようになる）。
+   映している回は、保存するまで画面の中だけ */
 $('coopPlanReset').onclick = function(){
+  if(!PLAN.live){
+    if(!confirm('保存した編成を消して、出席番号順に分け直しますか？（グループ数は欄の数になります）')) return;
+    var gn = Number($('coopGn').value) || 6, cls = PLAN.cls;
+    google.script.run.withSuccessHandler(function(r){
+      if(!r || !r.ok){ $('coopPlanDirty').textContent = (r && r.msg) || '消せませんでした'; return; }
+      PLAN.gn = r.gn; PLAN.gi = r.gi.slice(); PLAN.sel = -1; planSetDirty(false); planRender();
+      prevPlanSet_(cls, r.gn, null);
+      $('coopPlanDirty').textContent = '保存した編成を消しました（番号順の等分）';
+    }).withFailureHandler(function(e){ $('coopPlanDirty').textContent = '消せませんでした：' + (e.message || e); })
+      .coopSavePlan(cls, gn, null, true);
+    return;
+  }
   var n = PLAN.gi.length;
   PLAN.gi = PLAN.gi.map(function(x, i){ return Math.min(PLAN.gn - 1, Math.floor(i * PLAN.gn / n)); });
   PLAN.sel = -1; planSetDirty(true); planRender();
@@ -2634,13 +2724,12 @@ $('coopPlanReload').onclick = function(){
     btn.disabled = false;
     if(ver !== PLAN.ver || !PLAN.live) return;
     if(!r || !r.ok){ $('coopPlanDirty').textContent = (r && r.msg) || '読み込めません'; return; }
-    if(r.sheetUrl){ $('coopPlanSheet').href = r.sheetUrl; $('coopPlanSheet').style.display = ''; }
-    if(!r.saved){ $('coopPlanDirty').textContent = 'シートにこのクラス・グループ数の行がありません'; return; }
+    if(!r.saved){ $('coopPlanDirty').textContent = 'このクラスの保存した編成はありません'; return; }
     if(r.gi.length !== PLAN.gi.length){ $('coopPlanDirty').textContent = '名簿が変わりました。画面を開き直してください。'; return; }
     var same = JSON.stringify(r.gi) === JSON.stringify(PLAN.gi);
     PLAN.gi = r.gi.slice(); PLAN.sel = -1; planRender();
     planSetDirty(!same);
-    if(same) $('coopPlanDirty').textContent = 'シートとこの回のグループは同じです';
+    if(same) $('coopPlanDirty').textContent = '保存した編成とこの回のグループは同じです';
   }).withFailureHandler(function(e){
     btn.disabled = false;
     $('coopPlanDirty').textContent = '読み込めません：' + (e.message || e);
@@ -2649,6 +2738,7 @@ $('coopPlanReload').onclick = function(){
 /* クラスやグループ数を変えた時、保存していない変更があれば確かめる。やめたら元の値に戻す */
 ['coopCls', 'coopGn'].forEach(function(id){
   $(id).addEventListener('change', function(){
+    gnNoteShow_();                                   // 保存した編成のあるクラスでは、欄の数を編成の数に戻す
     if(!PLAN.open) return;
     if(!planCanDiscard()){
       $('coopCls').value = PLAN.cls;

@@ -1661,132 +1661,69 @@ function coopPub_(s, since) {
  * その間に届いた直前の回の送り直しをこちらに数える（開始を押した瞬間に前の回の取りこぼしが出ないように）
  */
 /*
- * 組の予定（開始前に教師が作っておく組分け）。単元のスプレッドシートの「組分け」シートが正本。
- * 教師はシートを直接直してもよいし、教師画面で並べ替えて「保存」してもよい（どちらも同じシートに書く）。
+ * グループ分け（開始前に教師が作っておく編成）。クラスごとに1つだけ、スクリプトプロパティ coop_grp_<クラス> に持つ。
+ *   { gn: グループ数, by: { email: グループ番号(0〜) } }
+ * グループ数は編成そのものが決める（教師画面のグループ数の欄とは別に持たない）。
  *
- *   クラス | 組数 | 番号 | 氏名 | 組 | email
- *   3-1    | 6    | 1    | 山田 | A  | xxx@...
- *
- * - 組は A〜J（「A組」「1」も読む）。クラスは「3-1」（「3年1組」も読む）
- * - 児童はメールで照らす（名簿の並びが変わってもずれない）。メールが空なら番号で照らす。
- *   シートに無い児童（転入など）は番号順の等分の位置に入る
- * - 組数ごとに別の行の塊として持つので、組数を一時的に変えて戻しても、作った組は消えない
- * - 以前の版はスクリプトプロパティ（coop_plan_<クラス>_<組数>）に持っていた。シートに行が無い時だけそちらを読み、
- *   次に保存した時にシートへ移して消す
+ * 以前は単元のスプレッドシートの「グループ分け」シートに、クラス×グループ数ごとの塊で持っていた。
+ * 欄のグループ数を変えると別の塊（無ければ番号順の等分）を読むので、「4人ずつにしたのに番号順になる」
+ * 「シートの値と画面の値が食い違う」が起きていた。シートはもう読まない（残っていても消してよい）。
+ * 教師画面では、編成を文字で貼り付けて読み取り、文字で写し取れる（コピー・貼り付けで持ち運ぶ）。
  */
-var COOP_GROUP_SHEET = 'グループ分け';
-var COOP_GROUP_SHEET_OLD = '組分け';   // 以前の名前。見つけたら新しい名前に付け替える（中身と並びは同じ）
-var COOP_GROUP_HEAD = ['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email'];
-var COOP_GROUP_LETTERS = 'ABCDEFGHIJ';
-
-function coopPlanKey_(cls, gn) { return 'coop_plan_' + cls + '_' + gn; }
-function coopClsNorm_(v) {
-  return String(v == null ? '' : v).replace(/\s/g, '').replace(/年/, '-').replace(/組$/, '');
-}
-/** シートの「グループ」の欄 → 0〜gn-1。読めなければ -1（「A」「グループA」「Aグループ」「A組」「1」を読む） */
-function coopGrpParse_(v, gn) {
-  var t = String(v == null ? '' : v).trim().replace(/^グループ/, '').replace(/(組|グループ)$/, '').trim(), n = -1;
-  if (/^[A-Ja-j]$/.test(t)) n = t.toUpperCase().charCodeAt(0) - 65;
-  else if (/^\d+$/.test(t)) n = Number(t) - 1;
-  return (n >= 0 && n < gn) ? n : -1;
-}
-function coopGroupSheet_(create) {
-  var ss = ss_(), sh = ss.getSheetByName(COOP_GROUP_SHEET);
-  if (!sh) {
-    // 以前の「組分け」シート：名前と見出しを新しい呼び方に付け替えて使う（列の並びは同じなので中身はそのまま）
-    var old = ss.getSheetByName(COOP_GROUP_SHEET_OLD);
-    if (old) {
-      sh = old;
-      try { old.setName(COOP_GROUP_SHEET); old.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]); } catch (e) {}
-    }
-  }
-  if (!sh && create) {
-    sh = ss.insertSheet(COOP_GROUP_SHEET);
-    sh.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]).setFontWeight('bold');
-    sh.setFrozenRows(1);
-    try {
-      sh.getRange(1, 1).setNote('協力モードのグループ分け（教師画面の「グループを編集…」と同じもの）。\n' +
-        '「グループ」の欄を A〜J で書きかえると、次に開始した時そのグループで始まります。\n' +
-        'クラス×グループ数ごとの行の塊です。行が無いクラスは、教師画面で一度「保存」すると作られます。');
-    } catch (e) {}
-  }
-  return sh;
-}
-function coopGroupRows_() {
-  var sh = coopGroupSheet_(false);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, COOP_GROUP_HEAD.length).getValues();
+var COOP_GRP_KEY = 'coop_grp_';
+function coopGrpLoad_(cls) {
+  try {
+    var p = JSON.parse(PropertiesService.getScriptProperties().getProperty(COOP_GRP_KEY + cls) || 'null');
+    var gn = Number(p && p.gn);
+    if (!p || !p.by || !(gn >= 2 && gn <= COOP_GN_MAX)) return null;
+    return { gn: gn, by: p.by };
+  } catch (e) { return null; }
 }
 function coopPlanDefault_(gn, kids) {
   return kids.map(function (k, i) { return Math.min(gn - 1, Math.floor(i * gn / kids.length)); });
 }
-/** 予定があれば児童の並び（kids）に合わせた組番号の配列。無ければ null */
-function coopPlanGet_(cls, gn, kids) {
-  var byMail = {}, byNo = {}, found = false;
-  coopGroupRows_().forEach(function (r) {
-    if (coopClsNorm_(r[0]) !== cls || Number(r[1]) !== gn) return;
-    found = true;
-    var g = coopGrpParse_(r[4], gn);
-    if (g < 0) return;
-    var m = String(r[5] || '').trim().toLowerCase();
-    if (m) byMail[m] = g;
-    else if (r[2] !== '' && r[2] != null) byNo[Number(r[2])] = g;
+/**
+ * 保存した編成を児童の並び（kids）に合わせる。{ gn, gi } か、保存が無ければ null。
+ * 編成に無い児童（転入など）は、その時いちばん人数の少ないグループに入れる
+ */
+function coopPlanGet_(cls, kids) {
+  var p = coopGrpLoad_(cls);
+  if (!p) return null;
+  var gi = kids.map(function (k) {
+    var g = Number(p.by[k.mail]);
+    return (g >= 0 && g < p.gn && g === Math.floor(g)) ? g : -1;
   });
-  if (!found) {
-    // 以前の版の置き場（スクリプトプロパティ）
-    var p = null;
-    try { p = JSON.parse(PropertiesService.getScriptProperties().getProperty(coopPlanKey_(cls, gn)) || 'null'); } catch (e) {}
-    if (!p || !p.order || !p.gi) return null;
-    p.order.forEach(function (m, i) { var g = Number(p.gi[i]); if (g >= 0 && g < gn && g === Math.floor(g)) byMail[m] = g; });
-  }
-  var def = coopPlanDefault_(gn, kids);
-  return kids.map(function (k, i) {
-    if (byMail.hasOwnProperty(k.mail)) return byMail[k.mail];
-    if (byNo.hasOwnProperty(k.no)) return byNo[k.no];
-    return def[i];
+  var cnt = []; for (var g = 0; g < p.gn; g++) cnt.push(0);
+  gi.forEach(function (x) { if (x >= 0) cnt[x]++; });
+  gi = gi.map(function (x) {
+    if (x >= 0) return x;
+    var m = 0; for (var j = 1; j < p.gn; j++) if (cnt[j] < cnt[m]) m = j;
+    cnt[m]++; return m;
   });
+  return { gn: p.gn, gi: gi };
 }
-/** クラス×組数の行の塊を書き直す。gi が null なら塊を消す（番号順の等分に戻す） */
+/** 編成を保存する。gi が null なら消す（番号順の等分に戻す） */
 function coopPlanPut_(cls, gn, order, gi) {
-  var sh = coopGroupSheet_(true), kids = coopKids_(cls), byMail = {};
-  kids.forEach(function (k) { byMail[k.mail] = k; });
-  var old = coopGroupRows_();
-  var rows = old.filter(function (r) { return !(coopClsNorm_(r[0]) === cls && Number(r[1]) === gn); });
-  if (gi) {
-    order.forEach(function (m, i) {
-      var k = byMail[m] || {};
-      rows.push([cls, gn, k.no || '', k.name || '', COOP_GROUP_LETTERS[gi[i]] || 'A', m]);
-    });
-  }
-  rows.sort(function (a, b) {
-    var ca = coopClsNorm_(a[0]), cb = coopClsNorm_(b[0]);
-    return (ca < cb ? -1 : ca > cb ? 1 : 0) || Number(a[1]) - Number(b[1]) || Number(a[2]) - Number(b[2]);
-  });
-  if (old.length) sh.getRange(2, 1, old.length, COOP_GROUP_HEAD.length).clearContent();
-  if (rows.length) sh.getRange(2, 1, rows.length, COOP_GROUP_HEAD.length).setValues(rows);
-  try { PropertiesService.getScriptProperties().deleteProperty(coopPlanKey_(cls, gn)); } catch (e) {}
-}
-function coopGroupUrl_() {
-  try {
-    var sh = coopGroupSheet_(true);
-    return ss_().getUrl() + '#gid=' + sh.getSheetId();
-  } catch (e) { return ''; }
+  var props = PropertiesService.getScriptProperties();
+  if (!gi) { props.deleteProperty(COOP_GRP_KEY + cls); return; }
+  var by = {};
+  order.forEach(function (m, i) { by[m] = gi[i]; });
+  props.setProperty(COOP_GRP_KEY + cls, JSON.stringify({ gn: gn, by: by }));
 }
 function coopGnOf_(gn) { return Math.max(2, Math.min(COOP_GN_MAX, Number(gn) || 6)); }
 
-/** 開始前の組分けを読む。予定が無ければ番号順の等分 */
+/** 開始前の編成を読む。保存が無ければ、欄のグループ数（gn）で番号順の等分 */
 function coopPlan(cls, gn) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   cls = String(cls || ''); gn = coopGnOf_(gn);
   var kids = coopKids_(cls);
   if (!kids.length) return { ok: false, msg: 'そのクラスの児童が名簿にありません。' };
-  var plan = coopPlanGet_(cls, gn, kids);
-  return { ok: true, cls: cls, gn: gn, gi: plan || coopPlanDefault_(gn, kids), saved: !!plan,
-           sheetUrl: coopGroupUrl_(),   // 「シートで編集」の行き先（シートが無ければここで作る。教師の操作の中なので書いてよい）
+  var plan = coopPlanGet_(cls, kids);
+  return { ok: true, cls: cls, gn: plan ? plan.gn : gn, gi: plan ? plan.gi : coopPlanDefault_(gn, kids), saved: !!plan,
            names: kids.map(function (k) { return k.name; }), nos: kids.map(function (k) { return k.no; }) };
 }
 
-/** 開始前の組分けを「組分け」シートへ保存する。gi は coopPlan が返した児童の並びに合わせる。reset なら塊を消して番号順の等分に戻す */
+/** 開始前の編成を保存する。gi は coopPlan が返した児童の並びに合わせる。reset なら消して番号順の等分（gn）に戻す */
 function coopSavePlan(cls, gn, gi, reset) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   cls = String(cls || ''); gn = coopGnOf_(gn);
@@ -2002,7 +1939,8 @@ function coopContBase_(cont, prev) {
     pace: Number(src.pace) || FLOOR_PRIOR_.perMin, total: tot }]);
   return { cls: String(src.cls), pat: String(src.pat), seed: Number(src.seed) || 1,
            mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1, orgPts: src.orgPts || null, gw: src.gw || null,
-           keys: keys, prior: { dur: pin.dur + dur, ev: all, segs: segs } };
+           keys: keys, order: src.order || null, gi: src.gi || null,   // 続きの回のグループは前の回の編成のまま
+           prior: { dur: pin.dur + dur, ev: all, segs: segs } };
 }
 /** 引き継いだ正答の児童 index を、新しいセッションの名簿の並びへ付け替える */
 function coopContRemap_(base, kids) {
@@ -2042,7 +1980,9 @@ function coopStart_(o, pace) {
   if (FLOOR_PATTERNS_.indexOf(pat) < 0) pat = 'penrose';
   var minutes = coopMinOf_((o && o.minutes) || old.minutes || COOP_DEF_MIN);
   var mode = base ? base.mode : (((o && o.mode) || old.mode) === 'group' ? 'group' : 'child');
-  var gn = coopGnOf_(base ? base.gn : ((o && o.gn) || old.gn || 6));
+  // グループ数：保存した編成があればその数（欄の値より優先。欄と編成が食い違って番号順に戻るのを防ぐ）
+  var plan = (!base && mode === 'group') ? coopPlanGet_(cls, kids) : null;
+  var gn = coopGnOf_(base ? base.gn : plan ? plan.gn : ((o && o.gn) || old.gn || 6));
   var seed = base ? base.seed : Math.floor(Math.random() * 2147483647);
   // 起点の数：続きからは前の回のまま（変えると引き継いだ部分の形が変わる）。名簿・組数が減っていれば上限で切る
   var org = coopOrgOf_(base ? base.org : ((o && o.org) || old.org || 1), mode === 'group' ? gn : kids.length);
@@ -2051,12 +1991,15 @@ function coopStart_(o, pace) {
   // 育ちの倍率は開始の時点の設定を回に写す（あとで設定を変えても、その回の再生・見返し・続きからの形は変わらない）。続きからは前の回のまま
   var gw = (base && coopGw_(base.gw)) || growWeights_();
   var kidsMap = {}, order = [], gi = [];
-  // 組は「開始前に作った予定」を最優先にする。無ければ前回と同じ顔ぶれなら前の編成、それも無ければ番号順の等分
-  var plan = mode === 'group' ? coopPlanGet_(cls, gn, kids) : null;
+  // グループは保存した編成。無ければ番号順の等分。
+  // 続きからの回は前の回の編成を引き継ぐ（メールで照らす。前の回にいない児童は番号順の等分の位置）
+  var bmap = {};
+  if (base && base.order && base.gi) base.order.forEach(function (m, i) { bmap[m] = Number(base.gi[i]); });
   kids.forEach(function (k, i) {
     kidsMap[k.mail] = i; order.push(k.mail);
-    gi.push(plan ? plan[i]
-         : old.gi && old.order && old.order[i] === k.mail && old.gn === gn ? old.gi[i]
+    var bg = bmap[k.mail];
+    gi.push(plan ? plan.gi[i]
+         : (bg >= 0 && bg < gn) ? bg
          : Math.min(gn - 1, Math.floor(i * gn / kids.length)));
   });
   var prior = base ? coopContRemap_(base, kids) : null;
@@ -2151,15 +2094,14 @@ function coopSetGroups(gi) {
     s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
     coopPutLive_(s);
     coopRowWrite_(s.id, { gi: s.gi });
-    // 遊んでいる途中の編集も予定に残す（次の開始で同じ組から始められるように）
+    // 遊んでいる途中の編集も編成に残す（次の開始で同じグループから始められるように）
     if (s.order) { try { coopPlanPut_(s.cls, s.gn, s.order, s.gi); } catch (e) {} }
     return { ok: true };
   });
 }
 
 /**
- * 「グループ分け」シートの内容を、進行中（映している）回の児童の並びに合わせて読む。回には書かない。
- * 回の編成は開始の時点でシートから写すので、あとでシートを直接直しても回には届かない。
+ * 保存した編成を、進行中（映している）回の児童の並びに合わせて読む。回には書かない。
  * 教師画面はこれを窓に読み込み、「保存」（coopSetGroups）で回に効かせる。
  */
 function coopLivePlan() {
@@ -2167,8 +2109,9 @@ function coopLivePlan() {
   var s = coopLive_();
   if (!s || s.mode !== 'group' || !s.order) return { ok: false, msg: 'グループの協力プレイがありません。' };
   var kids = s.order.map(function (m, i) { return { mail: m, no: s.nos[i] }; });
-  var plan = coopPlanGet_(s.cls, s.gn, kids);
-  return { ok: true, gi: plan || coopPlanDefault_(s.gn, kids), saved: !!plan, sheetUrl: coopGroupUrl_() };
+  var plan = coopPlanGet_(s.cls, kids);
+  if (plan && plan.gn !== s.gn) return { ok: false, msg: '保存した編成は' + plan.gn + 'グループで、この回（' + s.gn + 'グループ）と数が違います。' };
+  return { ok: true, gi: plan ? plan.gi : coopPlanDefault_(s.gn, kids), saved: !!plan };
 }
 
 /** いまのセッションを再生データとして保存する。終了前でもその時点までを保存 */
