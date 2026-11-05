@@ -163,9 +163,12 @@ t('自動実行：スプレッドシートが未登録の単元は飛ばし、�
 
 t('setup：まとめたプロジェクトでは全単元を準備し、所有者だけが実行できる', () => {
   const env = gasEnv(); const c = env.ctx; const seen = [];
-  c.setupOne_ = () => { seen.push(c.UNIT.id); return 'ok'; };
-  assert.match(c.setup(), /【kuku】ok/);
-  assert.equal(seen.length, 3);
+  c.setupOne_ = () => { seen.push(c.UNIT.id); c.ss_(); return 'ok'; };
+  env.mkSS('KUKUxxxxxxxxxxxxxxxxxxxxxx', '九九'); env.props['unit_sheet:kuku'] = 'KUKUxxxxxxxxxxxxxxxxxxxxxx';
+  const r = c.setup();
+  assert.match(r, /【kuku】ok/); assert.match(r, /【bai】未登録のため飛ばした/);
+  assert.equal(JSON.stringify(seen), JSON.stringify(['kuku']));
+  assert.equal(env.created.length, 0, 'setup は未登録の単元のスプレッドシートを作らない');
   const kid = gasEnv({ user: '1@kyoiku.edu.nishi.or.jp' });
   assert.throws(() => kid.ctx.setup(), /所有者/);
 });
@@ -204,9 +207,13 @@ t('移行：ハブの links から単元のスプレッドシートを登録し�
   assert.equal(rows[3][3], 'OLD-memo', '単元でない行は触らない');
   assert.throws(() => c.switchHubLinks(), /links_backup が既に/);
   c.restoreHubLinks();
+  env.props['unit_sheet:bai'] = 'JUNKxxxxxxxxxxxxxxxxxxxxxx';     // setup が作ってしまった登録
+  assert.match(c.forgetCreatedUnitSheets(), /bai\t登録を外した/);
+  assert.equal(env.props['unit_sheet:bai'], undefined);
+  assert.equal(env.props['unit_sheet:kuku'], 'KUKUxxxxxxxxxxxxxxxxxxxxxx', '今までのスプレッドシートの登録は残す');
   assert.equal(JSON.stringify(rows.slice(1).map(r => r[3])), JSON.stringify(['OLD-kuku', 'OLD-weight', 'OLD-memo']));
   const kid = gasEnv({ user: '1@kyoiku.edu.nishi.or.jp', props: { HUB_ID: 'HUBxxxxxxxxxxxxxxxxxxxxxx' } });
-  for (const f of ['importUnitSheetsFromHub', 'switchHubLinks', 'restoreHubLinks']) assert.throws(() => kid.ctx[f](), /所有者/, f);
+  for (const f of ['importUnitSheetsFromHub', 'switchHubLinks', 'restoreHubLinks', 'forgetCreatedUnitSheets']) assert.throws(() => kid.ctx[f](), /所有者/, f);
 });
 
 t('画面の差し替え：google.script.run.xxx(…) が apiCall(単元, xxx, 引数) になり、つなぎ方はそのまま', () => {

@@ -201,6 +201,7 @@ function importUnitSheetsFromHub() {
     catch (e) { out.push(id + '\t× ' + e.message); }
   }
   unitIds_().forEach(function (id) { if (!done[id] && !out.some(function (l) { return l.indexOf(id + '\t') === 0; })) out.push(id + '\t- links に行が無い（最初に開いた時に新しいスプレッドシートを作る）'); });
+  console.log(out.join('\n'));   // エディタから実行した時は、返り値ではなくこのログだけが見える
   return out.join('\n');
 }
 
@@ -225,7 +226,9 @@ function switchHubLinks() {
     sh.getRange(i + 1, 4).setValue(u);
     out.push(id + '\t' + u);
   }
-  return out.join('\n') + '\n（ハブの links の保存は最大1分で切り替わる）';
+  var msg = out.join('\n') + '\n（ハブの links の保存は最大1分で切り替わる）';
+  console.log(msg);
+  return msg;
 }
 
 /** switchHubLinks を取り消す：links_backup の url 列を links に戻す */
@@ -239,6 +242,7 @@ function restoreHubLinks() {
     var id = String(cur[j][0]).trim();
     if (Object.prototype.hasOwnProperty.call(byId, id)) { sh.getRange(j + 1, 4).setValue(byId[id]); n++; }
   }
+  console.log(n + ' 行の url を戻した（links_backup は残してある）');
   return n + ' 行の url を戻した（links_backup は残してある）';
 }
 
@@ -249,11 +253,40 @@ function hubLinks_() {
   return sh.getDataRange().getValues();
 }
 
+/**
+ * setup が作ってしまった空のスプレッドシートの登録を外す（エディタから実行）。
+ * 外すのは「今までの単元のスプレッドシート」ではないもの、つまりハブの links の sheet 列と違う登録だけ。
+ * 外した後、ドライブの「算数TA …（<id>）」は手で消してよい。
+ */
+function forgetCreatedUnitSheets() {
+  ownerOnly_();
+  var v = hubLinks_(), want = {}, gp = PropertiesService.getScriptProperties(), out = [];
+  for (var i = 1; i < v.length; i++) {
+    var m = String(v[i][8] || '').match(/\/d\/([a-zA-Z0-9_-]{20,})/), raw = String(v[i][8] || '').trim();
+    want[String(v[i][0]).trim()] = m ? m[1] : raw;
+  }
+  unitIds_().forEach(function (id) {
+    var sid = gp.getProperty(unitSheetKey_(id));
+    if (sid && sid !== want[id]) { gp.deleteProperty(unitSheetKey_(id)); out.push(id + '\t登録を外した（' + sid + '）'); }
+  });
+  var msg = out.length ? out.join('\n') : '外す登録はなかった';
+  console.log(msg);
+  return msg;
+}
+
 /** 登録の一覧（エディタから実行して確かめる） */
 function listUnitSheets() {
   ownerOnly_();
   var gp = PropertiesService.getScriptProperties();
-  return unitIds_().map(function (id) { return id + '\t' + (gp.getProperty(unitSheetKey_(id)) || '（未登録：最初に開いた時に新しく作る）'); }).join('\n');
+  var msg = unitIds_().map(function (id) {
+    var sid = gp.getProperty(unitSheetKey_(id));
+    if (!sid) return id + '\t（未登録：最初に開いた時に新しく作る）';
+    var name = '';
+    try { name = SpreadsheetApp.openById(sid).getName(); } catch (e) { name = '× 開けません'; }
+    return id + '\t' + name + '\t' + sid;
+  }).join('\n');
+  console.log(msg);
+  return msg;
 }
 
 /**
@@ -303,7 +336,7 @@ function nsProps_(id) {
 var API_DENY_ = { apiCall: 1, doGet: 1, setup: 1, registerUnitSheet: 1, listUnitSheets: 1,
   nightlyAggregate: 1, rolloverRoster: 1, resetDaily: 1, nightlyAggregateAll: 1, rolloverRosterAll: 1, resetDailyAll: 1,
   continueAll: 1, include: 1, checkUnit: 1, baseSetHub: 1, baseClearCache: 1,
-  importUnitSheetsFromHub: 1, switchHubLinks: 1, restoreHubLinks: 1 };
+  importUnitSheetsFromHub: 1, switchHubLinks: 1, restoreHubLinks: 1, forgetCreatedUnitSheets: 1 };
 function apiCall(unitId, name, args) {
   useUnit_(unitId);
   name = String(name || '');
@@ -3982,7 +4015,15 @@ function writeMeta_() {
 function setup() {
   if (isMulti_()) {
     ownerOnly_();
-    return unitIds_().map(function (id) { useUnit_(id); return '【' + id + '】' + setupOne_(); }).join('\n\n');
+    var gp = PropertiesService.getScriptProperties();
+    // スプレッドシートが未登録の単元は飛ばす（ここで作らない。児童か教師が初めて開いた時に作る）
+    var msg = unitIds_().map(function (id) {
+      if (!gp.getProperty(unitSheetKey_(id))) return '【' + id + '】未登録のため飛ばした';
+      useUnit_(id);
+      try { return '【' + id + '】' + setupOne_(); } catch (e) { return '【' + id + '】× ' + e.message; }
+    }).join('\n\n');
+    console.log(msg);
+    return msg;
   }
   return setupOne_();
 }
