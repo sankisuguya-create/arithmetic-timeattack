@@ -372,6 +372,8 @@ function runAll_(job, ids) {
       break;
     }
     var id = ids.shift();
+    // スプレッドシートが未登録の単元（まだ誰も開いていない）は飛ばす。夜の処理で空のスプレッドシートを作らない
+    if (!gp.getProperty(unitSheetKey_(id))) continue;
     try { useUnit_(id); ALL_JOBS_[job](); }
     catch (e) { errs.push(id + ': ' + (e && e.message || e)); console.error(job + ' ' + id + ' 失敗: ' + (e && e.message || e)); }
   }

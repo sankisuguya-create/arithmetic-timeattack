@@ -129,6 +129,7 @@ t('自動実行：全単元を回す *All だけを置き、1単元の失敗で�
   assert.equal(JSON.stringify(env.triggers.sort()), JSON.stringify(['nightlyAggregateAll', 'resetDailyAll', 'rolloverRosterAll']));
   const seen = [];
   c.nightlyAggregate = () => { seen.push(c.UNIT.id); if (c.UNIT.id === 'weight') throw new Error('壊れた'); };
+  for (const id of ['bai', 'kuku', 'weight']) env.props['unit_sheet:' + id] = 'X' + id;
   const errs = c.nightlyAggregateAll();
   assert.equal(JSON.stringify(seen.sort()), JSON.stringify(['bai', 'kuku', 'weight']));
   assert.equal(errs.length, 1); assert.match(errs[0], /weight/);
@@ -138,6 +139,7 @@ t('自動実行：時間切れなら残りを continueAll に回し、続きで�
   const env = gasEnv(); const c = env.ctx;
   const seen = [];
   c.nightlyAggregate = () => seen.push(c.UNIT.id);
+  for (const id of ['bai', 'kuku', 'weight']) env.props['unit_sheet:' + id] = 'X' + id;
   vm.runInContext('ALL_BUDGET_MS_ = -1;', c);              // 最初の単元の前に時間切れにする
   c.nightlyAggregateAll();
   assert.equal(seen.length, 0);
@@ -148,6 +150,15 @@ t('自動実行：時間切れなら残りを continueAll に回し、続きで�
   assert.equal(JSON.stringify(seen.sort()), JSON.stringify(['bai', 'kuku', 'weight']));
   assert.equal(env.triggers.length, 0, '続きの自動実行は消える');
   assert.equal(env.props.all_todo, undefined);
+});
+
+t('自動実行：スプレッドシートが未登録の単元は飛ばし、新しく作らない', () => {
+  const env = gasEnv(); const c = env.ctx; const seen = [];
+  c.nightlyAggregate = () => { seen.push(c.UNIT.id); c.ss_(); };
+  env.mkSS('KUKUxxxxxxxxxxxxxxxxxxxxxx', '九九'); env.props['unit_sheet:kuku'] = 'KUKUxxxxxxxxxxxxxxxxxxxxxx';
+  c.nightlyAggregateAll();
+  assert.equal(JSON.stringify(seen), JSON.stringify(['kuku']));
+  assert.equal(env.created.length, 0);
 });
 
 t('setup：まとめたプロジェクトでは全単元を準備し、所有者だけが実行できる', () => {
