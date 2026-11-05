@@ -35,7 +35,10 @@ var BA_LINE = '#8C93AC';
 var BA_MARK = ['①', '②', '③'];
 var BA_NAMES = [['赤', '青'], ['白', '黄'], ['ながい', 'みじかい']];
 
-var UNIT = {
+// 単元の登録。1つの GAS に全単元をまとめても名前がぶつからないよう、UNIT_DEFS['<id>'] に置く。
+// 下の行（ファイルの最後）で、単元が1つだけのプロジェクトでは UNIT にもなる（今までの設置と同じに動く）。
+var UNIT_DEFS = UNIT_DEFS || {};
+UNIT_DEFS['bai'] = {
   id: 'bai',
   grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '何倍でしょう タイムアタック！',
@@ -84,7 +87,7 @@ var UNIT = {
       case 3: return baPick_(rand);
       case 4: return baCalc_(rand);
       case 5: return baTwice_(rand);
-      case 6: return UNIT.gen(rand, ri_(rand, 1, 5));
+      case 6: return UNIT_DEFS['bai'].gen(rand, ri_(rand, 1, 5));   // 全単元をまとめた時も自分の gen を呼ぶ
     }
     throw new Error('mode ' + mode);
   }
@@ -318,3 +321,7 @@ function baTwice_(rand) {
            tag: 'J:' + ord + ' m' + m + ' a' + a + ' b' + b,
            fig: baPlain_([nm[2] + 'は ' + m + 'cmです。'].concat(rel, [nm[0] + 'は 何cm？'])) };
 }
+
+// 単元が1つだけのプロジェクト・テスト・プレビューでは、この単元が UNIT になる。
+// 全単元をまとめたプロジェクトでは、呼び出しごとに Core が UNIT を差し替える。
+var UNIT = UNIT || UNIT_DEFS['bai'];

@@ -36,7 +36,10 @@ var CI_LINE = '#8C93AC';    // 円の輪郭（背景の図）
 var CI_INK = '#FFFFFF';     // 選ぶ対象の線・点
 var CI_LABEL = '#C9D1E8';   // 長さの字
 
-var UNIT = {
+// 単元の登録。1つの GAS に全単元をまとめても名前がぶつからないよう、UNIT_DEFS['<id>'] に置く。
+// 下の行（ファイルの最後）で、単元が1つだけのプロジェクトでは UNIT にもなる（今までの設置と同じに動く）。
+var UNIT_DEFS = UNIT_DEFS || {};
+UNIT_DEFS['circle'] = {
   id: 'circle',
   grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '円と球 タイムアタック！',
@@ -101,7 +104,7 @@ var UNIT = {
       case 3: return ciConvert_(rand);
       case 4: return rand() < 0.4 ? ciCut_(rand) : ciSphere_(rand);
       case 5: return ciRow_(rand);
-      case 6: return UNIT.gen(rand, ri_(rand, 1, 5));
+      case 6: return UNIT_DEFS['circle'].gen(rand, ri_(rand, 1, 5));   // 全単元をまとめた時も自分の gen を呼ぶ
     }
     throw new Error('mode ' + mode);
   }
@@ -371,3 +374,7 @@ function ciRow_(rand) {
            tag: 'K:' + rows + 'x' + cols + ' ちょっけい' + d3 + (side === 'w' ? ' よこ' : ' たて'),
            fig: ciBox_(rows, cols, d3, 'd', side) };
 }
+
+// 単元が1つだけのプロジェクト・テスト・プレビューでは、この単元が UNIT になる。
+// 全単元をまとめたプロジェクトでは、呼び出しごとに Core が UNIT を差し替える。
+var UNIT = UNIT || UNIT_DEFS['circle'];

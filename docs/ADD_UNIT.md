@@ -4,10 +4,15 @@
 
 ## 1. Unit.gs を書く
 
-`apps/grade<学年>/<単元名>/Unit.gs` を作り、`UNIT` を定義する。
+`apps/grade<学年>/<単元名>/Unit.gs` を作り、`UNIT_DEFS['<id>']` に単元を登録する。
+最初の2行と最後の1行は決まった形（全単元を1つの GAS にまとめても名前がぶつからないようにするため。`tests/unit_defs.test.cjs` が検査する）。
+
+- 単元の中から自分の定義を指す時は、`UNIT` ではなく `UNIT_DEFS['<id>']` と書く（まとめた時、`UNIT` は呼び出しごとに別の単元に差し替わる）
+- 大域の名前（行頭の `var` / `function`）は、単元の頭文字を付けて他の単元とぶつけない（例 `VO_LINE`）
 
 ```js
-var UNIT = {
+var UNIT_DEFS = UNIT_DEFS || {};
+UNIT_DEFS['weight'] = {
   id: 'weight',
   grade: 3,                            // 学年（1〜6）。置き場 apps/grade3/ と一致させる
   title: 'おもさ タイムアタック！',
@@ -36,6 +41,8 @@ var UNIT = {
     // 1問返す
   }
 };
+
+var UNIT = UNIT || UNIT_DEFS['weight'];   // 単元が1つだけのプロジェクトでは、この単元が UNIT になる
 ```
 
 ## 2. 1問の形

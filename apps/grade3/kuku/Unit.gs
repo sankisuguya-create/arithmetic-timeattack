@@ -4,7 +4,10 @@
  * Core.gs が期待する形に合わせるだけ。共通の仕組みには触れない。
  */
 
-var UNIT = {
+// 単元の登録。1つの GAS に全単元をまとめても名前がぶつからないよう、UNIT_DEFS['<id>'] に置く。
+// 下の行（ファイルの最後）で、単元が1つだけのプロジェクトでは UNIT にもなる（今までの設置と同じに動く）。
+var UNIT_DEFS = UNIT_DEFS || {};
+UNIT_DEFS['kuku'] = {
   id: 'kuku',
   grade: 3,                 // 学年（1〜6）。置き場 apps/grade3/ と一致させる（tests/contract が照合する）
   title: '九九表タイムアタック！',
@@ -95,3 +98,7 @@ var UNIT = {
              f: [''], ans: { '': a * b }, tag: a + 'x' + b };
   }
 };
+
+// 単元が1つだけのプロジェクト・テスト・プレビューでは、この単元が UNIT になる。
+// 全単元をまとめたプロジェクトでは、呼び出しごとに Core が UNIT を差し替える。
+var UNIT = UNIT || UNIT_DEFS['kuku'];

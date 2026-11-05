@@ -1,5 +1,8 @@
 /** 素因数分解。学年に属さない特殊枠。出題・再採点の正本。 */
-var UNIT = {
+// 単元の登録。1つの GAS に全単元をまとめても名前がぶつからないよう、UNIT_DEFS['<id>'] に置く。
+// 下の行（ファイルの最後）で、単元が1つだけのプロジェクトでは UNIT にもなる（今までの設置と同じに動く）。
+var UNIT_DEFS = UNIT_DEFS || {};
+UNIT_DEFS['factor'] = {
   id: 'factor', category: 'special', grade: null,
   title: '素因数分解タイムアタック！',
   // 児童メニューのタイトルのふりがな。[漢字, 読み] か、読みの要らない文字列を並べる（つなぐと title と同じ文字列になる）
@@ -113,3 +116,7 @@ function factorTypes_() {
   factorModes_().forEach(function (m) { factorPool_(m).forEach(function(n){ var p=Math.min(6,factorParts_(n).length); var b=factorBase_(m); out['m'+m+'p'+p]=names[b]+(b!==m?'（図なし）':'')+'・'+p+(p===6?'個以上':'個')+'の素因数'; }); });
   return out;
 }
+
+// 単元が1つだけのプロジェクト・テスト・プレビューでは、この単元が UNIT になる。
+// 全単元をまとめたプロジェクトでは、呼び出しごとに Core が UNIT を差し替える。
+var UNIT = UNIT || UNIT_DEFS['factor'];
