@@ -1,0 +1,3994 @@
+/**
+ * Core.gs — 算数タイムアタック 共通エンジン
+ *
+ * 単元固有の知識をここに書かないこと。
+ * 「この単元のときだけ」という分岐が現れたら、それは Unit.gs に置くべきもの。
+ *
+ * 必要なもの: 同じプロジェクトに UNIT を定義した Unit.gs があること。
+ */
+
+var SHEETS = {
+  CONFIG: 'config', ROSTER: 'roster', CLASS: 'class_config',
+  LOG: 'log', DAILY: 'daily', SUMMARY: 'summary',
+  WCHILD: 'weak_child', WCLASS: 'weak_class',
+  COOP: 'coop', COOPLOG: 'coop_log', COOPSAVE: 'coop_save',
+  MISTAKES: 'mistakes', USED: 'used'
+};
+
+/**
+ * log シートの列。[キー, ヘッダ名] の並びが正本 — 添字が列の位置（15列）。
+ * 書き込み（submitSession の appendRow）・読み取り（集計・過年度・誤答展開）・
+ * 1行目のヘッダ宣言（ensureSheets_ の defs）は全部ここから引く。
+ * ハブ側には Core.gs が無いので、Analysis.gs の AN_LOG_COL_ / AN_LOG_WIDTH_ と
+ * Archive.gs の AR_LOG_COL_ / AR_SHEETS_ が写しを持つ
+ * — 一致は tests/analysis.test.cjs / past.test.cjs が検査する。
+ * 列の挿入・並べ替えは既存の記録と写しを壊すので、単元・ハブ・テストを揃えて行うこと。
+ */
+var LOG_DEF_ = [
+  ['TS', 'ts'], ['MAIL', 'email'], ['GRADE', '学年'], ['CLS', '組'], ['NO', '番号'], ['NAME', '氏名'],
+  ['MODE', 'mode'], ['MNAME', 'モード名'], ['LIM', 'limit_sec'], ['CORRECT', 'correct'],
+  ['ATTEMPTS', 'attempts'], ['MISS', 'miss_items'], ['SLOW', 'slow_items'], ['TSTAT', 'type_stats'], ['WRONG', 'wrong_items']
+];
+var LOG_COL_ = {}, LOG_HEAD_ = [];
+LOG_DEF_.forEach(function (d, i) { LOG_COL_[d[0]] = i; LOG_HEAD_[i] = d[1]; });
+var LOG_WIDTH_ = LOG_DEF_.length;
+
+/** 全単元で共通の既定値。UNIT.defaults で上書きできる */
+var BASE_DEFAULTS = {
+  limit_sec: 60,      // 制限時間（秒）
+  miss_limit: 3,      // 何回誤答したら正答を提示して次へ
+  key_gap: 8,         // 画面キーの横間隔(px)
+  teachers: '',       // 教師のメールアドレス（カンマ区切り）
+
+  // 「遅い」は秒数の閾値で決めない。同じ学年・同じ型の児童の平均想起時間の
+  // 分布（平均と標準偏差）と比べる（slowNorm_ / slowBand_）。
+  // 秒の閾値は単元・型ごとに打鍵数と難しさが違うため1つに決まらず、
+  // 決めた値も学級の実態と無関係な当てずっぽうになっていた。
+
+  // 想起時間のばらつきの閾値（%）。標準偏差 ÷ 平均。
+  // 秒ではなく比にするのは、閾値が単元の速さに依存しないようにするため
+  // （九九と単位換算では平均が倍ちがうので、秒で決めるとどちらかで必ず外れる）。
+  // 想起が自動化していれば 20〜30%程度。想起と計数が混ざると 50%を超える。
+  wobble_pct: 40,
+
+  // weak_child / weak_class の集計に使う期間（日）。0 なら全期間。
+  // 全期間平均にすると、年間数百試行に対して直近の変化が1%程度に薄まり、
+  // 伸びも落ちも見えなくなる。
+  window_days: 30,
+
+  // 協力プレイの見返し（児童画面の「前回の協力プレイ」）に「じぶん ○もん」を
+  // 出すか。既定は出さない（「みんなで ○もん」だけ。教師画面の協力プレイタブで切り替え）。
+  coop_mine: 0,
+
+  // 児童の見返しに出す保存データ（クラスごと）。"クラス=保存ID" をカンマでつなぐ（例 "3-1=s0123abcd45"）。
+  // 書かないクラスは、そのクラスの直前の回を出す（教師画面の協力プレイタブ「見返す回」で選ぶ。coopSetReview）
+  coop_rv: '',
+
+  // モードごとの育ちの倍率（背景の床と協力プレイの図形）。"モード:倍率" をカンマでつなぐ（例 "3:2,7:1.5"）。
+  // 書かないモードは単元の UNIT.growWeights、それも無ければ1倍。0.5〜3倍に丸める（growWeights_）
+  grow_w: ''
+};
+
+var TTL = { config: 60, roster: 300, session: 21600, index: 30 };
+var QN = 200;                              // 1セッションの出題数
+var SCHEMA_VERSION = 7;                    // 2 = kind/best_count / 3 = モード名列・見やすい表示 / 4 = roster 注記（名簿外はおためし） / 5 = 年度ロールオーバー用トリガー / 6 = 協力モードのシート / 7 = 記録済み token の used シート
+var STAR_MAX = 99;                         // 個人内評価（自己ベスト更新回数）の上限
+
+/**
+ * Core.gs と共通画面（index.html / teacher.html）の間の版の番号。
+ * Core が画面に新しい関数や返却値を要求されたとき、または画面が Core の
+ * 新しい応答を前提にするときに1ずつ上げる。画面側は同じ番号を WANT_VER として持ち、
+ * 食い違いがあれば「貼り直し」を画面に出す（片方だけ古いまま動き続けるのを防ぐ）。
+ */
+var ENGINE_VER = 10;   // 10 = 別記録版モード（modes[].pair）・図なし切り替え / 9 = 正答回数の図（unit.menuFigure・floor.tcm/gw） / 8 = 特殊枠・素数選択・順不同採点 / 7 = 筆算の並べ方（col） / 6 = 署名つき token（キャッシュが消えても採点できる） / 2 = 「遅い」を学年・型の分布との比較に（slowTk をやめ、型ごとに段階 b を返す） / 3 = 協力モード
+                      // 3 = 協力モード（boot/startSession が coop を返す。教師API coop*）
+                      // 4 = coopPeek（児童画面の定期確認。開いたままの画面に印をすぐ出す）
+                      // 5 = getPastYears（教師画面の過年度タブ）
+/**
+ * 教師のドメイン。ここに属するアカウントは、名簿になくても教師として扱う。
+ *
+ * **児童は @kyoiku.edu.nishi.or.jp で、教師ドメインのサブドメインになっている。**
+ * 「edu.nishi.or.jp を含む」で判定すると児童が全員教師になり、
+ * weak_child（誰がどの型で遅いか）まで児童の画面から開けてしまう。
+ * @ の右側の完全一致でだけ判定すること。
+ */
+var TEACHER_DOMAIN = 'edu.nishi.or.jp';
+
+function defaults_() {
+  var d = {};
+  for (var k in BASE_DEFAULTS) d[k] = BASE_DEFAULTS[k];
+  var u = UNIT.defaults || {};
+  for (var k2 in u) d[k2] = u[k2];
+  return d;
+}
+
+/* ============================================================
+ *  基盤
+ * ============================================================ */
+
+function ss_() { return isMulti_() ? unitSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet(); }
+function cache_() { return isMulti_() ? nsCache_(UNIT.id) : CacheService.getScriptCache(); }
+/** スクリプトのプロパティ。全単元をまとめたプロジェクトでは、名前の頭に単元の id を付けて分ける */
+function props_() { return isMulti_() ? nsProps_(UNIT.id) : PropertiesService.getScriptProperties(); }
+
+/* ============================================================
+ *  全単元を1つの GAS にまとめる（UNIT_DEFS に2単元以上がある時）
+ *
+ *  単元が1つだけのプロジェクト（今までの設置）では、ここは何もしない。
+ *  まとめたプロジェクトでは：
+ *    - URL の ?unit=<id> で単元を選ぶ（doGet）
+ *    - 画面からの呼び出しは apiCall(<id>, 関数名, 引数) を通り、呼ぶ前に UNIT を差し替える
+ *    - 記録は単元ごとのスプレッドシート（今までの単元のスプレッドシートをそのまま使う）
+ *    - 一時保存・プロパティの名前は単元ごとに分ける
+ *    - 毎晩・毎朝の処理は全単元について回す（*All）
+ * ============================================================ */
+
+function isMulti_() {
+  return typeof UNIT_DEFS !== 'undefined' && Object.keys(UNIT_DEFS).length > 1;
+}
+
+/** この実行で使う単元を決める。知らない id なら止める */
+function useUnit_(id) {
+  id = String(id || '');
+  if (typeof UNIT_DEFS === 'undefined' || !Object.prototype.hasOwnProperty.call(UNIT_DEFS, id)) {
+    throw new Error('単元がありません: ' + id);
+  }
+  UNIT = UNIT_DEFS[id];
+  return UNIT;
+}
+
+function unitIds_() { return typeof UNIT_DEFS === 'undefined' ? [] : Object.keys(UNIT_DEFS); }
+
+/** 単元のスプレッドシートの ID を置く場所（単元で分けない、プロジェクト共通のプロパティ） */
+function unitSheetKey_(id) { return 'unit_sheet:' + id; }
+
+var UNIT_SS_MEMO_ = {};
+/**
+ * いまの単元のスプレッドシート。登録が無ければ新しく作って登録する。
+ * 同じ実行の中で開き直しても 2ms 程度（実測 2026-11-05）だが、1回の実行で何十回も呼ぶので覚えておく。
+ */
+function unitSpreadsheet_() {
+  var id = UNIT.id;
+  if (UNIT_SS_MEMO_[id]) return UNIT_SS_MEMO_[id];
+  var gp = PropertiesService.getScriptProperties(), sid = gp.getProperty(unitSheetKey_(id));
+  var ss;
+  if (sid) {
+    ss = SpreadsheetApp.openById(sid);
+  } else {
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      sid = gp.getProperty(unitSheetKey_(id));
+      if (sid) ss = SpreadsheetApp.openById(sid);
+      else {
+        ss = SpreadsheetApp.create('算数TA ' + (UNIT.teacherTitle || UNIT.title || id) + '（' + id + '）');
+        gp.setProperty(unitSheetKey_(id), ss.getId());
+      }
+    } finally { lock.releaseLock(); }
+  }
+  UNIT_SS_MEMO_[id] = ss;
+  return ss;
+}
+
+/**
+ * 移行：今までの単元のスプレッドシートを、まとめたプロジェクトに登録する（エディタから単元ごとに1回）。
+ * 例：registerUnitSheet('kuku', 'https://docs.google.com/spreadsheets/d/xxxx/edit')
+ * 記録はそのスプレッドシートに書き続ける（移し替えない）。
+ */
+function registerUnitSheet(id, urlOrId) {
+  ownerOnly_();
+  useUnit_(id);
+  var s = String(urlOrId || '').trim(), m = s.match(/\/d\/([a-zA-Z0-9_-]{20,})/), sid = m ? m[1] : s;
+  if (!/^[a-zA-Z0-9_-]{20,}$/.test(sid)) throw new Error('スプレッドシートのURLかIDを入れてください: ' + s);
+  var ss = SpreadsheetApp.openById(sid);   // 開けなければここで止まる
+  PropertiesService.getScriptProperties().setProperty(unitSheetKey_(id), sid);
+  delete UNIT_SS_MEMO_[id];
+  return id + ' → ' + ss.getName();
+}
+
+/**
+ * 移行：ハブの links シートの sheet 列（単元の記録スプレッドシート）から、全単元をまとめて登録する（エディタから1回）。
+ * links の id が単元の id と一致する行だけを使う。結果の一覧を返す（登録できなかった単元も書く）。
+ */
+function importUnitSheetsFromHub() {
+  ownerOnly_();
+  var v = hubLinks_(), out = [], done = {};
+  for (var i = 1; i < v.length; i++) {
+    var id = String(v[i][0]).trim(), sheet = String(v[i][8] || '').trim();
+    if (!id || !Object.prototype.hasOwnProperty.call(UNIT_DEFS, id)) continue;
+    if (!sheet) { out.push(id + '\t× links の sheet 列が空'); continue; }
+    try { out.push(id + '\t○ ' + registerUnitSheet(id, sheet)); done[id] = true; }
+    catch (e) { out.push(id + '\t× ' + e.message); }
+  }
+  unitIds_().forEach(function (id) { if (!done[id] && !out.some(function (l) { return l.indexOf(id + '\t') === 0; })) out.push(id + '\t- links に行が無い（最初に開いた時に新しいスプレッドシートを作る）'); });
+  return out.join('\n');
+}
+
+/**
+ * 移行：ハブの links シートの url 列を、まとめたプロジェクトの ?unit=<id> に書き換える（エディタから1回）。
+ * 書き換える前の links シートを links_backup に写して残す。戻す時は restoreHubLinks。
+ */
+function switchHubLinks() {
+  ownerOnly_();
+  var hub = Base.hub(), sh = hub.getSheetByName('links');
+  if (!sh) throw new Error('ハブに links シートがありません');
+  var v = sh.getDataRange().getValues();
+  if (hub.getSheetByName('links_backup')) throw new Error('links_backup が既にあります（戻すなら restoreHubLinks、やり直すなら links_backup を消してから）');
+  var bk = hub.insertSheet('links_backup');
+  bk.getRange(1, 1, v.length, v[0].length).setValues(v);
+  var base = ScriptApp.getService().getUrl(), out = [];
+  if (!base) throw new Error('先にこのプロジェクトをウェブアプリとしてデプロイしてください');
+  for (var i = 1; i < v.length; i++) {
+    var id = String(v[i][0]).trim();
+    if (!Object.prototype.hasOwnProperty.call(UNIT_DEFS, id)) continue;
+    var u = base + '?unit=' + encodeURIComponent(id);
+    sh.getRange(i + 1, 4).setValue(u);
+    out.push(id + '\t' + u);
+  }
+  return out.join('\n') + '\n（ハブの links の保存は最大1分で切り替わる）';
+}
+
+/** switchHubLinks を取り消す：links_backup の url 列を links に戻す */
+function restoreHubLinks() {
+  ownerOnly_();
+  var hub = Base.hub(), sh = hub.getSheetByName('links'), bk = hub.getSheetByName('links_backup');
+  if (!sh || !bk) throw new Error('links または links_backup がありません');
+  var b = bk.getDataRange().getValues(), cur = sh.getDataRange().getValues(), byId = {}, n = 0;
+  for (var i = 1; i < b.length; i++) byId[String(b[i][0]).trim()] = b[i][3];
+  for (var j = 1; j < cur.length; j++) {
+    var id = String(cur[j][0]).trim();
+    if (Object.prototype.hasOwnProperty.call(byId, id)) { sh.getRange(j + 1, 4).setValue(byId[id]); n++; }
+  }
+  return n + ' 行の url を戻した（links_backup は残してある）';
+}
+
+function hubLinks_() {
+  if (!hubRoster_()) throw new Error('先にスクリプトのプロパティ HUB_ID にハブのスプレッドシートの ID を入れてください');
+  var sh = Base.hub().getSheetByName('links');
+  if (!sh) throw new Error('ハブに links シートがありません');
+  return sh.getDataRange().getValues();
+}
+
+/** 登録の一覧（エディタから実行して確かめる） */
+function listUnitSheets() {
+  ownerOnly_();
+  var gp = PropertiesService.getScriptProperties();
+  return unitIds_().map(function (id) { return id + '\t' + (gp.getProperty(unitSheetKey_(id)) || '（未登録：最初に開いた時に新しく作る）'); }).join('\n');
+}
+
+/**
+ * エディタ用の関数は、名前が _ で終わらないので画面（google.script.run）からも直接呼べてしまう。
+ * 所有者がエディタで実行した時だけ動かす（「自分として実行」では、開いた人と所有者が違う）。
+ */
+function ownerOnly_() {
+  var a = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  var e = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+  if (!a || a !== e) throw new Error('この関数は、スプレッドシートの所有者が Apps Script のエディタから実行してください');
+}
+
+/** 名前の頭に単元の id を付ける CacheService（今までの呼び方 get/put/remove/…All をそのまま使える） */
+function nsCache_(id) {
+  var c = CacheService.getScriptCache(), p = 'u:' + id + ':';
+  function pre(keys) { return keys.map(function (k) { return p + k; }); }
+  return {
+    get: function (k) { return c.get(p + k); },
+    put: function (k, v, t) { return t === undefined ? c.put(p + k, v) : c.put(p + k, v, t); },
+    remove: function (k) { return c.remove(p + k); },
+    getAll: function (keys) {
+      var got = c.getAll(pre(keys)), out = {};
+      keys.forEach(function (k) { if (got[p + k] != null) out[k] = got[p + k]; });
+      return out;
+    },
+    putAll: function (m, t) { var o = {}; for (var k in m) o[p + k] = m[k]; return t === undefined ? c.putAll(o) : c.putAll(o, t); },
+    removeAll: function (keys) { return c.removeAll(pre(keys)); }
+  };
+}
+
+/** 名前の頭に単元の id を付ける ScriptProperties */
+function nsProps_(id) {
+  var g = PropertiesService.getScriptProperties(), p = 'u:' + id + ':';
+  return {
+    getProperty: function (k) { return g.getProperty(p + k); },
+    setProperty: function (k, v) { g.setProperty(p + k, v); return this; },
+    deleteProperty: function (k) { g.deleteProperty(p + k); return this; }
+  };
+}
+
+/**
+ * 画面からの呼び出しの入口（まとめたプロジェクトだけで使う）。
+ * 画面の google.script.run.xxx(…) は、画面側の差し替え（multiShim_）でここに来る。
+ * 呼べるのは、今まで画面から直接呼べた関数（プロジェクトに書いた、名前が _ で終わらない大域の関数）と同じ範囲。
+ * 組み込みの関数（eval など）は呼ばせない（呼べると、画面から任意のコードを所有者の権限で動かせてしまう）。
+ */
+var API_DENY_ = { apiCall: 1, doGet: 1, setup: 1, registerUnitSheet: 1, listUnitSheets: 1,
+  nightlyAggregate: 1, rolloverRoster: 1, resetDaily: 1, nightlyAggregateAll: 1, rolloverRosterAll: 1, resetDailyAll: 1,
+  continueAll: 1, include: 1, checkUnit: 1, baseSetHub: 1, baseClearCache: 1,
+  importUnitSheetsFromHub: 1, switchHubLinks: 1, restoreHubLinks: 1 };
+function apiCall(unitId, name, args) {
+  useUnit_(unitId);
+  name = String(name || '');
+  var fn = globalThis[name];
+  // 組み込みの関数（eval・Function など）は呼ばせない。GAS が画面から呼ばせるのも、プロジェクトに書いた関数だけ
+  var native = typeof fn === 'function' && /\[native code\]/.test(Function.prototype.toString.call(fn));
+  if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name) || API_DENY_[name] || typeof fn !== 'function' || native) {
+    throw new Error('呼べない関数です: ' + name);
+  }
+  return fn.apply(null, Array.isArray(args) ? args : []);
+}
+
+/**
+ * 画面の google.script.run を、apiCall を通るものに差し替える小さな script。
+ * index.html / teacher.html の head でテンプレートとして埋め込む。単元が1つのプロジェクトでは空。
+ * withSuccessHandler / withFailureHandler / withUserObject のつなぎ方は今までどおり使える。
+ */
+function multiShim_() {
+  if (!isMulti_()) return '';
+  return '<script>(function(){' +
+    'if(typeof google==="undefined"||!google.script||!google.script.run)return;' +
+    'var real=google.script.run,KEY=' + JSON.stringify(String(UNIT.id)) + ';' +
+    'var W={withSuccessHandler:1,withFailureHandler:1,withUserObject:1};' +
+    'function mk(h){return new Proxy({},{get:function(t,k){' +
+    'if(W[k])return function(f){var n={};for(var x in h)n[x]=h[x];n[k]=f;return mk(n);};' +
+    'return function(){var r=real;for(var x in h)r=r[x](h[x]);' +
+    'return r.apiCall(KEY,k,Array.prototype.slice.call(arguments));};}});}' +
+    'try{Object.defineProperty(google.script,"run",{value:mk({}),configurable:true,writable:true});}' +
+    'catch(e){google.script.run=mk({});}})();</script>';
+}
+
+/** この単元の画面の URL。まとめたプロジェクトでは ?unit=<id> を付ける */
+function unitUrl_(extra) {
+  var u = '';
+  try { u = ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
+  if (!u) return '';
+  var q = [];
+  if (isMulti_()) q.push('unit=' + encodeURIComponent(UNIT.id));
+  if (extra) q.push(extra);
+  return q.length ? u + (u.indexOf('?') >= 0 ? '&' : '?') + q.join('&') : u;
+}
+
+/**
+ * 毎晩・毎朝の処理を全単元について回す。1単元が失敗しても他は続ける。
+ * 1回の実行は6分で止められる（GAS の上限）。単元ごとのプロジェクトでは単元ごとに6分あったが、
+ * まとめると全単元で6分になる。そこで4分半を越えたら残りの単元をプロパティに残し、
+ * 1分後に continueAll で続きを回す（残りが無くなるまで繰り返す）。
+ */
+var ALL_BUDGET_MS_ = 270 * 1000;
+var ALL_TODO_KEY_ = 'all_todo';
+var ALL_JOBS_ = {
+  nightlyAggregate: function () { nightlyAggregate(); },
+  rolloverRoster: function () { rolloverRoster(new Date()); },
+  resetDaily: function () { resetDaily(); }
+};
+function runAll_(job, ids) {
+  var gp = PropertiesService.getScriptProperties(), start = Date.now(), errs = [];
+  ids = (ids || unitIds_()).slice();
+  while (ids.length) {
+    if (Date.now() - start > ALL_BUDGET_MS_) {
+      var todo = {};
+      try { todo = JSON.parse(gp.getProperty(ALL_TODO_KEY_) || '{}'); } catch (e) {}
+      todo[job] = ids;
+      gp.setProperty(ALL_TODO_KEY_, JSON.stringify(todo));
+      ScriptApp.newTrigger('continueAll').timeBased().after(60 * 1000).create();
+      break;
+    }
+    var id = ids.shift();
+    try { useUnit_(id); ALL_JOBS_[job](); }
+    catch (e) { errs.push(id + ': ' + (e && e.message || e)); console.error(job + ' ' + id + ' 失敗: ' + (e && e.message || e)); }
+  }
+  return errs;
+}
+function nightlyAggregateAll() { return runAll_('nightlyAggregate'); }
+function rolloverRosterAll() { return runAll_('rolloverRoster'); }
+function resetDailyAll() { return runAll_('resetDaily'); }
+/** 時間切れで残った単元の続き（runAll_ が1回だけの自動実行で呼ぶ） */
+function continueAll() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'continueAll') ScriptApp.deleteTrigger(t);
+  });
+  var gp = PropertiesService.getScriptProperties(), todo = {};
+  try { todo = JSON.parse(gp.getProperty(ALL_TODO_KEY_) || '{}'); } catch (e) {}
+  gp.deleteProperty(ALL_TODO_KEY_);
+  var errs = [];
+  Object.keys(todo).forEach(function (job) {
+    if (ALL_JOBS_[job]) errs = errs.concat(runAll_(job, todo[job].filter(function (id) { return unitIds_().indexOf(id) >= 0; })));
+  });
+  return errs;
+}
+
+/** 名簿をハブから Base.gs で読むか（Base.gs が貼られ、ハブが設定されている時） */
+function hubRoster_() {
+  try { return typeof Base !== 'undefined' && !!Base.hubId(); } catch (e) { return false; }
+}
+
+/** 全単元をまとめたプロジェクトで、単元を選ばずに開いた時の一覧 */
+function unitIndexPage_() {
+  var base = '';
+  try { base = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+  var items = unitIds_().map(function (id) {
+    var u = UNIT_DEFS[id];
+    return '<li><a href="' + base + '?unit=' + encodeURIComponent(id) + '">' + String(u.title || id).replace(/[<>&]/g, '') + '</a></li>';
+  }).join('');
+  return HtmlService.createHtmlOutput('<base target="_top"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<div style="font-family:sans-serif;font-size:20px;line-height:2;padding:16px"><ul>' + items + '</ul></div>').setTitle('算数タイムアタック');
+}
+
+function sh_(name) {
+  var s = ss_().getSheetByName(name);
+  if (!s) throw new Error('シートが見つかりません: ' + name);
+  return s;
+}
+
+function email_() {
+  var e = Session.getActiveUser().getEmail();
+  return e ? e.toLowerCase() : '';
+}
+
+function today_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+/** log の ts を数値時刻にする。読めなければ 0（＝期間窓で捨てない側に倒す） */
+function rowTime_(x) {
+  if (x instanceof Date) return x.getTime();
+  var d = new Date(x);
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+/** シートが日付を Date に変換していても文字列比較できるようにする */
+function dstr_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return String(v);
+}
+
+function domainOf_(mail) {
+  var at = String(mail || '').lastIndexOf('@');
+  return at < 0 ? '' : String(mail).slice(at + 1);
+}
+
+function isTeacherDomain_(mail) { return domainOf_(mail) === TEACHER_DOMAIN; }
+
+/**
+ * 名簿になくても試用できる（記録しない＝分析の対象にもならない）。
+ * 教師ドメインに限らず、ログインしている全員。
+ * 名簿にない児童は「おためし」として全モードを使える。記録されないので、
+ * 転入直後や他学年の児童が触っても分析は濁らない。
+ */
+function isGuest_(mail) { return !!mail; }
+
+function toBool_(x) {
+  if (x === true) return true;
+  if (x === false || x === '' || x == null) return false;
+  var s = String(x).trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'on' || s === 'yes' || s === '○';
+}
+
+function config_() {
+  var hit = cache_().get('config');
+  if (hit) return JSON.parse(hit);
+
+  var def = defaults_(), c = {};
+  for (var k in def) c[k] = def[k];
+  var v = sh_(SHEETS.CONFIG).getDataRange().getValues();
+  for (var i = 1; i < v.length; i++) {
+    var key = String(v[i][0]).trim();
+    if (!key) continue;
+    c[key] = (typeof def[key] === 'number') ? Number(v[i][1]) : v[i][1];
+  }
+  cache_().put('config', JSON.stringify(c), TTL.config);
+  return c;
+}
+
+function isTeacher_(mail) {
+  if (!mail) return false;
+  if (isTeacherDomain_(mail)) return true;          // 設定を読まずに済むので先に見る
+  try { if (mail === ss_().getOwner().getEmail().toLowerCase()) return true; } catch (e) {}
+  // config.teachers は例外の口。別ドメインの教師（支援員・非常勤など）を1件ずつ足す
+  var list = String(config_().teachers || '').toLowerCase().split(',');
+  for (var i = 0; i < list.length; i++) if (list[i].trim() === mail) return true;
+  return false;
+}
+
+/** いまの年度（4月始まり）を返す */
+function curSchoolYear_() { return fyOfTime_(Date.now()); }
+
+/** その時刻が属する年度（4月始まり。月の境目はスクリプトのタイムゾーンで見る）。読めなければ 0。年度の境目の正本 */
+function fyOfTime_(ts) {
+  if (!ts) return 0;
+  var d = new Date(ts), tz = Session.getScriptTimeZone();
+  var y = Number(Utilities.formatDate(d, tz, 'yyyy')), m = Number(Utilities.formatDate(d, tz, 'M'));
+  return m >= 4 ? y : y - 1;
+}
+
+/** 年度のはじめ（4/1 0:00）の時刻。年度の境目はここと fyOfTime_ の2箇所にだけ書く */
+function fyStartMs_(fy) { return new Date(fy, 3, 1).getTime(); }
+
+/**
+ * 名簿の行を正規化して返す。{ mail, grade, cls, no, name } の配列。
+ *
+ * fy を省略すると現在年度（roster シート）。fy を渡すとその年度の名簿:
+ *   - fy === 現在年度      → roster（ライブ。新しい児童がすぐ乗る）
+ *   - 過去年度で roster_<fy> あり → そのシート（年度アーカイブ）
+ *   - 過去年度で roster_<fy> なし → []（呼び出し側が log の行から組み立てる）
+ *
+ * 学年ごとのハブから複数の IMPORTRANGE を縦積みで取り込むと、
+ * 各ソースのヘッダ行が途中に混ざるので、'@' を含まない行（ヘッダ・空行）を除く。
+ * 氏名の有無はここでは見ない（見るのは呼び出し側）。
+ */
+function rosterRows_(fy) {
+  if (fy === undefined) fy = curSchoolYear_();
+  if (hubRoster_()) {
+    // ハブの名簿を Base.gs で読む（IMPORTRANGE をやめる）。過去年度はハブの roster_<年度>、
+    // 無ければ今までどおり単元のスプレッドシートの roster_<年度>（4/1 に単元ごとに残していた分）
+    var hr = Base.roster(fy).map(function (r) { return { mail: r.mail, grade: r.grade, cls: r.cls, no: r.no, name: r.name }; });
+    if (hr.length || fy === curSchoolYear_()) return hr;
+  }
+  var s;
+  if (fy === curSchoolYear_()) {
+    s = sh_(SHEETS.ROSTER);                    // 現在年度は常にライブの roster
+  } else {
+    s = ss_().getSheetByName('roster_' + fy); // 過去年度は年度名簿だけ（無ければ無い）
+    if (!s) return [];
+  }
+  var v = s.getDataRange().getValues();
+  var out = [], seen = {};
+  for (var i = 1; i < v.length; i++) {
+    var mail = String(v[i][0] || '').trim().toLowerCase();
+    if (!mail || mail.indexOf('@') < 0) continue;
+    var r = { mail: mail, grade: Number(v[i][1]),
+              cls: String(v[i][2] || '').trim(), no: Number(v[i][3]),
+              name: String(v[i][4] || '').trim() };
+    // 同じ児童が複数のハブの名簿に載っていると、縦積みで行が重複する。
+    // 正本は先に出てきた行。ただし先の行が氏名なし・後の行が氏名ありなら
+    // 後の行を使う（記録・分析の対象になる児童を消さないため）
+    if (seen[mail] === undefined) { seen[mail] = out.length; out.push(r); }
+    else if (!out[seen[mail]].name && r.name) out[seen[mail]] = r;
+  }
+  return out;
+}
+
+function child_(mail) {
+  if (!mail) return null;
+  var key = 'roster_' + mail;
+  var hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
+
+  var rows = rosterRows_();
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].mail === mail) {
+      // 氏名の無い登録は記録・分析の対象にしない。本人はゲストとして使える
+      var r = rows[i];
+      if (!r.name) continue;
+      var c = { email: mail, grade: r.grade, cls: r.cls, no: r.no, name: r.name };
+      cache_().put(key, JSON.stringify(c), TTL.roster);
+      return c;
+    }
+  }
+  return null;   // 未登録はキャッシュしない（名簿追加が即反映されるように）
+}
+
+/**
+ * 名簿に email と氏名の両方がある児童のメール集合。{ mail: true }
+ * 記録が書き込めるのはこの児童だけだが、集計側でも同じ条件で絞る。
+ * 名簿から氏名を消した児童の過去分まで weak_child に残ると、
+ * 「分析の対象は名簿にある児童だけ」という約束が画面上で破れるため。
+ */
+function namedMails_() {
+  var set = {};
+  rosterRows_().forEach(function (r) {
+    if (r.name) set[r.mail] = true;
+  });
+  return set;
+}
+
+function classKey_(c) { return c.grade + '-' + c.cls; }
+
+/* ---- モードの解禁フラグ（学年既定 + クラスごとの上書き） ---- */
+
+/**
+ * クラスごとの公開設定。{ '3-1': { modes: {1:true,2:false,...}, seqOff: false } }
+ *
+ * 公開はモード単位で持つ。以前は「フラグ」（かけ算の拡張・計算モードなど）を単元が
+ * 宣言し、複数のモードが1つのフラグを共有していた。その形では
+ * 「わり算9×16 だけ閉じる」ができず、`flag: null` のモードは閉じる手段が無かった。
+ * 20モードのうち単独で閉じられるものが1つも無い状態だったので、モード単位にした。
+ */
+/**
+ * class_config の1列目（クラス名「学年-組」）を文字列に戻す。
+ * スプレッドシートは「3-1」を日付（3月1日）として受け取ってしまい、読むと Date が返る。
+ * そのままだと名簿のクラス（"3-1"）と一致せず、公開したモードが児童に1つも出ない。
+ * Date なら月-日に読み替えて元の「学年-組」に戻す（保存時は列を文字列の書式にして、そもそも化けないようにする）。
+ */
+function clsCell_(x) {
+  if (Object.prototype.toString.call(x) === '[object Date]' && !isNaN(x.getTime())) {
+    return (x.getMonth() + 1) + '-' + x.getDate();
+  }
+  return String(x == null ? '' : x).trim();
+}
+
+function classConfig_(fresh) {
+  // 教師画面は fresh で呼ぶ。設定した本人が見る画面が、
+  // 最大60秒古い写しを見せると「保存できていない」と区別がつかない。
+  // 児童側は毎回シートを読むと重いので、これまでどおりキャッシュを使う。
+  if (!fresh) {
+    var hit = cache_().get('classcfg');
+    if (hit) return JSON.parse(hit);
+  }
+  var map = {};
+  var sh = ss_().getSheetByName(SHEETS.CLASS);
+  if (sh && sh.getLastRow() > 1) {
+    var v = sh.getDataRange().getValues();
+    var head = v[0].map(String);
+    for (var i = 1; i < v.length; i++) {
+      var ck = clsCell_(v[i][0]);
+      if (!ck) continue;
+      var row = { modes: {}, seqOff: false };
+      modeIds_().forEach(function (id) {
+        var col = head.indexOf('mode_' + id);
+        if (col >= 0) row.modes[id] = toBool_(v[i][col]);
+      });
+      var sc = head.indexOf('seq_off');
+      if (sc >= 0) row.seqOff = toBool_(v[i][sc]);
+      var nc = head.indexOf('n_unlock');
+      if (nc >= 0) row.nUnlock = toBool_(v[i][nc]);
+      map[ck] = row;
+    }
+  }
+  cache_().put('classcfg', JSON.stringify(map), TTL.config);
+  return map;
+}
+
+/**
+ * そのクラスで公開されているモード。{ modeId: true/false }
+ *
+ * 学年による既定は持たない。教師が class_config で明示したものだけを開ける。
+ * 「学年が3以上なら自動で開く」は、担任が触っていないのに開いている状態を作る。
+ * どのモードを出すかは進度の判断なので、既定で開けない側に倒す。
+ */
+function openFor_(grade, cls) {
+  var over = classConfig_()[grade + '-' + cls];
+  var out = {};
+  modeIds_().forEach(function (id) { out[id] = !!(over && over.modes[id]); });
+  // pair のあるモード（図なし等の別記録版）は、相方の公開設定に従う。class_config に列を持たない
+  UNIT.modes.forEach(function (m) { if (m.pair) out[m.id] = !!out[m.pair]; });
+  return out;
+}
+
+/** そのクラスが順次開放を外しているか */
+function seqOffFor_(grade, cls) {
+  var over = classConfig_()[grade + '-' + cls];
+  return !!(over && over.seqOff);
+}
+
+/** gateN：段階解放を使うクラスなら児童の正答回数 N、使わないなら null（nGateFor_） */
+function modeAllowed_(mode, open, seqOff, tries, gateN) {
+  var m = modeDef_(mode);
+  if (!m) return false;
+  if (!open[m.id]) return false;
+  if (!nMet_(m, gateN)) return false;
+  return needsMet_(m, seqOff, tries);
+}
+
+/*
+ * 正答回数による段階解放（UNIT.nUnlock = { モード: 必要な正答回数 }）。
+ * 正答回数 N はメニューの「正答回数の図」と同じ数（モードごとの本番の正答 × 育ちの倍率、切り捨ての合計）。
+ * 児童が画面で見ている数で開くので、次がいつ開くかを自分で見通せる。
+ * 成績（1回の正答数）ではなく累計なので、遅い子も続ければ必ず届く（needsMet_ の注記と同じ理由）。
+ * クラスごとに class_config の n_unlock で入れる。pair のモードは相方の閾値に従う。
+ */
+function hasNUnlock_() { return !!(UNIT.nUnlock && Object.keys(UNIT.nUnlock).length); }
+function nNeed_(m) { var t = UNIT.nUnlock || {}; return Number(t[m.pair || m.id]) || 0; }
+function nMet_(m, gateN) { return gateN == null || nNeed_(m) <= gateN; }
+function nUnlockFor_(grade, cls) {
+  var over = classConfig_()[grade + '-' + cls];
+  return hasNUnlock_() && !!(over && over.nUnlock);
+}
+/** 正答回数 N（index.html の menuFigCount_ と同じ式） */
+function figCount_(tcm) {
+  var gw = growWeights_(), n = 0;
+  Object.keys(tcm || {}).forEach(function (m) { n += Math.floor((Number(tcm[m]) || 0) * (Number(gw[m]) || 1)); });
+  return n;
+}
+function nGateFor_(c, mail) {
+  if (!nUnlockFor_(c.grade, c.cls)) return null;
+  var e = summaryIndex_(config_().limit_sec)[mail] || {};
+  return figCount_(e.tcm);
+}
+
+/**
+ * 順次開放。前のモードを規定回数やるまで、次のモードを開けない。
+ *
+ *   modes: [{ id: 2, needs: { mode: 1, tries: 3 } }]
+ *
+ * 条件を「回数」にしてあるのは、成績（正答数）にすると閾値の適正値が学級ごとに違い、
+ * 下位層が最後のモードに永久に到達しないため。README が到達バッジを却下したのと
+ * 同型の欠陥で、それを個人内評価ではなく解禁の顔をして持ち込むことになる。
+ * 回数なら遅い子でも必ず到達し、順序だけが担保される。
+ *
+ * class_config の seq_off にチェックを入れると、そのクラスだけ順序を外せる
+ * （授業で全員に同じモードをやらせる場面のため）。
+ *
+ * tries が無いとき（名簿にない試用者）は開けておく。記録が無いので条件を判定できず、
+ * 閉じる側に倒すと試用そのものができなくなる。
+ */
+function needsMet_(m, seqOff, tries) {
+  var nd = m.needs || (m.pair && (modeDef_(m.pair) || {}).needs);
+  if (!nd) return true;
+  if (!tries) return true;
+  if (seqOff) return true;
+  return (Number(tries[nd.mode]) || 0) >= Number(nd.tries);
+}
+
+/**
+ * まだ開いていないモードに、開け方の案内文を付ける。{ モードid: 文言 }
+ * 教師が非公開にしたモードはここに入れない（画面から消えるので案内する相手がいない）。
+ */
+function lockNotes_(open, seqOff, tries, gateN) {
+  var out = {};
+  UNIT.modes.forEach(function (m) {
+    if (!open[m.id]) return;
+    if (!nMet_(m, gateN)) { out[m.id] = 'せいかいの かいすうが ' + nNeed_(m) + ' に なると あきます'; return; }
+    if (needsMet_(m, seqOff, tries)) return;
+    var nd = m.needs || modeDef_(m.pair).needs;
+    out[m.id] = '「' + modeName_(nd.mode) + '」を ' +
+                nd.tries + 'かい やると あきます';
+  });
+  return out;
+}
+
+/** 順次開放を使う単元か。教師画面に「じゅんばん解除」の列を出すかの判定に使う */
+function hasNeeds_() {
+  for (var i = 0; i < UNIT.modes.length; i++) if (UNIT.modes[i].needs) return true;
+  return false;
+}
+
+function modeDef_(id) {
+  for (var i = 0; i < UNIT.modes.length; i++) if (UNIT.modes[i].id === Number(id)) return UNIT.modes[i];
+  return null;
+}
+
+function modeIds_() { return UNIT.modes.map(function (m) { return m.id; }); }
+
+/** class_config で公開を決めるモード（pair のあるモードは相方に従うので除く） */
+function cfgModeIds_() { return UNIT.modes.filter(function (m) { return !m.pair; }).map(function (m) { return m.id; }); }
+
+/** class_config の見出し。class | mode_1 … mode_n | seq_off（順次開放を使う単元だけ） */
+function classHead_() {
+  var head = ['class'].concat(cfgModeIds_().map(function (id) { return 'mode_' + id; }));
+  if (hasNeeds_()) head.push('seq_off');
+  if (hasNUnlock_()) head.push('n_unlock');
+  return head;
+}
+
+/** シート上で mode 番号の意味が分かるように、名前も並べて記録する */
+function modeName_(m) { var d = modeDef_(m); return d ? d.name : ('mode' + m); }
+
+/* ============================================================
+ *  出題 — 生成はサーバーだけが行う
+ * ============================================================ */
+
+function rng_(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function ri_(rand, lo, hi) { return lo + Math.floor(rand() * (hi - lo + 1)); }
+function pick_(rand, arr) { return arr[Math.floor(rand() * arr.length)]; }
+
+/**
+ * そのモードに出る問題型を、gen を実際に回して求める。
+ * Unit.gs に pool を別途宣言させると gen と二重管理になり、
+ * 片方だけ直したときに「練習の選択肢」と「実際に出る問題」がずれる。
+ * 出題の正本は gen ひとつだけ、を保つために derive する。
+ *
+ * 300回引く。プールが4型なら取りこぼす確率は事実上ゼロ。
+ * 極端に出現率の低い型（1%未満）を作った単元では取りこぼしうる。
+ */
+function typesInMode_(mode) {
+  var rand = rng_(20260903), seen = {}, out = [];
+  for (var i = 0; i < 300; i++) {
+    var t = UNIT.gen(rand, Number(mode)).t;
+    if (t && !seen[t]) { seen[t] = true; out.push(t); }
+  }
+  return out;
+}
+
+function typesByMode_() {
+  var hit = cache_().get('typesbymode');
+  if (hit) return JSON.parse(hit);
+  var out = {};
+  modeIds_().forEach(function (m) { out[m] = typesInMode_(m); });
+  cache_().put('typesbymode', JSON.stringify(out), 3600);
+  return out;
+}
+
+/** 直前3問と同じ問題を避けながら n 問作る */
+function genQueue_(seed, mode, n) {
+  var rand = rng_(seed);
+  if (typeof UNIT.queue === 'function') return UNIT.queue(rand, Number(mode), n);
+  var out = [], recent = [];
+  for (var i = 0; i < n; i++) {
+    var it, guard = 0;
+    do { it = UNIT.gen(rand, Number(mode)); guard++; }
+    while (recent.indexOf(it.tag) >= 0 && guard < 8);
+    recent.push(it.tag); if (recent.length > 3) recent.shift();
+    out.push(it);
+  }
+  return out;
+}
+
+/**
+ * キュー項目（1問分の送信用の配列）の位置づけ。
+ *   Q: 出題トークン, F: 欄, ANS: 答え（F の順）, RULER: まきじゃく,
+ *   T: 問題型, DIAL: はかりの文字盤, ROWS: 並べ方, VEIL: 覆い, FIG: 図
+ *
+ * 書き込みは packQueue_、読み取りは index.html の2箇所（begin/beginPractice）と
+ * tests/divmod.test.cjs。同じ1問をオブジェクトで組み立てるのが
+ * nextPracticeItem と index.html の pFetch（キーはここの小文字）。
+ * 添字・キーを変えるときは両側を同じこの表で揃えること
+ * （配列の並び自体は送信中データとの互換なので変えない）。
+ */
+var QI_ = { Q:0, F:1, ANS:2, RULER:3, T:4, DIAL:5, ROWS:6, VEIL:7, FIG:8, COL:9 };
+
+/**
+ * 送信用に切り詰める（配列の並びは QI_）。
+ *
+ * 並べ方（rows）と覆い（veil）を問題ごとに載せるのは、まきじゃくや文字盤と同じ理由。
+ * 単元が「この問題はこう並べる」と決められないと、共通画面が単元ごとの形を
+ * 知ることになり、依存が逆流する。
+ */
+function packQueue_(q) {
+  return q.map(function (x) {
+    var it = [];
+    it[QI_.Q] = x.q;
+    it[QI_.F] = x.f;
+    it[QI_.ANS] = x.f.map(function (k) { return x.ans[k]; });
+    it[QI_.RULER] = x.ruler || null;
+    it[QI_.T] = x.t;
+    it[QI_.DIAL] = x.dial || null;
+    it[QI_.ROWS] = x.rows || null;
+    it[QI_.VEIL] = (x.veil == null ? null : x.veil);
+    it[QI_.FIG] = x.fig || null;
+    it[QI_.COL] = x.col ? 1 : 0;
+    return it;
+  });
+}
+
+/* ============================================================
+ *  ルーティング
+ * ============================================================ */
+
+function include(name) {
+  return HtmlService.createHtmlOutputFromFile(name).getContent();
+}
+
+function doGet(e) {
+  if (isMulti_()) {
+    var uid = (e && e.parameter && e.parameter.unit) || '';
+    if (!uid || !Object.prototype.hasOwnProperty.call(UNIT_DEFS, uid)) return unitIndexPage_();
+    useUnit_(uid);
+  }
+  ensureReady_();
+  var page = (e && e.parameter && e.parameter.page) || '';
+  if (page === 'teacher') {
+    if (!isTeacher_(email_())) {
+      return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">この画面を開く権限がありません。</p>');
+    }
+    var t = HtmlService.createTemplateFromFile('teacher');
+    // ハブの「協力プレイ↗」は ?page=teacher&tab=coop で来る。最初に開くタブ（知らない値は既定のタブ）
+    t.startTab = ['mode', 'coop', 'set', 'ana', 'past'].indexOf(e.parameter.tab) >= 0 ? e.parameter.tab : '';
+    return t.evaluate()
+      .setTitle(UNIT.teacherTitle)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+  return HtmlService.createTemplateFromFile('index').evaluate()
+    .setTitle(UNIT.title)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/* ============================================================
+ *  児童用 API
+ * ============================================================ */
+
+function boot() {
+  var mail = email_();
+  if (!mail) return { ok: false, msg: 'ログイン情報を取得できません。学校のアカウントで開いてください。' };
+  var cfg = config_();
+  var c = child_(mail);
+
+  // 単元が UNIT.settings で宣言した設定だけを児童画面に渡す。
+  // Core はキーの意味を知らない（何に使うかは単元と index.html の描画側の取り決め）。
+  var uset = {};
+  (UNIT.settings || []).forEach(function (s) {
+    var v = cfg[s.key];
+    uset[s.key] = (s.type === 'text') ? v : Number(v);
+  });
+
+  var base = {
+    ok: true,
+    ver: ENGINE_VER,               // 画面側は WANT_VER と比べて版ずれを検知する
+    // digitCap は「宣言」なので、そのままクライアントへ渡してよい（答えは含まない）。
+    // 渡さないと index.html の digitCap_() が宣言を読めず、自動確定も欄移動も動かない。
+    // gen は絶対に渡さない（クライアントに出題ロジックを持たせない）。
+    unit: { id: UNIT.id, title: UNIT.title, titleRuby: UNIT.titleRuby || null, modes: UNIT.modes,
+            // 学年の進みの色・まちがいの赤・「？」の印の色。画面は色の値を持たず、ここから受け取る
+            grade: UNIT.grade, category: UNIT.category || 'grade', interaction: UNIT.interaction || null, menuFigure: UNIT.menuFigure || '', colDir: !!UNIT.colDir, nUnlock: UNIT.nUnlock || null, accent: gradeAccent_(), alert: ALERT_COLOR_, q: questionColor_(),
+            units: UNIT.units || {}, digitCap: UNIT.digitCap || {},
+            // 型を絞った練習の選択肢。ラベルは types、どの型がどのモードに出るかは gen から導出
+            types: UNIT.types || {}, typesByMode: typesByMode_(),
+            // 合計で判定するときの換算率。index.html が単位名を決め打ちしないために渡す
+            scale: UNIT.scale || {},
+            // 欄ごとの数字の字形（九九の「八九72」を漢数字で見せるなど）。
+            // digitCap と同じく「宣言」であって、答えは含まない
+            glyph: UNIT.glyph || {},
+            // 目立たせる欄の色。これも宣言で、答えは含まない
+            slotColor: UNIT.slotColor || {},
+            // 背景の床（成長する図形）の第二の色。第一の色は accent（学年の色）
+            floor2: floorColor_(),
+            // 床の図形（design リポジトリ growing-figures の生成器の id）。宣言が無ければペンローズ
+            floorPattern: UNIT.floorPattern || 'penrose' },
+    settings: uset,
+    limitSec: cfg.limit_sec, missLimit: cfg.miss_limit, keyGap: Number(cfg.key_gap)
+  };
+
+  // 教師が児童画面から教師画面へ移れるようにする。
+  // 児童のアカウントではこの2つが入らないので、リンク自体が描かれない
+  base.teacher = isTeacher_(mail);
+  if (base.teacher) base.teacherUrl = teacherUrl_();
+
+  if (!c) {
+    if (!isGuest_(mail)) {
+      return { ok: false, msg: '名簿に登録がありません。担任の先生に伝えてください。' };
+    }
+    var allOn = {};
+    modeIds_().forEach(function (m) { allOn[m] = true; });
+    base.guest = true; base.name = ''; base.grade = 0;
+    base.open = allOn;                // 名簿外の試用者。記録されないので全モード出す
+    base.locked = {};                 // 記録が無いので順次開放は判定できない。開けておく
+    base.best = {}; base.practiceBest = {}; base.stars = {}; base.medals = {};
+    base.floor = { min: 0, pace: floorPace_(null) };   // 記録が無いので床は育たない（summary も読まない）
+    modeIds_().forEach(function (m) {
+      base.best[m] = 0; base.practiceBest[m] = 0; base.stars[m] = 0; base.medals[m] = '';
+    });
+    return base;
+  }
+
+  base.guest = false; base.name = c.name; base.grade = c.grade;
+  base.open = openFor_(c.grade, c.cls);
+  var b = bests_(mail, cfg.limit_sec);
+  base.best = b.best; base.practiceBest = b.practiceBest; base.stars = b.stars;
+  base.floor = b.floor;
+  base.nGate = nUnlockFor_(c.grade, c.cls);   // 段階解放のクラス。画面は本番の後に正答回数で開け直す（nUnlockRelock_）
+  base.locked = lockNotes_(base.open, seqOffFor_(c.grade, c.cls), b.tries,
+                           base.nGate ? figCount_(b.floor.tcm) : null);
+  base.medals = medals_(classKey_(c), mail, cfg.limit_sec);
+  base.coop = coopForChild_(c);   // 協力モード中なら自分の色（なければ active:false）
+  return base;
+}
+
+/**
+ * 記録しない練習（むせいげん）の1問。クライアントに出題ロジックを持たせないため、
+ * ここで1問ずつ作って返す。記録しないので token もシードも要らない。
+ */
+function nextPracticeItem(mode, type) {
+  var mail = email_();
+  var c = child_(mail);
+  if (!c && !isGuest_(mail)) return { ok: false };
+  mode = Number(mode);
+  if (modeIds_().indexOf(mode) < 0) return { ok: false };
+  if (c && !modeAllowed_(mode, openFor_(c.grade, c.cls),
+                         seqOffFor_(c.grade, c.cls), triesForGate_(mail), nGateFor_(c, mail))) return { ok: false };
+
+  var rand = rng_(Math.floor(Math.random() * 2147483647));
+  var it = UNIT.gen(rand, mode);
+
+  // 型を絞った練習。gen を引き直して当たりを待つ（棄却法）。
+  // 型ごとの生成関数を Unit.gs に足させると gen と二重管理になるので、
+  // 出題の正本は gen のままにしておく。プールが4型なら平均4回で当たる。
+  // 60回引いても当たらなければ、そのまま返す（画面が止まるよりはよい）。
+  if (type) {
+    for (var i = 0; i < 60 && it.t !== type; i++) it = UNIT.gen(rand, mode);
+  }
+
+  // 返す形は packQueue_ の配列と同じ1問を、QI_ の小文字のキーで渡す
+  return {
+    ok: true, q: it.q, f: it.f,
+    ans: it.f.map(function (k) { return it.ans[k]; }),
+    ruler: it.ruler || null, t: it.t || null, dial: it.dial || null,
+    rows: it.rows || null, veil: (it.veil == null ? null : it.veil),
+    fig: it.fig || null, col: it.col ? 1 : 0
+  };
+}
+
+function startSession(mode, practice) {
+  var mail = email_();
+  var c = child_(mail);
+  var cfg = config_();
+  mode = Number(mode);
+  if (modeIds_().indexOf(mode) < 0) return { ok: false, msg: 'モードが不正です。' };
+
+  if (!c) {
+    if (!isGuest_(mail)) return { ok: false, msg: '名簿に登録がありません。' };
+    return {
+      ok: true, guest: true, token: '',
+      limitSec: cfg.limit_sec, missLimit: cfg.miss_limit,
+      qs: packQueue_(genQueue_(Math.floor(Math.random() * 2147483647), mode, QN))
+    };
+  }
+
+  if (!modeAllowed_(mode, openFor_(c.grade, c.cls),
+                    seqOffFor_(c.grade, c.cls), triesForGate_(mail), nGateFor_(c, mail))) {
+    return { ok: false, msg: 'このモードは まだ つかえません。' };
+  }
+
+  var seed = Math.floor(Math.random() * 2147483647);
+  var sess = { n: Utilities.getUuid(), seed: seed, mode: mode, mail: mail, t: Date.now(),
+               lim: Number(cfg.limit_sec), p: !!practice };
+  var token = makeToken_(sess);
+  // キャッシュは「まだ記録していない」の速い印。消えていても token だけで採点できる
+  cache_().put('sess_' + sess.n, '1', TTL.session);
+
+  return {
+    ok: true, token: token,
+    limitSec: cfg.limit_sec, missLimit: cfg.miss_limit,
+    qs: packQueue_(genQueue_(seed, mode, QN)),
+    // 協力モード中なら自分の色を教える（なければ active:false）
+    coop: coopForChild_(c, Number(cfg.limit_sec) || 60)
+  };
+}
+
+/**
+ * items = [{i:出題index, a:[解答の履歴], ms:最初の解答までのミリ秒}, ...]
+ * サーバーがシードから問題列を再生成して採点し直す。点数は受け取らない。
+ */
+function submitSession(token, items) {
+  var mail = email_();
+  // 署名つき token はそれ自体が回の情報を持つ。旧形式（UUID）はキャッシュに回の情報がある
+  var s = readToken_(token), ckey;
+  if (s) {
+    if (Date.now() - Number(s.t) > TOKEN_DAYS_ * 86400000) {
+      return { ok: false, code: 'gone', msg: 'きろくの きげんが きれました。' };
+    }
+    ckey = 'sess_' + s.n;
+  } else {
+    ckey = 'sess_' + token;
+    var raw = cache_().get(ckey);
+    if (!raw) return { ok: false, code: 'gone', msg: 'この記録は すでに ほぞんされています。' };
+    s = JSON.parse(raw);
+  }
+  if (s.mail !== mail) return { ok: false, code: 'bad', msg: '不正なリクエストです。' };
+
+  var cfg = config_();
+  var c = child_(mail);
+  if (!c) return { ok: false, code: 'bad', msg: '名簿に登録がありません。' };
+  var limSec = Number(s.lim) || Number(cfg.limit_sec);
+
+  if (!itemsValid_(items)) {
+    return { ok: false, code: 'bad', msg: '記録できませんでした。' };
+  }
+  var sumMs = 0;
+  for (var n = 0; n < items.length; n++) sumMs += Number(items[n].ms) || 0;
+  if (sumMs > (limSec + 5) * 1000) {
+    return { ok: false, code: 'bad', msg: '時間が合いません。記録できませんでした。' };
+  }
+
+  var q = genQueue_(s.seed, s.mode, QN);
+  var correct = 0, attempts = 0;
+  var miss = [], slow = [], wrong = [], stat = {}, msByType = {};
+
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i], qq = q[it.i];
+    if (!qq) continue;
+    var hist = it.a || [];
+    attempts += hist.length;
+
+    var byTotal = UNIT.byTotal ? !!UNIT.byTotal(qq) : false;
+    var want = qq.f.map(function (u) { return qq.ans[u]; });
+    var last = hist.length ? hist[hist.length - 1] : null;
+    var hit = !!last && match_(last, qq, byTotal);
+    var firstTry = hist.length === 1 && hit;
+
+    if (hit) correct++;
+    if (!hit || hist.length > 1) {
+      miss.push(qq.t + ':' + qq.tag);
+      // 誤答明細シート用に、正しい答えと最初に間違えた値をセットで残す
+      for (var w = 0; w < hist.length; w++) {
+        if (!match_(hist[w], qq, byTotal)) {
+          wrong.push(qq.t + '|' + qq.tag + '|' + want.join('/') + '|' + hist[w].join('/'));
+          break;
+        }
+      }
+    }
+    if (firstTry) {
+      // [試行数, Σ送信まで, 初打鍵が取れた数, Σ初打鍵まで, Σ(初打鍵まで)^2, Σln(初打鍵まで), Σln(初打鍵まで)^2]
+      // 二乗和まで持つのは、平均だけでは「毎回同じ速さで遅い子」と
+      // 「想起と計数を行き来していて時々速い子」が区別できないため。
+      // 前者は手続きの短縮、後者は想起そのものの練習が要る。
+      // 対数の和を持つのは、反応時間の分布が遅い側に長く裾を引くため。代表値は
+      // 対数の平均（幾何平均）で取る（Ratcliff 1993。docs/ARCHITECTURE.md「遅いの判定」）
+      if (!stat[qq.t]) stat[qq.t] = [0, 0, 0, 0, 0, 0, 0];
+      var tk = Number(it.tk) || 0;
+      stat[qq.t][0]++; stat[qq.t][1] += Number(it.ms) || 0;
+      if (tk > 0) {
+        var lt = Math.log(tk);
+        stat[qq.t][2]++; stat[qq.t][3] += tk; stat[qq.t][4] += tk * tk;
+        stat[qq.t][5] += lt; stat[qq.t][6] += lt * lt;
+      }
+      (msByType[qq.t] || (msByType[qq.t] = [])).push({ tag: qq.tag, ms: Number(it.ms) || 0 });
+    }
+  }
+
+  // slow_items：この回の同じ型の中で、対数時間が 中央値＋2.5×MAD を超えた問題（5問以上ある型だけ）。
+  // 平均±SDは外れ値そのものに引っぱられて外れ値を見落とす（Leys et al. 2013）。学年との比較は集計側で行う
+  Object.keys(msByType).forEach(function (t) {
+    var xs = msByType[t].filter(function (x) { return x.ms > 0; });
+    if (xs.length < 5) return;
+    var nm = robustNorm_(xs.map(function (x) { return Math.log(x.ms); }));
+    if (!(nm.s > 0)) return;
+    xs.forEach(function (x) {
+      if ((Math.log(x.ms) - nm.med) / nm.s > SLOW_ITEM_Z_) slow.push(t + ':' + x.tag + ':' + Math.round(x.ms));
+    });
+  });
+
+  var statStr = Object.keys(stat).map(function (k) {
+    return k + ':' + stat[k].map(function (v, j) { return j >= 5 ? Math.round(v * 1000) / 1000 : v; }).join(':');
+  }).join(',');
+
+  var isPractice = !!s.p;
+  var rank = 0, res = { best: correct, star: 0, updated: false };
+
+  /*
+   * 記録は直列に書く（同じ行を読んで書き換えるため）。
+   * 待ち時間を30秒から10秒に縮めてある。40人が同じ1分の終わりに送ると、
+   * 待っている実行が同時実行の枠（1ユーザーあたり30）を埋めたまま居座り、
+   * その間、他の児童の boot と startSession が実行されない。
+   * 教室で最初に壊れるのは記録ではなく「始められないこと」なので、
+   * 混んでいるときは記録を諦めて枠を空ける。
+   *
+   * 諦めても失われない。token をキャッシュから消すのはロックの内側なので、
+   * ここで抜けた回は何も書いていない。端末は未送信として持ち続け、
+   * 数秒〜十数秒ばらけた間を置いて自分から送り直す（index.html の pendRetry_）。
+   * 協力プレイは終了から10分以内に届いた回しか数えないので、次の起動まで待つと間に合わない。
+   */
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    return { ok: false, msg: 'こんでいます。あとで おくりなおします。' };
+  }
+  try {
+    if (s.n) {
+      // キャッシュの印が残っていれば未記録。消えていたら used シートで二重記録を確かめる
+      if (!cache_().get(ckey) && tokenUsed_(s.n)) {
+        return { ok: false, code: 'gone', msg: 'この記録は すでに ほぞんされています。' };
+      }
+      sh_(SHEETS.USED).appendRow([s.n, new Date()]);
+    }
+    cache_().remove(ckey);
+
+    if (!isPractice) {
+      // 本番だけ log に残す。練習を混ぜると分析が濁る（列の位置は LOG_COL_）
+      var lr = [];
+      lr[LOG_COL_.TS] = new Date();
+      lr[LOG_COL_.MAIL] = mail;
+      lr[LOG_COL_.GRADE] = c.grade;
+      lr[LOG_COL_.CLS] = c.cls;
+      lr[LOG_COL_.NO] = c.no;
+      lr[LOG_COL_.NAME] = c.name;
+      lr[LOG_COL_.MODE] = s.mode;
+      lr[LOG_COL_.MNAME] = modeName_(s.mode);
+      lr[LOG_COL_.LIM] = limSec;
+      lr[LOG_COL_.CORRECT] = correct;
+      lr[LOG_COL_.ATTEMPTS] = attempts;
+      lr[LOG_COL_.MISS] = miss.join(',');
+      lr[LOG_COL_.SLOW] = slow.join(',');
+      lr[LOG_COL_.TSTAT] = statStr;
+      lr[LOG_COL_.WRONG] = wrong.join(',');
+      sh_(SHEETS.LOG).appendRow(lr);
+    }
+    res = updateSummary_(mail, s.mode, limSec, isPractice ? 'p' : 'r', correct, attempts);
+    if (!isPractice) rank = updateDaily_(classKey_(c), s.mode, limSec, mail, correct);
+    // 索引を作り直させる。次に起動した児童が古いベストを見ないように
+    cache_().remove('sumidx_' + limSec);
+    if (!isPractice) cache_().remove('top3_' + classKey_(c) + '_' + limSec);
+    // 協力モード：本番の提出だけを、終了時刻までに届いた分だけ数える。
+    // 協力モードは表示だけの仕組みなので、ここで失敗しても採点の記録（上で書き終えている）は成功として返す。
+    // catch の外へ投げると「記録に失敗しました」になり、token を消した後なので再送も 'gone' になって結果が出ない
+    if (!isPractice) { try { coopNote_(c, s.mode, correct, s); } catch (eCoop) {} }
+  } catch (err) {
+    return { ok: false, msg: '記録に失敗しました。' };   // code 無し = 再送する
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
+  }
+
+  return {
+    ok: true, mode: s.mode, limitSec: limSec, practice: isPractice,
+    score: correct, attempts: attempts,
+    best: res.best, star: res.star, updated: res.updated, rank: rank,
+    medal: (!isPractice && rank >= 1 && rank <= 3) ? ['🥇', '🥈', '🥉'][rank - 1] : ''
+  };
+}
+
+/*
+ * 署名つき token。回の情報（出題の種・モード・メール・開始時刻・制限時間・練習か）を
+ * サーバーだけが持つ鍵で署名して児童の端末に持たせる。CacheService は保存を保証しないので、
+ * 回の情報をキャッシュだけに置くと、消えた回は採点できずに記録が失われていた。
+ * 形は "s2.<本体>.<署名>"（どちらも URL 安全な base64）。
+ */
+var TOKEN_DAYS_ = 7;                       // 端末に退避した記録を受け付ける日数。used シートもこの日数より古い行を消す
+var SIGN_KEY_ = 'sign_key';
+
+function signKey_() {
+  var props = props_();
+  var k = props.getProperty(SIGN_KEY_);
+  if (!k) {
+    // 通常は ensureReady_ がロックの中で作る。ここは作られていなかったときの保険
+    k = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty(SIGN_KEY_, k);
+  }
+  return k;
+}
+
+function sign_(body) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, signKey_()));
+}
+
+function makeToken_(sess) {
+  var body = Utilities.base64EncodeWebSafe(JSON.stringify(sess), Utilities.Charset.UTF_8);
+  return 's2.' + body + '.' + sign_(body);
+}
+
+/** 署名が合えば回の情報を返す。旧形式・改竄・壊れた token は null */
+function readToken_(token) {
+  var p = String(token || '').split('.');
+  if (p.length !== 3 || p[0] !== 's2' || !p[1] || p[2] !== sign_(p[1])) return null;
+  try {
+    var s = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(p[1])).getDataAsString('UTF-8'));
+    return (s && s.n) ? s : null;
+  } catch (e) { return null; }
+}
+
+/** 記録済みか。キャッシュの印が消えた回でだけ呼ぶ（シートを読むので遅い） */
+function tokenUsed_(n) {
+  var sh = sh_(SHEETS.USED);
+  var last = sh.getLastRow();
+  if (last < 2) return false;
+  var v = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < v.length; i++) if (String(v[i][0]) === n) return true;
+  return false;
+}
+
+/** used シートから受付期限を過ぎた行を消す（resetDaily から呼ぶ） */
+function pruneUsed_() {
+  var sh = ss_().getSheetByName(SHEETS.USED);
+  if (!sh || sh.getLastRow() < 2) return;
+  var v = sh.getDataRange().getValues();
+  var lim = Date.now() - (TOKEN_DAYS_ + 1) * 86400000, keep = [v[0]];
+  for (var i = 1; i < v.length; i++) if (rowTime_(v[i][1]) >= lim) keep.push(v[i]);
+  if (keep.length === v.length) return;
+  sh.clearContents();
+  sh.getRange(1, 1, keep.length, 2).setValues(keep);
+}
+
+/**
+ * 送られた解答列の形を検査する。正答は児童側に配っているので、同じ正解の1問を
+ * 何度も送れば点数を水増しできてしまう（学級のメダル・順位が埋まる）。
+ * 出題番号は 0〜QN-1 の整数で重複なし、ms・tk は 0 以上、解答の履歴は配列の配列に限る。
+ * ms を負にすると合計時間の検査をすり抜けられるので、ここで止める。
+ */
+function itemsValid_(items) {
+  if (!items || !items.length || items.length > QN) return false;
+  var seen = {};
+  for (var n = 0; n < items.length; n++) {
+    var it = items[n];
+    if (!it) return false;
+    var i = it.i;
+    if (typeof i !== 'number' || i !== Math.floor(i) || i < 0 || i >= QN || seen[i]) return false;
+    seen[i] = true;
+    if (!(Number(it.ms) >= 0) || (it.tk != null && !(Number(it.tk) >= 0))) return false;
+    var a = it.a || [];
+    if (!Array.isArray(a)) return false;
+    for (var w = 0; w < a.length; w++) if (!Array.isArray(a[w])) return false;
+  }
+  return true;
+}
+
+/** 空欄は 0 とみなす。byTotal なら合計で、そうでなければ欄ごとに比べる。
+ *  答え a[i] は qq.f[i] の順で届く（QI_.ANS と同じ並び。児童側は currentAns が f.map で作る） */
+function match_(a, qq, byTotal) {
+  if (!a || a.length !== qq.f.length) return false;
+  if (UNIT.answerOrder === 'unordered') {
+    var actual = a.map(Number).sort(function(x,y){ return x-y; });
+    var expected = qq.f.map(function(k){ return Number(qq.ans[k]); }).sort(function(x,y){ return x-y; });
+    return actual.every(function(v,i){ return isFinite(v) && v === expected[i]; });
+  }
+  var got = 0, want = 0;
+  for (var i = 0; i < qq.f.length; i++) {
+    var u = qq.f[i];
+    var v = (a[i] === '' || a[i] === null || a[i] === undefined) ? 0 : Number(a[i]);
+    if (isNaN(v)) return false;
+    if (byTotal) {
+      // 宣言（UNIT.scale）を正とする。unitScale(関数) は旧単元との互換のため残す
+      var k = (UNIT.scale && UNIT.scale[u]) || (UNIT.unitScale ? UNIT.unitScale(u) : 1);
+      got += v * k; want += Number(qq.ans[u]) * k;
+    } else {
+      if (v !== Number(qq.ans[u])) return false;
+    }
+  }
+  return byTotal ? (got === want) : true;
+}
+
+/* ============================================================
+ *  summary / daily（制限時間ごとに別の記録として持つ）
+ * ============================================================ */
+
+/**
+ * summary: email | mode | limit_sec | kind | tries | total_correct | total_attempts | best | best_count
+ *   kind … 'r' 本番 / 'p' 練習（時間制限あり・ランダムのみ）
+ *   best_count … 自己ベストを塗り替えた回数。個人内評価の★になる
+ */
+var SUM = { MAIL:0, MODE:1, NAME:2, LIM:3, KIND:4, TRIES:5, TC:6, TA:7, BEST:8, COUNT:9 };
+
+/**
+ * summary をメール別に畳んだ索引。1回の読み取りを学級全体で分け合う。
+ *
+ * 帯活動では40人が同じ1分に起動する。児童ごとに summary 全体を読んでいると、
+ * 同じ内容を40回読むことになり、実行時間がそのまま同時実行の枠を埋める。
+ * 索引にすれば、シートを読むのは最初の1つの実行だけになる。
+ *
+ * TTL は30秒。自分の記録は submitSession の戻り値でその場で画面に入るので、
+ * ここが数十秒古くても児童には見えない（送信時に該当キーは落とす）。
+ */
+function summaryIndex_(limitSec) {
+  var key = 'sumidx_' + limitSec;
+  var hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
+
+  var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
+  var idx = {};
+  for (var i = 1; i < v.length; i++) {
+    var mail = String(v[i][SUM.MAIL]).toLowerCase().trim();
+    if (!mail) continue;
+    var e = idx[mail];
+    if (!e) e = idx[mail] = { best: {}, prac: {}, stars: {}, tries: {}, tcm: {} };
+    var m = Number(v[i][SUM.MODE]);
+    // 順次開放に使う試行回数だけは、制限時間も本番／練習も問わずに合算する。
+    // 「何回やったか」の条件なので、条件を満たす道を制限時間の設定で塞がない。
+    e.tries[m] = (e.tries[m] || 0) + (Number(v[i][SUM.TRIES]) || 0);
+    // 背景の床（成長する図形）に使う累計正答と、そのサイト全体の「1分あたりの正答」。
+    // 本番だけを、モードごとに・全制限時間で合算する。練習を入れないのは ★ と同じ理由
+    // （記録しない場で増えると意味が薄れる）。詳細は floorPace_
+    if (String(v[i][SUM.KIND]) !== 'p') {
+      var tcv = Number(v[i][SUM.TC]) || 0, sec = (Number(v[i][SUM.TRIES]) || 0) * (Number(v[i][SUM.LIM]) || 0);
+      e.tcm[m] = (e.tcm[m] || 0) + tcv;
+      if (!idx['*']) idx['*'] = { tc: {}, sec: {} };
+      idx['*'].tc[m] = (idx['*'].tc[m] || 0) + tcv;
+      idx['*'].sec[m] = (idx['*'].sec[m] || 0) + sec;
+    }
+    if (Number(v[i][SUM.LIM]) !== Number(limitSec)) continue;
+    if (String(v[i][SUM.KIND]) === 'p') {
+      e.prac[m] = Number(v[i][SUM.BEST]) || 0;
+    } else {
+      e.best[m] = Number(v[i][SUM.BEST]) || 0;
+      e.stars[m] = Math.min(Number(v[i][SUM.COUNT]) || 0, STAR_MAX);
+    }
+  }
+  // キャッシュ1件は100KBまで。児童数が多い年は入らないので、その時は素で読む
+  var json = JSON.stringify(idx);
+  if (json.length < 90000) cache_().put(key, json, TTL.index);
+  return idx;
+}
+
+function bests_(mail, limitSec) {
+  var idx = summaryIndex_(limitSec), e = idx[mail] || {};
+  var real = {}, prac = {}, stars = {}, tries = {}, pace = floorPace_(idx), floorMin = 0;
+  modeIds_().forEach(function (m) {
+    floorMin += (Number((e.tcm || {})[m]) || 0) / pace[m];
+    real[m]  = Number((e.best  || {})[m]) || 0;
+    prac[m]  = Number((e.prac  || {})[m]) || 0;
+    stars[m] = Number((e.stars || {})[m]) || 0;
+    tries[m] = Number((e.tries || {})[m]) || 0;
+  });
+  return { best: real, practiceBest: prac, stars: stars, tries: tries,
+           floor: { min: Math.round(floorMin * 100) / 100, pace: pace,
+                    // モードごとの本番の正答の累計と育ちの倍率。メニューに「正答回数の図」を出す単元（UNIT.menuFigure）が使う
+                    tcm: e.tcm || {}, gw: growWeights_() } };
+}
+
+/**
+ * 背景の床の「育ちやすさ」を、そのサイトの解きやすさで揃える。
+ *
+ * 床は正答の数ではなく「標準の分数」で育てる。標準の分数とは、
+ * そのサイトの児童が平均的な速さで解いたとして、その正答数を取るのに要る時間（分）。
+ *   標準の分数 ＝ Σ（モードごとの累計正答 ÷ そのモードの1分あたりの平均正答）
+ * 床の枚数 ＝ 標準の分数 × 20 × 教師が決める「1正答あたりの育ち」（floor_per_answer）。
+ * 20 は基準の速さ（1分20問）。つまり「1分に20問解ける速さのモードの1正答」がちょうど floor_per_answer 枚になり、
+ * 1正答の枚数 ＝ floor_per_answer × 20 ÷ そのモードの1分あたりの平均正答。
+ * 解きにくい問題（1分で取れる正答が少ない）を載せたサイト・モードほど1問で多く染まる
+ * （九九で1分30問なら1問 0.67倍、単位換算で1分8問なら 2.5倍）。平均的な速さなら1分の練習でどのサイトも同じだけ育つ。
+ * 基準をサイトの平均ではなく固定の20にするのは、サイトをまたいで「解きにくいほど染まりやすい」を保つため
+ * （サイトの平均を基準にすると、どのサイトでも平均の1問が同じ枚数になり、サイト間の差が消える）。
+ *
+ * 1分あたりの平均正答は、summary の本番の行（全児童・全制限時間）から出す：
+ *   （累計正答 ＋ 事前の正答）÷（遊んだ分数 ＋ 事前の分数）
+ * 「事前」は記録の少ない年度初めに値が暴れないための下駄（1分20問を10分ぶん）。
+ * 記録が増えるほど実際の速さに寄る。単元が floorPrior で別の事前値を宣言してもよい。
+ *
+ * 注意：平均が変わると標準の分数も少し変わる（学級全体が速くなると、同じ正答の重みが少し減る）。
+ */
+/*
+ * モードごとの育ちの倍率 { モード: 倍率 }。床（floorPace_）と協力プレイ（回に写して持つ gw）の両方に効く。
+ * 床は速さで自動に揃えた上に掛ける（倍率2なら、そのモードの1正答が2倍の枚数）。最も練習させたいモードを高くする使い方。
+ * 教師画面の全般設定で変える（config の grow_w）。単元が UNIT.growWeights で既定を宣言してもよい
+ */
+var GROW_W_MIN_ = 0.5, GROW_W_MAX_ = 3;
+function growWeights_() {
+  var out = {}, base = UNIT.growWeights || {};
+  modeIds_().forEach(function (m) { out[m] = Number(base[m]) || 1; });
+  var raw = '';
+  try { raw = String(config_().grow_w || ''); } catch (e) { /* 設定が読めない時は単元の既定（無ければ1倍）で続ける */ }
+  raw.split(',').forEach(function (kv) {
+    var p = kv.split(':'), m = Number(p[0]), w = Number(p[1]);
+    if (out[m] !== undefined && w > 0) out[m] = w;
+  });
+  for (var m in out) out[m] = Math.max(GROW_W_MIN_, Math.min(GROW_W_MAX_, Math.round(out[m] * 10) / 10));
+  return out;
+}
+
+var FLOOR_PRIOR_ = { perMin: 20, min: 10 };
+var FLOOR_REF_PER_MIN_ = 20;   // 「1正答あたりの育ち」の基準の速さ。index.html の FLOOR_REF と同じ値にする
+function floorPace_(idx) {
+  var st = (idx && idx['*']) || { tc: {}, sec: {} }, pr = UNIT.floorPrior || {}, out = {}, gw = growWeights_();
+  modeIds_().forEach(function (m) {
+    var perMin = Number(pr[m]) || FLOOR_PRIOR_.perMin;
+    var tc = (Number(st.tc[m]) || 0) + perMin * FLOOR_PRIOR_.min;
+    var min = (Number(st.sec[m]) || 0) / 60 + FLOOR_PRIOR_.min;
+    // 育ちの倍率で割る：1正答の「標準の分数」が倍率ぶん大きくなる（倍率2のモードは1問で2倍育つ）。
+    // 児童の画面はこの値で割って足すだけなので、倍率を知らなくてよい
+    out[m] = Math.max(0.1, Math.round(Math.max(1, tc / min) / gw[m] * 100) / 100);
+  });
+  return out;
+}
+
+/**
+ * 順次開放の判定だけに使う。boot は bests_ が返す tries を使い、ここは通らない。
+ *
+ * needs を持たない単元（九九・長さ・おもさ）では判定そのものが不要なので読まない。
+ * 以前は単元を問わず呼んでいて、児童が1回始めるたびに summary 全体を読んでいた。
+ * 40人が同時に始める帯活動では、これが同時実行の枠を埋める側に回る。
+ */
+function triesForGate_(mail) { return hasNeeds_() ? triesByMode_(mail) : null; }
+
+function triesByMode_(mail) {
+  var v = sh_(SHEETS.SUMMARY).getDataRange().getValues();
+  var out = {};
+  modeIds_().forEach(function (m) { out[m] = 0; });
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][SUM.MAIL]).toLowerCase() !== mail) continue;
+    var m = Number(v[i][SUM.MODE]);
+    if (out[m] !== undefined) out[m] += Number(v[i][SUM.TRIES]) || 0;
+  }
+  return out;
+}
+
+/**
+ * 記録を更新して { best, star, updated } を返す。
+ * star は本番だけ増える（練習で増やすと個人内評価の意味が薄れる）。
+ */
+/*
+ * summary の行の位置の覚え書き（キー：メール・モード・制限秒・kind → 行番号）。
+ * 提出はロックの内側で summary を書き換える。以前は毎回シート全体を読んで行を探しており、
+ * 名簿×モード×種類で行が増えるほど、1人あたりのロックの時間が伸びていた。
+ * 一斉に送る協力プレイでは、その時間の積み重ねが10秒の待ちを越え、後ろに並んだ児童の記録が弾かれていた。
+ * 覚えた行は、読んだ1行がキーと一致する時だけ使う（並べ替え・年度の切り替えで位置が変わっても、ずれた行には書かない）。
+ */
+function sumRowKey_(mail, mode, limitSec, kind) { return 'sumrow_' + mail + '_' + mode + '_' + Number(limitSec) + '_' + kind; }
+function sumRowIs_(r, mail, mode, limitSec, kind) {
+  return String(r[SUM.MAIL]).toLowerCase() === mail && Number(r[SUM.MODE]) === mode &&
+         Number(r[SUM.LIM]) === Number(limitSec) && String(r[SUM.KIND]) === kind;
+}
+
+function updateSummary_(mail, mode, limitSec, kind, correct, attempts) {
+  var sh = sh_(SHEETS.SUMMARY);
+  var key = sumRowKey_(mail, mode, limitSec, kind);
+  var row = Number(cache_().get(key)) || 0, r = null;
+  if (row >= 2 && row <= sh.getLastRow()) {
+    r = sh.getRange(row, 1, 1, SUM.COUNT + 1).getValues()[0];
+    if (!sumRowIs_(r, mail, mode, limitSec, kind)) r = null;
+  }
+  if (!r) {
+    var v = sh.getDataRange().getValues();
+    for (var i = 1; i < v.length; i++) {
+      if (sumRowIs_(v[i], mail, mode, limitSec, kind)) { row = i + 1; r = v[i]; break; }
+    }
+  }
+  if (r) {
+    var prev = Number(r[SUM.BEST]) || 0;
+    var updated = correct > prev;
+    var star = Number(r[SUM.COUNT]) || 0;
+    if (updated && kind === 'r') star = Math.min(star + 1, STAR_MAX);
+    sh.getRange(row, SUM.TRIES + 1, 1, 5).setValues([[
+      Number(r[SUM.TRIES]) + 1,
+      Number(r[SUM.TC]) + correct,
+      Number(r[SUM.TA]) + attempts,
+      Math.max(prev, correct),
+      star
+    ]]);
+    cache_().put(key, String(row), TTL.session);
+    return { best: Math.max(prev, correct), star: star, updated: updated };
+  }
+  var first = (kind === 'r') ? 1 : 0;      // 初回の記録も「自己ベスト更新」と数える
+  sh.appendRow([mail, mode, modeName_(mode), Number(limitSec), kind, 1, correct, attempts, correct, first]);
+  cache_().put(key, String(sh.getLastRow()), TTL.session);
+  return { best: correct, star: first, updated: true };
+}
+
+/** 当日・同一学級・同一モード・同一制限時間の中での順位。同点は先着優先 */
+function rankOf_(rows, ck, mode, limitSec, mail) {
+  var td = today_(), pool = [];
+  for (var i = 1; i < rows.length; i++) {
+    if (dstr_(rows[i][0]) === td && String(rows[i][1]) === ck &&
+        Number(rows[i][2]) === mode && Number(rows[i][4]) === Number(limitSec)) {
+      pool.push({ mail: String(rows[i][5]).toLowerCase(), s: Number(rows[i][6]), t: Number(rows[i][7]) });
+    }
+  }
+  pool.sort(function (a, b) { return b.s - a.s || a.t - b.t; });
+  for (var k = 0; k < pool.length; k++) if (pool[k].mail === mail) return k + 1;
+  return 0;
+}
+
+function updateDaily_(ck, mode, limitSec, mail, score) {
+  var sh = sh_(SHEETS.DAILY);
+  var v = sh.getDataRange().getValues();
+  var td = today_();
+  limitSec = Number(limitSec);
+
+  var row = -1;
+  for (var i = 1; i < v.length; i++) {
+    if (dstr_(v[i][0]) === td && String(v[i][1]) === ck &&
+        Number(v[i][2]) === mode && Number(v[i][4]) === limitSec &&
+        String(v[i][5]).toLowerCase() === mail) { row = i; break; }
+  }
+  var now = new Date();   // 内部の並び替え用。Date型にすると daily を開いたときも読める
+  if (row < 0) {
+    var line = [td, ck, mode, modeName_(mode), limitSec, mail, score, now];
+    sh.appendRow(line); v.push(line);
+  } else if (score > Number(v[row][6])) {
+    sh.getRange(row + 1, 7, 1, 2).setValues([[score, now]]);
+    v[row][6] = score; v[row][7] = now;
+  }
+  return rankOf_(v, ck, mode, limitSec, mail);
+}
+
+/**
+ * そのクラス・その制限時間の、当日の上位3名。{ モードid: [1位, 2位, 3位] }
+ * 児童に見えるのは自分がメダル圏内かどうかだけなので、3人ぶんで足りる。
+ * summary と同じ理由で、daily の読み取りも学級で1回にまとめる。
+ */
+function top3_(ck, limitSec) {
+  var key = 'top3_' + ck + '_' + limitSec;
+  var hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
+
+  var v = sh_(SHEETS.DAILY).getDataRange().getValues();
+  var td = today_(), out = {};
+  modeIds_().forEach(function (m) {
+    var pool = [];
+    for (var i = 1; i < v.length; i++) {
+      if (dstr_(v[i][0]) === td && String(v[i][1]) === ck &&
+          Number(v[i][2]) === m && Number(v[i][4]) === Number(limitSec)) {
+        pool.push({ mail: String(v[i][5]).toLowerCase(), s: Number(v[i][6]), t: Number(v[i][7]) });
+      }
+    }
+    pool.sort(function (a, b) { return b.s - a.s || a.t - b.t; });   // 同点は先着優先
+    out[m] = pool.slice(0, 3).map(function (x) { return x.mail; });
+  });
+  cache_().put(key, JSON.stringify(out), TTL.index);
+  return out;
+}
+
+function medals_(ck, mail, limitSec) {
+  var t = top3_(ck, limitSec), out = {};
+  modeIds_().forEach(function (m) {
+    var k = (t[m] || []).indexOf(mail);
+    out[m] = k >= 0 ? ['🥇', '🥈', '🥉'][k] : '';
+  });
+  return out;
+}
+
+/**
+ * 年度替わり（4/1）の名簿引き継ぎ。毎朝のトリガーから呼び、4/1だけ動く。
+ * roster の中身を roster_<前年度> に「値」で退避（IMPORTRANGEの結果を固める）し、
+ * roster は新年度用に戻す。A1に式（IMPORTRANGE）があれば式を戻すので、
+ * ハブ側が新年度になれば名簿はそのまま流れ替わる。
+ * roster_<前年度> がすでにあれば何もしない（冪等）。
+ */
+function rolloverRoster(now) {
+  now = (now instanceof Date) ? now : new Date();   // トリガー呼び出しはイベントobjが来る
+  var tz = Session.getScriptTimeZone();
+  if (Utilities.formatDate(now, tz, 'MMdd') !== '0401') return;
+  if (hubRoster_()) return;                              // 名簿の年度保存はハブが行う（単元の roster は使っていない）
+  var ss = ss_();
+  var rs = ss.getSheetByName(SHEETS.ROSTER);
+  if (!rs) return;
+  var archName = 'roster_' + (Number(Utilities.formatDate(now, tz, 'yyyy')) - 1);   // 4/1の年度は新年度。残すのは1つ前
+  if (ss.getSheetByName(archName)) return;             // 済み
+
+  var v = rs.getDataRange().getValues();
+  var hasKids = v.some(function (r) { return String(r[0]).indexOf('@') >= 0; });
+  if (!hasKids) return;                                // 空の名簿は残さない（初めての年度など）
+
+  var arch = ss.insertSheet(archName);
+  arch.getRange(1, 1, v.length, v[0].length).setValues(v);   // 値だけ（式は残さない）
+  arch.setTabColor('#93C47D');
+
+  var a1 = rs.getRange(1, 1).getFormula();
+  var head = rs.getRange(1, 1, 1, 5).getValues()[0];
+  rs.clearContents();
+  if (a1) {
+    rs.getRange(1, 1).setFormula(a1);                  // IMPORTRANGEを戻す
+  } else {
+    rs.getRange(1, 1, 1, 5).setValues([head[0] ? head : ['email', '学年', '組', '番号', '氏名']]);
+  }
+}
+
+/** 時間主導トリガー。前日以前の行を落とすだけ */
+function resetDaily() {
+  try { pruneUsed_(); } catch (e) { console.error('pruneUsed_ 失敗: ' + e.message); }   // 失敗しても日々の順位は消す
+  var sh = sh_(SHEETS.DAILY);
+  var v = sh.getDataRange().getValues();
+  if (v.length <= 1) return;
+  var td = today_(), keep = [v[0]];
+  for (var i = 1; i < v.length; i++) if (dstr_(v[i][0]) === td) keep.push(v[i]);
+  sh.clearContents();
+  sh.getRange(1, 1, keep.length, 8).setValues(keep);
+  sh.getRange('A:A').setNumberFormat('@');
+}
+
+/* ============================================================
+ *  教師用 API
+ * ============================================================ */
+
+/**
+ * いまどの写しを操作しているか。教師画面の見出しに出す。
+ *
+ * 版を入れ替えた直後は、古い写しと新しい写しが両方開ける状態になる
+ * （ゴミ箱に入れただけのスプレッドシートも、履歴やブックマークから開ける）。
+ * 教師が古い方で公開し、児童が新しい方を開いていると、
+ * 症状は「公開したのに反映されない」になり、どちらの画面を見ても原因が出ない。
+ * 名前とURLを画面に出しておけば、取り違えはその場で分かる。
+ */
+/** 教師画面の URL。いま動いているデプロイに ?page=teacher を付ける */
+function teacherUrl_() { return unitUrl_('page=teacher'); }
+
+function where_() {
+  var out = { file: '', id: '', url: '', sheetUrl: '' };
+  try { out.file = ss_().getName(); } catch (e) {}
+  try { out.sheetUrl = ss_().getUrl(); } catch (e) {}
+  // 名前は写しても同じになる。取り違えを確かめられるのは ID のほうで、
+  // スプレッドシートの URL の /d/ と /edit のあいだにある文字列と突き合わせる
+  try { out.id = ss_().getId(); } catch (e) {}
+  out.url = unitUrl_('');
+  return out;
+}
+
+function getConfigForUI() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  writeMeta_();   // ハブの横断分析が読む。中身が同じなら書かない
+  return { config: config_(), where: where_(), ver: ENGINE_VER,
+           warnings: unitCheck_(),
+           unit: { id: UNIT.id, title: UNIT.title,
+           modes: UNIT.modes, types: UNIT.types,
+           settings: UNIT.settings || [],
+           tips: UNIT.tips || '',
+           growW: growWeights_(),   // モードごとの育ちの倍率（今の設定。単元の既定込み）
+           // 床のプレビュー（教師画面）に使う。児童の画面と同じ図形・同じ2色
+           floor: { pattern: UNIT.floorPattern || 'penrose', c1: gradeAccent_(), c2: floorColor_(), ref: FLOOR_REF_PER_MIN_ },
+           menuFigure: UNIT.menuFigure || '',   // 'factor' の単元は、協力プレイの図形も「正答数の図」にする
+           // 協力モードの図形の選択肢。宣言できるのは画面に写した生成器と同じ id だけ
+           coopPatterns: FLOOR_PATTERNS_ } };
+}
+
+/**
+ * 教師画面の床のプレビューに、児童の画面（index.html）と同じ生成器を渡す。
+ * 生成器の写しは index.html の 'FLOOR_GEN_BEGIN';〜'FLOOR_GEN_END';（何もしない文）の間の1か所だけに置き、ここで切り出して埋め込む
+ * （teacher.html に2つ目の写しを置くと、片方だけ直して図形が食い違う。貼るファイルも増やさない）。
+ * その直後の 'FLOOR_UI_BEGIN';〜'FLOOR_UI_END'; には、描画に使う定数・計算（色の系統・3層の進み・菱形のパス）を置く。
+ * こちらも同じものを埋め込み、教師画面に2つ目の実装を持たせない。
+ * 印が見つからなければ空を返し、教師画面はプレビューの欄に「読み込めません」と出す。
+ */
+function floorGenSource_(html) {
+  // 印はコメントではなく「何もしない文」。HtmlService の getContent() は JS のコメントを消して返すため、
+  // コメントの印（旧 /* FLOOR_GEN_BEGIN */）はサーバーからは見えなかった（len が約2.7万字減り、印が -1 になる）
+  var seg_ = function (begin, end) {
+    var a = html.indexOf(begin), b = html.indexOf(end);
+    return (a < 0 || b < a) ? '' : html.slice(a, b);
+  };
+  var gen = seg_("'FLOOR_GEN_BEGIN';", "'FLOOR_GEN_END';"), ui = seg_("'FLOOR_UI_BEGIN';", "'FLOOR_UI_END';");
+  if (!gen || !ui) return '';
+  return (gen + ui).replace(/<\/script/gi, '<\\/script');   // 念のため：埋め込み先の script を閉じさせない
+}
+function floorGenForTeacher_() {
+  // 失敗しても evaluate() ごと倒さず、埋め込み側の try/catch（teacher.html）が拾える断片を返す。
+  // ここで握りつぶすと原因が分からず「読み込めません」だけが残る。
+  try {
+    var html = include('index');
+    var src = floorGenSource_(html);
+    if (!src) return "throw new Error('index.html 内に FLOOR_GEN_BEGIN / FLOOR_GEN_END / FLOOR_UI_BEGIN / FLOOR_UI_END の印が見つかりません（index を最新の版に貼り直す。読めた長さ " + html.length + "）')";
+    return src;
+  } catch (e) {
+    return "throw new Error('index ファイルを読めません（" + String(e.message || e).replace(/'/g, '') + "）')";
+  }
+}
+
+function saveConfig(obj) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var sh = sh_(SHEETS.CONFIG);
+  var v = sh.getDataRange().getValues();
+  for (var key in obj) {
+    var found = false;
+    for (var i = 1; i < v.length; i++) {
+      if (String(v[i][0]).trim() === key) { sh.getRange(i + 1, 2).setValue(obj[key]); found = true; break; }
+    }
+    if (!found) sh.appendRow([key, obj[key]]);
+  }
+  cache_().remove('config'); cache_().remove('classcfg');
+  return config_();
+}
+
+function listClasses() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var over = classConfig_(true);
+  var classes = listClassesCore_(over);
+
+  /*
+   * class_config にあるのに、名簿から作られるクラスと一致しない行を拾う。
+   *
+   * 公開の判定は「学年-組」の文字列一致だけで決まる（openFor_）。
+   * 名簿の組が「1」で class_config が「1組」なら、シートには TRUE が入っているのに
+   * 児童には1つも開かない。この食い違いはどちらの画面にも出ないので、
+   * 「保存したのに反映されない」としか見えない。名前を並べて出す。
+   */
+  var known = {};
+  classes.forEach(function (c) { known[c.cls] = true; });
+  var orphans = [];
+  for (var k in over) if (!known[k]) orphans.push(k);
+
+  return { classes: classes, modes: UNIT.modes.filter(function (m) { return !m.pair; }), hasNeeds: hasNeeds_(), nUnlock: UNIT.nUnlock || null,
+           orphans: orphans, where: where_() };
+}
+
+function saveClassConfig(rows) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var sh = ss_().getSheetByName(SHEETS.CLASS) || ss_().insertSheet(SHEETS.CLASS);
+  sh.clear();
+  var head = classHead_();
+  var ids = cfgModeIds_();
+  var out = [head];
+  (rows || []).forEach(function (r) {
+    var line = [String(r.cls)].concat(ids.map(function (id) { return !!(r.modes && r.modes[id]); }));
+    if (hasNeeds_()) line.push(!!r.seqOff);
+    if (hasNUnlock_()) line.push(!!r.nUnlock);
+    out.push(line);
+  });
+  sh.getRange(1, 1, out.length, 1).setNumberFormat('@');   // クラス名の列は文字列。「3-1」が日付に化けないように
+  sh.getRange(1, 1, out.length, head.length).setValues(out);
+  sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  cache_().remove('classcfg');
+
+  /*
+   * 書いたら読み戻して照合する。
+   *
+   * 「保存しました」とだけ返していると、書けていない時に教師は児童側を疑い、
+   * 原因のない場所を探し続けることになる（実際そうなった）。
+   * 保存が通ったかどうかは、保存の瞬間に教師の画面で分かるべきもの。
+   *
+   * 読み戻しは classConfig_ を通す。児童の公開判定が読むのと同じ経路なので、
+   * ここが一致していれば「教師が見ている状態＝児童に効く状態」が保証される。
+   */
+  var back = classConfig_(true);
+  var bad = [];
+  (rows || []).forEach(function (r) {
+    var b = back[String(r.cls)];
+    var same = ids.every(function (id) {
+      return !!(b && b.modes[id]) === !!(r.modes && r.modes[id]);
+    });
+    if (!same) bad.push(String(r.cls));
+  });
+  if (bad.length) {
+    throw new Error('保存できていません（' + bad.join('・') +
+                    '）。class_config シートが編集中でないか確かめてください。');
+  }
+  return { msg: '保存しました（' + (out.length - 1) + ' クラス）',
+           classes: listClassesCore_(back) };
+}
+
+/**
+ * class_config の内容を、教師画面の表と同じ形にして返す。
+ * listClasses と保存後の読み戻しで同じ組み立てを使う
+ * （別々に書くと、保存直後の表示と再読み込み後の表示がずれる）。
+ */
+function listClassesCore_(over) {
+  var seen = {}, out = [];
+  rosterRows_().forEach(function (r) {
+    var grade = r.grade, cls = r.cls;
+    if (!grade || !cls) return;
+    var ck = grade + '-' + cls;
+    if (seen[ck]) { seen[ck].n++; return; }
+    var o = over[ck];
+    var row = { cls: ck, grade: grade, room: cls, n: 1,
+                modes: {}, seqOff: !!(o && o.seqOff), nUnlock: !!(o && o.nUnlock) };
+    cfgModeIds_().forEach(function (id) { row.modes[id] = !!(o && o.modes[id]); });
+    seen[ck] = row; out.push(row);
+  });
+  out.sort(function (a, b) { return a.grade - b.grade || (a.room < b.room ? -1 : 1); });
+  return out;
+}
+
+/* ============================================================
+ *  協力モード
+ *
+ *  クラス全員の本番の正答で、教師画面の図形がいっしょに育つモード。
+ *
+ *  数えるもの：提出が確定した本番（practice ではない）の正答だけ。
+ *  集計はその単元サイト上の、クラスが一致する提出だけ。
+ *  締め切りは「遊び終えた時刻」。協力の終わり（＋10秒）までに遊び終えた回だけ数え、送り直しは終わりから10分まで待つ。
+ *  次の協力を始めても、直前の協力の送り直しはその10分の間は直前の方に数える（coop_prev）。
+ *  同時に動くセッションは1つ（coopStart が進行中を拒む）。
+ *
+ *  「エラーに見える」ところは画面に理由を出す（数え方の規則は変えない）：
+ *    教師画面 … 最初の1回が終わるまで何も増えない／残り1分から始めた回は数えない／締め切り後の送り直しを待っている／参加人数
+ *    児童画面 … 残り1分を切ってから始めた本番は、印を「この回は数えません」にする（counts=false）
+ *
+ *  シート:
+ *    coop       … セッションの履歴（1開始＝1行）。live の行は status='run'
+ *    coop_log   … イベント列（1提出＝1行: session, t_ms, email, correct, mode）
+ *    coop_save  … 教師が名付けて保存した再生データ（payload=JSON）
+ * ============================================================ */
+var COOP_DEF_MIN = 10;
+var COOP_GN_MAX = 10;
+var COOP_SLACK_MS = 10000;    // 遊び終えた時刻の、終了の後ろ側の余裕（時計のずれと通信の遅れ）
+var COOP_COUNTDOWN_MS = 4000;  // 応答から協力が始まるまで（モニターで よーい…(1秒)→3→2→1→スタート を出す間。送信中も「よーい…」）
+var COOP_EARLY_MS = 5000;     // 協力の始まりより前に始めてよい幅。遊び終えた時刻が「始まり＋(制限秒−5秒)」より前の回は数えない
+var COOP_LATE_MS = 600000;    // 送り直しを数える上限：協力の終了から10分（混雑で弾かれた回は次の起動で送り直される）
+var COOP_FLUSH_AT = 40;       // シートへ書いていない分がこの件数を超えたら、提出の側でもまとめ書きする（教師画面が閉じている間の備え）
+
+/**
+ * 進行中（または最後に開いていた）セッション。終了しても coopStop されるまで残す。
+ * キャッシュは期限前に消えることがある（CacheService は保存を保証しない）。消えたら coop シートの最後の行から
+ * 組み直す（児童の並びは名簿から、合計は coop_log から）。セッションが1つも無いときは null を置いて、
+ * 起動のたびにシートを読みに行かないようにする（boot と startSession が毎回ここを通る）
+ */
+function coopLive_() {
+  var h = cache_().get('coop_live');
+  if (h) return JSON.parse(h);
+  var s = coopFromSheet_();
+  cache_().put('coop_live', JSON.stringify(s), TTL.session);
+  return s;
+}
+function coopFromSheet_() {
+  var sh = ss_().getSheetByName(SHEETS.COOP);
+  if (!sh || sh.getLastRow() < 2) return null;
+  return coopFromRow_(sh.getRange(sh.getLastRow(), 1, 1, 17).getValues()[0]);
+}
+/** coop シートの1行からセッションを組み立てる（児童の並びは今の名簿、合計は coop_log） */
+function coopFromRow_(r) {
+  var id = String(r[0] || '');
+  if (!id) return null;
+  function ms(v) { return v instanceof Date ? v.getTime() : new Date(v).getTime(); }
+  function arr(v) { try { var a = JSON.parse(String(v || '[]')); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  var cls = String(r[1] || ''), kids = coopKids_(cls), map = {}, order = [];
+  kids.forEach(function (k, i) { map[k.mail] = i; order.push(k.mail); });
+  var start = ms(r[9]), end = ms(r[10]);
+  var s = { id: id, cls: cls, pat: String(r[2] || 'penrose'), seed: Number(r[3]) || 1,
+            mode: String(r[4]) === 'group' ? 'group' : 'child', gn: Number(r[5]) || 6,
+            minutes: Math.max(1, Math.round((end - start) / 60000)),
+            start: start, end: end, status: String(r[11] || 'done') === 'run' ? 'run' : 'done', total: 0,
+            kids: map, order: order, names: arr(r[7]), nos: arr(r[8]), gi: arr(r[6]),
+            skip: coopSkip_(cls), org: Number(r[14]) || 1 };
+  try { s.orgPts = coopOrgPts_(JSON.parse(String(r[15] || 'null')), s.org); } catch (e) { s.orgPts = null; }
+  try { s.gw = coopGw_(JSON.parse(String(r[16] || 'null'))); } catch (e) { s.gw = null; }
+  try { var pr = JSON.parse(String(r[13] || 'null')); if (pr && pr.ev) s.prior = pr; } catch (e) {}
+  s.total = coopEvents_(s).reduce(function (a, e) { return a + (Number(e[2]) || 0); }, 0);
+  return s;
+}
+
+/**
+ * 教師の操作（開始・終了・組の編集・時刻での打ち切り）は、提出（submitSession）と同じロックの内側で行う。
+ * どちらも coop_live を読んで書き戻すので、重なると後から書いた方が前の変更を消す
+ * （提出が教師の組の編集を古い組で上書きする、打ち切った状態を 'run' に戻す、など）
+ */
+function coopLocked_(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return { ok: false, msg: '混んでいます。少し待ってから、もう一度押してください。' };
+  try { return fn(); } finally { try { lock.releaseLock(); } catch (e) {} }
+}
+function coopPutLive_(s) { cache_().put('coop_live', JSON.stringify(s), TTL.session); }
+
+/**
+ * 名簿からそのクラスの児童（氏名あり）を番号順に並べる。
+ * 色・組・タイルの割り当ては、この順の index で決まる。
+ */
+function coopKids_(ck) {
+  var kids = [];
+  rosterRows_().forEach(function (r) {
+    if (!r.name) return;
+    if (r.grade + '-' + r.cls !== ck) return;
+    kids.push({ mail: r.mail, no: r.no, name: r.name });
+  });
+  kids.sort(function (a, b) { return a.no - b.no || (a.mail < b.mail ? -1 : 1); });
+  return kids;
+}
+/** 名簿にそのクラスの行はあるが氏名が空の児童の数（協力には数えない。教師画面に人数だけ出す） */
+function coopSkip_(ck) {
+  var n = 0;
+  rosterRows_().forEach(function (r) { if (!r.name && r.grade + '-' + r.cls === ck) n++; });
+  return n;
+}
+
+/** セッションのイベント列 [[t_ms, 児童index, 正答数], …]。キャッシュを欠いたら coop_log から組み直す */
+function coopEvents_(s) {
+  var key = 'coop_ev_' + s.id;
+  var hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
+  var ev = [], seen = {};
+  var sh = ss_().getSheetByName(SHEETS.COOPLOG);
+  if (sh && sh.getLastRow() > 1) {
+    var v = sh.getDataRange().getValues();
+    for (var i = 1; i < v.length; i++) {
+      if (String(v[i][0]) !== s.id) continue;
+      var idx = s.kids[String(v[i][2])];
+      if (idx === undefined) continue;
+      // まとめ書き（coopFlush_）が重なって同じ行が2度書かれていても、1件として数える
+      var k = v[i][1] + '|' + v[i][2] + '|' + v[i][3];
+      if (seen[k]) continue;
+      seen[k] = 1;
+      ev.push([Number(v[i][1]) || 0, idx, Number(v[i][3]) || 0, Number(v[i][4]) || 0]);
+    }
+  }
+  cache_().put(key, JSON.stringify(ev), TTL.session);
+  cache_().put('coop_fl_' + s.id, String(ev.length), TTL.session);   // シートから読んだ分は書き済み
+  return ev;
+}
+
+/** 教師画面へ返す形（個人情報は名札に必要な氏名と番号まで。mail は出さない） */
+function coopPub_(s, since) {
+  var ev = coopEvents_(s), n = ev.length;
+  return { id: s.id, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, gw: s.gw || null,
+           start: s.start, end: s.end, status: s.status, total: s.total,
+           names: s.names, nos: s.nos, gi: s.gi,
+           // 画面の案内に使う：1回の制限秒（残りがこれを切ると、これから始める回は数えない）・送り直しの締め切り・氏名のない児童の数
+           lim: Number(config_().limit_sec) || 60, slack: COOP_SLACK_MS, lateUntil: s.end + COOP_LATE_MS, skip: s.skip || 0,
+           pace: s.pace || FLOOR_PRIOR_.perMin, minutes: s.minutes,   // minutes：「おわる」で早く閉じても枚数の計算は予定の時間で
+           evN: n, ev: ev.slice(Math.max(0, Number(since) || 0)),
+           // 続きからの回：前の回までの正答。差分の問い合わせ（since>0）では送らない（画面が持っている）
+           prior: (Number(since) || 0) > 0 ? undefined : (s.prior || null) };
+}
+
+/**
+ * 「次の開始」で live から外れた直前のセッション。終了から COOP_LATE_MS の間だけ置き、
+ * その間に届いた直前の回の送り直しをこちらに数える（開始を押した瞬間に前の回の取りこぼしが出ないように）
+ */
+/*
+ * グループ分け（開始前に教師が作っておく編成）。クラスごとに1つだけ、スクリプトプロパティ coop_grp_<クラス> に持つ。
+ *   { gn: グループ数, by: { email: グループ番号(0〜) } }
+ * グループ数は編成そのものが決める（教師画面のグループ数の欄とは別に持たない）。
+ *
+ * 以前は単元のスプレッドシートの「グループ分け」シートに、クラス×グループ数ごとの塊で持っていた。
+ * 欄のグループ数を変えると別の塊（無ければ番号順の等分）を読むので、「4人ずつにしたのに番号順になる」
+ * 「シートの値と画面の値が食い違う」が起きていた。シートはもう読まない（残っていても消してよい）。
+ * 教師画面では、編成を文字で貼り付けて読み取り、文字で写し取れる（コピー・貼り付けで持ち運ぶ）。
+ */
+var COOP_GRP_KEY = 'coop_grp_';
+function coopGrpLoad_(cls) {
+  try {
+    var p = JSON.parse(props_().getProperty(COOP_GRP_KEY + cls) || 'null');
+    var gn = Number(p && p.gn);
+    if (!p || !p.by || !(gn >= 2 && gn <= COOP_GN_MAX)) return null;
+    return { gn: gn, by: p.by };
+  } catch (e) { return null; }
+}
+function coopPlanDefault_(gn, kids) {
+  return kids.map(function (k, i) { return Math.min(gn - 1, Math.floor(i * gn / kids.length)); });
+}
+/**
+ * 保存した編成を児童の並び（kids）に合わせる。{ gn, gi } か、保存が無ければ null。
+ * 編成に無い児童（転入など）は、その時いちばん人数の少ないグループに入れる
+ */
+function coopPlanGet_(cls, kids) {
+  var p = coopGrpLoad_(cls);
+  if (!p) return null;
+  var gi = kids.map(function (k) {
+    var g = Number(p.by[k.mail]);
+    return (g >= 0 && g < p.gn && g === Math.floor(g)) ? g : -1;
+  });
+  var cnt = []; for (var g = 0; g < p.gn; g++) cnt.push(0);
+  gi.forEach(function (x) { if (x >= 0) cnt[x]++; });
+  gi = gi.map(function (x) {
+    if (x >= 0) return x;
+    var m = 0; for (var j = 1; j < p.gn; j++) if (cnt[j] < cnt[m]) m = j;
+    cnt[m]++; return m;
+  });
+  return { gn: p.gn, gi: gi };
+}
+/** 編成を保存する。gi が null なら消す（番号順の等分に戻す） */
+function coopPlanPut_(cls, gn, order, gi) {
+  var props = props_();
+  if (!gi) { props.deleteProperty(COOP_GRP_KEY + cls); return; }
+  var by = {};
+  order.forEach(function (m, i) { by[m] = gi[i]; });
+  props.setProperty(COOP_GRP_KEY + cls, JSON.stringify({ gn: gn, by: by }));
+}
+function coopGnOf_(gn) { return Math.max(2, Math.min(COOP_GN_MAX, Number(gn) || 6)); }
+
+/** 開始前の編成を読む。保存が無ければ、欄のグループ数（gn）で番号順の等分 */
+function coopPlan(cls, gn) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  cls = String(cls || ''); gn = coopGnOf_(gn);
+  var kids = coopKids_(cls);
+  if (!kids.length) return { ok: false, msg: 'そのクラスの児童が名簿にありません。' };
+  var plan = coopPlanGet_(cls, kids);
+  return { ok: true, cls: cls, gn: plan ? plan.gn : gn, gi: plan ? plan.gi : coopPlanDefault_(gn, kids), saved: !!plan,
+           names: kids.map(function (k) { return k.name; }), nos: kids.map(function (k) { return k.no; }) };
+}
+
+/** 開始前の編成を保存する。gi は coopPlan が返した児童の並びに合わせる。reset なら消して番号順の等分（gn）に戻す */
+function coopSavePlan(cls, gn, gi, reset) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  cls = String(cls || ''); gn = coopGnOf_(gn);
+  var kids = coopKids_(cls);
+  if (reset) { coopPlanPut_(cls, gn, null, null); return coopPlan(cls, gn); }
+  if (!Array.isArray(gi) || gi.length !== kids.length) {
+    return { ok: false, msg: '名簿が変わりました。画面を開き直してください。' };
+  }
+  coopPlanPut_(cls, gn, kids.map(function (k) { return k.mail; }),
+    gi.map(function (g) { return Math.max(0, Math.min(gn - 1, Math.round(Number(g) || 0))); }));
+  return { ok: true };
+}
+
+function coopPrev_() {
+  var h = cache_().get('coop_prev');
+  if (!h) return null;
+  var p = JSON.parse(h);
+  return Date.now() > p.end + COOP_LATE_MS ? null : p;
+}
+
+/** coop の行の合計を、キャッシュの合計に追いつかせる（締め切り後の送り直しで合計が増えるため） */
+function coopSyncTotal_(s) {
+  if (!s || s.status === 'run') return;
+  var key = 'coop_rt_' + s.id;
+  if (cache_().get(key) === String(s.total)) return;
+  coopRowWrite_(s.id, { total: s.total });
+  cache_().put(key, String(s.total), TTL.session);
+}
+
+/**
+ * 提出1件を協力セッションに数える。submitSession のロック内から呼ぶ（直列前提）。
+ * 呼ぶ前に練習は弾いてある（!isPractice の中だけ）。game は startSession が置いた回の記録（t＝開始時刻、lim＝制限秒）。
+ *
+ * 締め切りは「届いた時刻」ではなく「遊び終えた時刻」（開始時刻＋制限時間）で見る。
+ * クラス全員が同じ1分の終わりに送るので、提出はロックを待ちきれずに弾かれることがある。弾かれた回は
+ * 次の起動で送り直されるが、届いた時刻で見ると協力の終了後になって数えられず、混んだ瞬間に送った子に片寄る。
+ * 協力の時間内に遊び終えた回なら、終了から COOP_LATE_MS（10分）以内に届いたものまで数える。
+ *
+ * ロックの内側では、キャッシュのイベント列に足すだけにする（シートは coopFlush_ がまとめて書く）。
+ * シートへの1行の書き込みが、混む瞬間の提出1件ごとのロックの時間を延ばしていたため。
+ */
+function coopNote_(c, mode, correct, game) {
+  if (!c) return;
+  var now = Date.now();
+  // 回の記録が無い呼び出し（古い経路）は届いた時刻で見る。余裕（カウントダウン分）は回の記録があるときだけ
+  var known = !!(game && game.t);
+  var limMs = (Number(game && game.lim) || 60) * 1000;
+  var played = known ? Number(game.t) + limMs : now;
+  // 始まりより前に始めておいて、始まった直後に正答をまとめて数えさせる回を弾く：
+  // 遊び終えた時刻が「始まり＋(制限秒−5秒)」より前（＝始まりの5秒より前に始めた回）は数えない。
+  // 5秒は「よーい…」の間に押した回と、モニターの表示の遅れを数えるための幅
+  var early = known ? Math.max(0, limMs - COOP_EARLY_MS) : 0;
+  function fits(x) {
+    return !!x && played >= x.start + early && played <= x.end + (known ? COOP_SLACK_MS : 0) &&   // 協力の時間の外で遊び終えた回は数えない
+      now <= x.end + COOP_LATE_MS &&                                                      // 送り直しが遅すぎる
+      classKey_(c) === x.cls && x.kids[c.email] !== undefined;
+  }
+  var s = coopLive_(), live = true;
+  if (!fits(s)) { s = coopPrev_(); live = false; if (!fits(s)) return; }   // 直前のセッションの送り直し
+  var i = s.kids[c.email];
+  // 画面の時間軸は届いた時刻（終了後に届いた回は終了の時点に置く。再生の順が崩れないように）
+  var t = Math.min(now, s.end) - s.start;
+  var ev = coopEvents_(s);
+  ev.push([t, i, correct, mode]);
+  cache_().put('coop_ev_' + s.id, JSON.stringify(ev), TTL.session);
+  s.total = (s.total || 0) + correct;
+  if (live) coopPutLive_(s); else cache_().put('coop_prev', JSON.stringify(s), TTL.session);
+  // 教師画面が閉じていると、まとめ書きが起きずキャッシュにだけ溜まる。溜まりすぎたらここで書く（ロックは持っている）
+  if (ev.length - Number(cache_().get('coop_fl_' + s.id) || 0) >= COOP_FLUSH_AT) coopFlush_(s, true);
+}
+
+/**
+ * キャッシュのイベント列のうち、まだシート（coop_log）に書いていない分をまとめて1回で書く。
+ * 教師画面の問い合わせ（3秒ごと）・終了・保存・次の開始のときに呼ぶ。
+ * 書き込みは提出と同じロックの内側（coop_log の同じ行に2人の教師が書かないように）。混んでいれば
+ * 0.5秒で諦めて次の回に回す（提出を待たせない）。haveLock＝呼ぶ側がすでにロックを持っている。
+ * キャッシュが消えると、まだ書いていない分（最大で問い合わせ1回分）は失われる
+ */
+function coopFlush_(s, haveLock) {
+  if (!s) return;
+  var key = 'coop_fl_' + s.id, ev = coopEvents_(s);
+  if (Number(cache_().get(key) || 0) >= ev.length) return;
+  var lock = null;
+  if (!haveLock) { lock = LockService.getScriptLock(); if (!lock.tryLock(500)) return; }
+  try {
+    ev = coopEvents_(s);
+    var done = Number(cache_().get(key) || 0);
+    if (done >= ev.length) return;
+    var sh = ss_().getSheetByName(SHEETS.COOPLOG);
+    if (!sh) return;
+    var rows = ev.slice(done).map(function (e) { return [s.id, e[0], s.order[e[1]] || '', e[2], e[3] || '']; });
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
+    cache_().put(key, String(ev.length), TTL.session);
+  } catch (e) {
+    // 書けなくてもキャッシュには残っているので、次の回にもう一度書く
+  } finally {
+    if (lock) { try { lock.releaseLock(); } catch (e2) {} }
+  }
+}
+
+/** coop の行を id で探して status/total/gi を更新する */
+function coopRowWrite_(id, patch) {
+  var sh = ss_().getSheetByName(SHEETS.COOP);
+  if (!sh || sh.getLastRow() < 2) return;
+  var v = sh.getDataRange().getValues();
+  for (var i = v.length - 1; i >= 1; i--) {
+    if (String(v[i][0]) !== id) continue;
+    if (patch.gi !== undefined) sh.getRange(i + 1, 7).setValue(JSON.stringify(patch.gi));
+    if (patch.end !== undefined) sh.getRange(i + 1, 11).setValue(new Date(patch.end));
+    if (patch.status !== undefined) sh.getRange(i + 1, 12).setValue(patch.status);
+    if (patch.total !== undefined) sh.getRange(i + 1, 13).setValue(patch.total);
+    return;
+  }
+}
+
+/**
+ * 協力プレイを開始する。{cls, pat, minutes, mode('child'|'group'), gn}
+ * リセットもここに来る（新しいセッションとして切り直す。旧分は coop_log に残る）。
+ */
+function coopStart(o) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  // 解く速さは summary を読むので、ロック（児童の提出と共有）の外で先に出しておく
+  var pace = coopPace_();
+  return coopLocked_(function () { return coopStart_(o, pace); });
+}
+
+/**
+ * 協力の「1正答の枚数」の自動計算に使う、このサイトの本番の1分あたりの平均正答（全モード・全児童をまとめて）。
+ * 協力は生の正答数で育つので、モードごとではなくサイト全体の速さを1つだけ渡す。
+ * 記録の少ない年度初めに暴れないよう、床と同じ下駄（1分20問を10分ぶん。単元の floorPrior があればその平均）をはかせる。
+ * 読めなければ下駄の値を返す（開始は止めない）。
+ */
+function coopPace_() {
+  var pr = UNIT.floorPrior || {}, ms = modeIds_(), priorPerMin = 0;
+  ms.forEach(function (m) { priorPerMin += Number(pr[m]) || FLOOR_PRIOR_.perMin; });
+  priorPerMin = ms.length ? priorPerMin / ms.length : FLOOR_PRIOR_.perMin;
+  var tc = priorPerMin * FLOOR_PRIOR_.min, min = FLOOR_PRIOR_.min;
+  try {
+    var st = summaryIndex_(Number(config_().limit_sec) || 60)['*'];
+    if (st) ms.forEach(function (m) { tc += Number(st.tc[m]) || 0; min += (Number(st.sec[m]) || 0) / 60; });
+  } catch (e) { /* 下駄の値で続ける */ }
+  return Math.max(1, Math.round(tc / min * 10) / 10);
+}
+function coopMinOf_(m) { return Math.max(1, Math.min(30, Math.round(Number(m) || COOP_DEF_MIN))); }
+/*
+ * 起点の数（1〜児童数、グループの色づかいでは1〜組数）。起点ごとに担当が決まり、
+ * 児童 i（グループなら組 g）の正答は起点 (i mod 起点の数) から育つ。1 なら今までどおり1つの図形。
+ * 起点の数を児童数にすると、児童ごとの島の大きさがその子の正答数になる（モニターでも見返しでも見える）
+ */
+function coopOrgOf_(v, max) { return Math.max(1, Math.min(Math.max(1, max), Math.round(Number(v) || 1))); }
+/*
+ * 起点の位置（教師が見本の上で動かしたもの）。[[u, v], ...]：最初の画面（縮尺1）の左上を (0, 0)、右下を (1, 1) とした割合。
+ * 画面の大きさ（箱・全画面・児童の画面）が違っても同じ所に来る。範囲は最小の縮尺の画面の中（u −0.3〜2.8、v −1.6〜1.45）。
+ * 数が起点の数と合わなければ使わない（既定の格子に戻る）。どの起点を誰が担当するかは位置を決めてもシードで混ぜる
+ */
+/** 回に写した育ちの倍率 { モード: 倍率 } を確かめる（読めなければ null＝すべて1倍として描く） */
+function coopGw_(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  var out = {}, n = 0;
+  for (var k in v) {
+    var w = Number(v[k]);
+    if (!isFinite(w) || w <= 0) continue;
+    out[k] = Math.max(GROW_W_MIN_, Math.min(GROW_W_MAX_, w)); n++;
+  }
+  return n ? out : null;
+}
+function coopOrgPts_(v, org) {
+  if (!Array.isArray(v) || v.length !== org || org > 60) return null;
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    var p = v[i];
+    if (!Array.isArray(p) || !isFinite(Number(p[0])) || !isFinite(Number(p[1]))) return null;
+    out.push([Math.round(Math.max(-0.3, Math.min(2.8, Number(p[0]))) * 1000) / 1000,
+              Math.round(Math.max(-1.6, Math.min(1.45, Number(p[1]))) * 1000) / 1000]);
+  }
+  return out;
+}
+
+/*
+ * 続きから（prior）。引き継ぐ前の回の正答を、1本の時間軸に並べ直して新しいセッションに持たせる。
+ *   prior = { dur: 前の回までの合計ms, ev: [[t, 児童index, 正答, mode], ...]（新しい名簿の並び）,
+ *             segs: [{ end: その回の終わり（累計ms）, minutes, n, lim, pace, total }, ...] }
+ * segs は画面が「1正答の枚数」を回ごとに決め直すため（前の回の枚数は前の回の条件で、続きの回は残りの余白で決める）。
+ * 前の回が続きからの回なら、その prior も含めて引き継ぐ（何回でも続けられる）。
+ * 児童の並びは名簿で変わりうるので、メールで照らし直す（メールを持たない古い保存データは番号と氏名で照らす）。いない児童の分は落とす。
+ */
+function coopContBase_(cont, prev) {
+  var src = null, ev = null, keys = null;
+  if (String(cont).indexOf('save:') === 0) {
+    var r = coopLoadRaw_(String(cont).slice(5));
+    if (!r.ok) return { err: r.msg };
+    src = r.payload; ev = src.ev || [];
+  } else {
+    if (!prev) return { err: '続ける協力プレイがありません。' };
+    if (prev.status === 'run') return { err: '進行中の協力プレイがあります。「終了」を押してから続けてください。' };
+    src = prev; ev = coopEvents_(prev);
+  }
+  var n = (src.names || []).length;
+  keys = [];
+  for (var i = 0; i < n; i++) {
+    keys.push(src.order && src.order[i] ? 'm:' + src.order[i] : 'n:' + (src.nos || [])[i] + '|' + (src.names || [])[i]);
+  }
+  var pin = src.prior || { dur: 0, ev: [], segs: [] };
+  var dur = Math.max(0, Number(src.end) - Number(src.start));
+  var all = (pin.ev || []).slice();
+  var tot = 0;
+  ev.forEach(function (e) {
+    tot += Number(e[2]) || 0;
+    all.push([pin.dur + Math.min(Math.max(0, Number(e[0]) || 0), dur), e[1], Number(e[2]) || 0, Number(e[3]) || 0]);
+  });
+  var segs = (pin.segs || []).concat([{ end: pin.dur + dur, minutes: Number(src.minutes) || Math.max(1, Math.round(dur / 60000)),
+    n: Math.max(1, n - (src.skip || 0)), lim: Number(src.lim) || Number(config_().limit_sec) || 60,
+    pace: Number(src.pace) || FLOOR_PRIOR_.perMin, total: tot }]);
+  return { cls: String(src.cls), pat: String(src.pat), seed: Number(src.seed) || 1,
+           mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1, orgPts: src.orgPts || null, gw: src.gw || null,
+           keys: keys, order: src.order || null, gi: src.gi || null,   // 続きの回のグループは前の回の編成のまま
+           prior: { dur: pin.dur + dur, ev: all, segs: segs } };
+}
+/** 引き継いだ正答の児童 index を、新しいセッションの名簿の並びへ付け替える */
+function coopContRemap_(base, kids) {
+  var to = {};
+  kids.forEach(function (k, i) { to['m:' + k.mail] = i; to['n:' + k.no + '|' + k.name] = i; });
+  var ev = [];
+  base.prior.ev.forEach(function (e) {
+    var key = base.keys[e[1]], j = key === undefined ? undefined : to[key];
+    if (j !== undefined) ev.push([e[0], j, e[2], e[3]]);
+  });
+  return { dur: base.prior.dur, ev: ev, segs: base.prior.segs };
+}
+/** coop シートの14列目に置く（キャッシュが消えても続きの部分を失わない）。セルの上限を超えるときは置かない */
+function coopPriorCell_(prior) {
+  if (!prior) return '';
+  var j = JSON.stringify(prior);
+  return j.length < 45000 ? j : '';
+}
+
+function coopStart_(o, pace) {
+  var prev = coopLive_();
+  if (prev && prev.status === 'run' && !(o && o.reset)) {
+    return { ok: false, msg: '進行中の協力プレイがあります。「終了」を押してから始めてください。' };
+  }
+  var old = prev || {};
+  // 続きから：前の回（いま映している終わった回、または保存データ）の図形と正答を引き継ぐ。
+  // 図形・色（シード）・クラス・色づかいは前の回に合わせる（変えると、引き継いだ部分の見え方が変わる）
+  var base = null;
+  if (o && o.cont) {
+    base = coopContBase_(o.cont, prev);
+    if (base.err) return { ok: false, msg: base.err };
+  }
+  var cls = String(base ? base.cls : ((o && o.cls) || old.cls || ''));
+  var kids = coopKids_(cls);
+  if (!kids.length) return { ok: false, msg: 'そのクラスの児童が名簿にありません。' };
+  var pat = String(base ? base.pat : ((o && o.pat) || old.pat || UNIT.floorPattern || 'penrose'));
+  if (FLOOR_PATTERNS_.indexOf(pat) < 0) pat = 'penrose';
+  var minutes = coopMinOf_((o && o.minutes) || old.minutes || COOP_DEF_MIN);
+  var mode = base ? base.mode : (((o && o.mode) || old.mode) === 'group' ? 'group' : 'child');
+  // グループ数：保存した編成があればその数（欄の値より優先。欄と編成が食い違って番号順に戻るのを防ぐ）
+  var plan = (!base && mode === 'group') ? coopPlanGet_(cls, kids) : null;
+  var gn = coopGnOf_(base ? base.gn : plan ? plan.gn : ((o && o.gn) || old.gn || 6));
+  var seed = base ? base.seed : Math.floor(Math.random() * 2147483647);
+  // 起点の数：続きからは前の回のまま（変えると引き継いだ部分の形が変わる）。名簿・組数が減っていれば上限で切る
+  var org = coopOrgOf_(base ? base.org : ((o && o.org) || old.org || 1), mode === 'group' ? gn : kids.length);
+  // 起点の位置：続きからは前の回のまま。画面が送ってきた時はそれ（null＝既定の格子）、送らない時（リセット・古い画面）は前の回のまま
+  var orgPts = coopOrgPts_(base ? base.orgPts : (o && 'orgPts' in o ? o.orgPts : old.orgPts), org);
+  // 育ちの倍率は開始の時点の設定を回に写す（あとで設定を変えても、その回の再生・見返し・続きからの形は変わらない）。続きからは前の回のまま
+  var gw = (base && coopGw_(base.gw)) || growWeights_();
+  var kidsMap = {}, order = [], gi = [];
+  // グループは保存した編成。無ければ番号順の等分。
+  // 続きからの回は前の回の編成を引き継ぐ（メールで照らす。前の回にいない児童は番号順の等分の位置）
+  var bmap = {};
+  if (base && base.order && base.gi) base.order.forEach(function (m, i) { bmap[m] = Number(base.gi[i]); });
+  kids.forEach(function (k, i) {
+    kidsMap[k.mail] = i; order.push(k.mail);
+    var bg = bmap[k.mail];
+    gi.push(plan ? plan.gi[i]
+         : (bg >= 0 && bg < gn) ? bg
+         : Math.min(gn - 1, Math.floor(i * gn / kids.length)));
+  });
+  var prior = base ? coopContRemap_(base, kids) : null;
+  var id = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+  var now = Date.now();
+  // countdown 付きの開始は、始まりを今から COOP_COUNTDOWN_MS 後に置く。教師画面はこの start に合わせて数える。
+  // 始まりをサーバーが先に決めるので、混雑で開始に失敗しても「スタート」を出す前に分かる
+  var start = now + (o && o.countdown ? COOP_COUNTDOWN_MS : 0);
+  var s = { id: id, cls: cls, pat: pat, seed: seed, mode: mode, gn: gn, minutes: minutes,
+            start: start, end: start + minutes * 60000, status: 'run', total: 0,
+            kids: kidsMap, order: order,
+            names: kids.map(function (k) { return k.name; }),
+            nos: kids.map(function (k) { return k.no; }),
+            gi: gi, skip: coopSkip_(cls), prior: prior, org: org, orgPts: orgPts, gw: gw,
+            pace: Number(pace) || old.pace || FLOOR_PRIOR_.perMin };   // 画面が「1正答の枚数」を自動で決めるのに使う
+  sh_(SHEETS.COOP).appendRow([id, cls, pat, seed, mode, gn, JSON.stringify(gi),
+    JSON.stringify(s.names), JSON.stringify(s.nos), new Date(start), new Date(s.end), 'run', 0, coopPriorCell_(prior), org, orgPts ? JSON.stringify(orgPts) : '', JSON.stringify(gw)]);
+  cache_().put('coop_ev_' + id, '[]', TTL.session);
+  cache_().put('coop_fl_' + id, '0', TTL.session);
+  if (prev) {
+    // リセットで途中から切り直したときは、前のセッションの終わりをいまにする（これから遊び終える回は新しい方へ）
+    prev.status = 'done'; prev.end = Math.min(prev.end, now);
+    coopFlush_(prev, true);
+    coopRowWrite_(prev.id, { status: 'done', total: prev.total, end: prev.end });
+    cache_().put('coop_rt_' + prev.id, String(prev.total), TTL.session);
+    cache_().put('coop_prev', JSON.stringify(prev), TTL.session);
+  }
+  coopPutLive_(s);
+  return { ok: true, session: coopPub_(s, 0), now: Date.now() };   // now：教師画面がカウントダウンを時計のずれ込みで数える
+}
+
+/** 進行中のセッションの様子。since 以降のイベントだけ返す（差分ポーリング用） */
+function coopState(since) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var s = coopLive_();
+  if (!s) return { ok: true, status: 'none' };
+  var now = Date.now();
+  if (s.status === 'run' && now > s.end) {    // 時刻で打ち切り。おわるの押し忘れでも閉じる
+    // 3秒ごとに呼ばれるので、ロックは閉じるときだけ取る。取れなければ次の呼び出しで閉じる（提出は時刻で弾かれている）
+    var lock = LockService.getScriptLock();
+    if (lock.tryLock(3000)) {
+      try {
+        var cur = coopLive_();
+        if (cur && cur.id === s.id && cur.status === 'run') {
+          cur.status = 'done'; coopPutLive_(cur);
+          coopRowWrite_(cur.id, { status: 'done', total: cur.total });
+          cache_().put('coop_rt_' + cur.id, String(cur.total), TTL.session);
+        }
+        s = cur || s;
+      } finally { try { lock.releaseLock(); } catch (e) {} }
+    }
+  }
+  coopFlush_(s, false);
+  coopSyncTotal_(s);
+  var p = coopPrev_();               // 直前のセッションに届いた送り直しも書いておく
+  if (p) { coopFlush_(p, false); coopSyncTotal_(p); }
+  var r = coopPub_(s, since);
+  r.ok = true; r.now = now; r.ended = now > s.end;
+  return r;
+}
+
+/** 打ち切り：これ以降の提出は数えず、画面は終了表示になる */
+function coopStop() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  return coopLocked_(function () {
+    var s = coopLive_();
+    if (!s) return { ok: false, msg: '協力プレイはありません。' };
+    s.status = 'done'; s.end = Math.min(s.end, Date.now());
+    coopPutLive_(s);
+    coopFlush_(s, true);
+    coopRowWrite_(s.id, { status: 'done', total: s.total, end: s.end });
+    cache_().put('coop_rt_' + s.id, String(s.total), TTL.session);
+    return { ok: true, session: coopPub_(s, 0) };
+  });
+}
+
+/** 図形を消して同じ設定で始め直す（新しいセッション。前の分は履歴に残る）。o.countdown で開始と同じく数えてから始める */
+function coopReset(o) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  return coopStart({ reset: true, countdown: !!(o && o.countdown) });
+}
+
+/** 組の編成を一括で書き換える。gi = 児童indexごとの組番号（0〜gn-1） */
+function coopSetGroups(gi) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  return coopLocked_(function () {
+    var s = coopLive_();
+    if (!s) return { ok: false, msg: '協力プレイはありません。' };
+    if (!Array.isArray(gi) || gi.length !== s.names.length) {
+      return { ok: false, msg: 'グループの数が名簿と合いません。' };
+    }
+    s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
+    coopPutLive_(s);
+    coopRowWrite_(s.id, { gi: s.gi });
+    // 遊んでいる途中の編集も編成に残す（次の開始で同じグループから始められるように）
+    if (s.order) { try { coopPlanPut_(s.cls, s.gn, s.order, s.gi); } catch (e) {} }
+    return { ok: true };
+  });
+}
+
+/**
+ * 保存した編成を、進行中（映している）回の児童の並びに合わせて読む。回には書かない。
+ * 教師画面はこれを窓に読み込み、「保存」（coopSetGroups）で回に効かせる。
+ */
+function coopLivePlan() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var s = coopLive_();
+  if (!s || s.mode !== 'group' || !s.order) return { ok: false, msg: 'グループの協力プレイがありません。' };
+  var kids = s.order.map(function (m, i) { return { mail: m, no: s.nos[i] }; });
+  var plan = coopPlanGet_(s.cls, kids);
+  if (plan && plan.gn !== s.gn) return { ok: false, msg: '保存した編成は' + plan.gn + 'グループで、この回（' + s.gn + 'グループ）と数が違います。' };
+  return { ok: true, gi: plan ? plan.gi : coopPlanDefault_(s.gn, kids), saved: !!plan };
+}
+
+/** いまのセッションを再生データとして保存する。終了前でもその時点までを保存 */
+function coopSave(name) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var s = coopLive_();
+  if (!s) return { ok: false, msg: '保存する協力プレイがありません。' };
+  coopFlush_(s, false);
+  // pace・lim・skip は再生で「1正答の枚数」を開始時と同じに自動計算するため（無い古い保存は既定値で計算する）
+  var payload = { v: 1, cls: s.cls, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, gw: s.gw || null,
+                  start: s.start, end: s.end, total: s.total,
+                  pace: s.pace || FLOOR_PRIOR_.perMin, minutes: s.minutes, lim: Number(config_().limit_sec) || 60, skip: s.skip || 0,
+                  names: s.names, nos: s.nos, gi: s.gi, ev: coopEvents_(s),
+                  order: s.order, prior: s.prior || null };   // order：続きから始める時に児童をメールで照らす
+  var sid = 's' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+  var nm = String(name || '').trim() ||
+    (s.cls.replace('-', '年') + '組 ' +
+     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M/d H:mm'));
+  var pj = JSON.stringify(payload);
+  if (pj.length > 49000 && payload.prior) {
+    // セルの上限（5万字）を超える：前の回までの分を外して保存する（この回の分は残る）
+    payload.prior = null; pj = JSON.stringify(payload);
+  }
+  sh_(SHEETS.COOPSAVE).appendRow([sid, nm, new Date(), s.id, pj]);
+  return { ok: true, id: sid, name: nm };
+}
+
+/** 保存済みの一覧（payload は返さない。読むときは coopLoad） */
+function coopList() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var sh = ss_().getSheetByName(SHEETS.COOPSAVE), out = [];
+  if (sh && sh.getLastRow() > 1) {
+    var v = sh.getDataRange().getValues();
+    for (var i = 1; i < v.length; i++) {
+      if (!v[i][0]) continue;
+      // クラスは payload の先頭近くにある。一覧のために全体を JSON.parse しない
+      var mc = String(v[i][4] || '').match(/"cls":"([^"]*)"/);
+      out.push({ id: String(v[i][0]), name: String(v[i][1]), saved: dstr_(v[i][2]), cls: mc ? mc[1] : '' });
+    }
+  }
+  out.reverse();
+  return { ok: true, saves: out, rv: coopRvMap_() };
+}
+
+/** 保存データを読む（再生用。live のセッションは動かさない） */
+function coopLoad(id) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var r = coopLoadRaw_(id);
+  // 画面にはメールアドレスを渡さない（order は続きから始める時にサーバーの中だけで使う）
+  if (r.ok && r.payload) delete r.payload.order;
+  return r;
+}
+function coopLoadRaw_(id) {
+  var sh = ss_().getSheetByName(SHEETS.COOPSAVE);
+  if (!sh || sh.getLastRow() < 2) return { ok: false, msg: '保存データがありません。' };
+  var v = sh.getDataRange().getValues();
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][0]) !== String(id)) continue;
+    return { ok: true, name: String(v[i][1]), payload: JSON.parse(v[i][4]) };
+  }
+  return { ok: false, msg: '保存データが見つかりません。' };
+}
+
+/* ---- 児童の見返しに出す回（教師が保存データを選ぶ。選ばなければそのクラスの直前の回） ---- */
+/** config の coop_rv（"3-1=s0123abcd45,3-2=…"）を { クラス: 保存ID } に */
+function coopRvMap_() {
+  var m = {};
+  String(config_().coop_rv || '').split(',').forEach(function (kv) {
+    var p = kv.split('='); var k = String(p[0] || '').trim(), id = String(p[1] || '').trim();
+    if (k && /^s[0-9a-f]{10}$/.test(id)) m[k] = id;
+  });
+  return m;
+}
+/**
+ * 選ばれた保存データの、児童の判定に要る分だけ（クラス・図形・合計・児童の並び）。
+ * coopPeek は開いている児童画面から何度も呼ばれるので、payload 全体ではなくこの小さい控えをキャッシュから読む。
+ * 保存データが消えていれば null（直前の回に戻る）
+ */
+function coopRvHead_(id) {
+  var key = 'coop_rvh_' + id, hit = cache_().get(key);
+  if (hit) return JSON.parse(hit);
+  var r = coopLoadRaw_(id);
+  var h = null;
+  if (r.ok && r.payload) {
+    var p = r.payload, tot = Number(p.total) || 0;   // 続きからの回は前の回までの正答も見返しに入る
+    ((p.prior && p.prior.ev) || []).forEach(function (e) { tot += Number(e[2]) || 0; });
+    h = { cls: String(p.cls || ''), pat: p.pat, total: tot, order: p.order || [] };
+  }
+  cache_().put(key, JSON.stringify(h), TTL.session);
+  return h;
+}
+/** 教師画面：そのクラスの見返しに出す保存データを選ぶ。id が空なら「直前の回」に戻す */
+function coopSetReview(cls, id) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  cls = String(cls || '').trim(); id = String(id || '').trim();
+  if (!cls) return { ok: false, msg: 'クラスを選んでください。' };
+  if (id) {
+    cache_().remove('coop_rvh_' + id);
+    var h = coopRvHead_(id);
+    if (!h) return { ok: false, msg: '保存データが見つかりません。' };
+    if (h.cls !== cls) return { ok: false, msg: 'この保存データは別のクラスの回です。' };
+  }
+  var m = coopRvMap_(), parts = [];
+  if (id) m[cls] = id; else delete m[cls];
+  for (var k in m) parts.push(k + '=' + m[k]);
+  saveConfig({ coop_rv: parts.join(',') });
+  return { ok: true, rv: m };
+}
+
+/**
+ * 児童画面用：協力モード中なら自分の色に必要な分だけ（他の児童の情報は出さない）。
+ * lim（制限秒）を渡すと、いま始める回が協力の終わりまでに遊び終わるか（counts）も返す。
+ * 残り1分を切ってから始めた回は数えないので、印を「数えません」に切り替えるため
+ */
+function coopForChild_(c, lim) {
+  var s = coopLive_();
+  if (!s || s.status !== 'run' || Date.now() > s.end || !c || classKey_(c) !== s.cls) {
+    // 終わった回を見返せるか。キャッシュだけを見る軽い判定。正答が1つも無い回（試しに開始して終えた回など）は見せない
+    //  - 教師が保存データを選んだクラス：その回に自分がいれば
+    //  - 選んでいないクラス：最後の回が自分のクラスの回で、自分が名簿にいれば
+    if (!c) return { active: false };
+    var ck = classKey_(c);
+    var pick = coopRvMap_()[ck], h = pick ? coopRvHead_(pick) : null;
+    if (h && h.cls === ck) {
+      return (h.total > 0 && h.order.indexOf(c.email) >= 0) ? { active: false, review: true, rid: 'sv:' + pick, pat: h.pat } : { active: false };
+    }
+    var rv = !!(s && ck === s.cls && s.kids[c.email] !== undefined && (s.status !== 'run' || Date.now() > s.end) && s.total > 0);
+    return rv ? { active: false, review: true, rid: s.id, pat: s.pat } : { active: false };
+  }
+  var i = s.kids[c.email];
+  if (i === undefined) return { active: false };
+  var r = { active: true, i: i, n: s.order.length, seed: s.seed, pat: s.pat, mode: s.mode };
+  if (lim) r.counts = Date.now() + Number(lim) * 1000 <= s.end + COOP_SLACK_MS && Date.now() >= s.start - COOP_EARLY_MS;
+  if (s.mode === 'group') { r.g = s.gi[i]; r.gn = s.gn; }
+  return r;
+}
+
+/**
+ * 児童画面の定期確認用。boot よりはるかに軽い応答だけ返す（キャッシュ読み2つ程度）。
+ * 開いたままの画面に「協力プレイ中」の印をすぐ出すため、児童側が間を置いて聞き続ける
+ */
+function coopPeek(lim) {
+  return coopForChild_(child_(email_()), Number(lim) || 0);
+}
+
+/*
+ * 児童が、終わった協力プレイの図形を見返す（児童画面の左上の「前回の協力プレイ」）。
+ * できるのは自分（グループなら自分の組）の色を目立たせることだけ。他の児童の色を選んで目立たせる手段は作らない
+ * （誰の正答が少ないかを児童どうしで見つけられないようにするため）。応答には名前・番号・メール・組の一覧（gi）を入れない。
+ * 色は教師画面（モニター）と同じ（index はそのまま）。色の割り当ては回ごとのシードで決まり、新しく始めるたびに変わる（続きからの回だけ前の回と同じ）。
+ * 組の色づかいでは、各正答にその児童の組番号だけを付ける（組の合計はモニターにも出ている）。
+ */
+function coopReview() {
+  var c = child_(email_());
+  if (!c) return { ok: false, msg: 'めいぼに とうろくが ありません。' };
+  var ck = classKey_(c), s = coopLive_();
+  var running = s && s.status === 'run' && Date.now() <= s.end;
+  if (running && s.cls === ck) return { ok: false, msg: 'まだ 見られる 協力プレイが ありません。' };
+  var none = { ok: false, msg: 'まだ 見られる 協力プレイが ありません。' };
+  var notMine = { ok: false, msg: 'この 協力プレイには あなたの きろくが ありません。' };
+  // 教師が保存データを選んだクラスはその回（消えていれば直前の回に戻る）
+  var pick = coopRvMap_()[ck], raw = pick ? coopLoadRaw_(pick) : null, p = raw && raw.ok ? raw.payload : null;
+  if (p && String(p.cls) === ck) {
+    var pm = (p.order || []).indexOf(c.email);
+    if (pm < 0) return notMine;
+    return coopRvOut_({ pat: p.pat, seed: p.seed, mode: p.mode, gn: p.gn, gi: p.gi || [], gw: p.gw, org: p.org, orgPts: p.orgPts,
+                        n: (p.names || []).length, prior: p.prior, minutes: p.minutes, pace: p.pace, skip: p.skip, end: p.end },
+                      pm, p.ev || []) || none;
+  }
+  if (!s || s.cls !== ck || running) s = coopLastDone_(ck);
+  if (!s) return none;
+  var me = s.kids[c.email];
+  if (me === undefined) return notMine;
+  return coopRvOut_({ pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, gi: s.gi || [], gw: s.gw, org: s.org, orgPts: s.orgPts,
+                      n: (s.names || []).length, prior: s.prior, minutes: s.minutes, pace: s.pace, skip: s.skip, end: s.end },
+                    me, coopEvents_(s)) || none;
+}
+/** 見返しの応答を組む（直前の回・保存データで共通）。ev はこの回の [時刻, 児童 index, 正答数, モード]。正答が1つも無ければ null */
+function coopRvOut_(s, me, evNow) {
+  var group = s.mode === 'group', pri = (s.prior && s.prior.dur) || 0, gn = s.gn || 1;
+  function gOf(i) { return Math.max(0, Math.min(gn - 1, Number(s.gi[i]) || 0)); }
+  // 各正答：[時刻, 児童 index, 正答数, 組番号（児童ごとの回は 0）, 育ちの倍率]。正答数は生のまま（「じぶん N もん」に使う）
+  var gw = s.gw || {}, ws = [];
+  for (var gk in gw) ws.push(Number(gw[gk]) || 1);
+  function out(e, shift) {
+    return [Number(e[0]) + shift, Number(e[1]) || 0, Number(e[2]) || 0, group ? gOf(e[1]) : 0, Number(gw[e[3]]) || 1];
+  }
+  var ev = ((s.prior && s.prior.ev) || []).map(function (e) { return out(e, 0); })
+    .concat((evNow || []).map(function (e) { return out(e, pri); }));
+  var total = ev.reduce(function (a, e) { return a + e[2]; }, 0);
+  if (!total) return null;   // 正答が1つも無い回（試しに開始して終えた回など）は見せない
+  return { ok: true, pat: s.pat, seed: s.seed, mode: s.mode, gn: s.gn, org: s.org || 1, orgPts: s.orgPts || null, n: s.n, me: me,
+           mine: toBool_(config_().coop_mine),   // 教師の設定で「じぶん」の数を出さないこともできる（出すだけ。他の児童の数は出ない）
+           g: group ? gOf(me) : null,
+           ev: ev, total: total, pri: pri, segs: (s.prior && s.prior.segs) || [],
+           wm: ws.length ? ws.reduce(function (a, w) { return a + w; }, 0) / ws.length : 1,   // 倍率の平均（自動の枚数の見込みに使う。教師画面と同じ）
+           minutes: s.minutes, lim: Number(config_().limit_sec) || 60, pace: s.pace || FLOOR_PRIOR_.perMin, skip: s.skip || 0,
+           end: s.end };
+}
+/** そのクラスの最後に終わった回（キャッシュに無い時は coop シートから） */
+function coopLastDone_(ck) {
+  var sh = ss_().getSheetByName(SHEETS.COOP);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 17).getValues(), now = Date.now();
+  for (var i = v.length - 1; i >= 0; i--) {
+    if (String(v[i][1]) !== ck) continue;
+    var end = v[i][10] instanceof Date ? v[i][10].getTime() : new Date(v[i][10]).getTime();
+    if (String(v[i][11]) === 'run' && now <= end) return null;   // そのクラスはいま遊んでいる
+    return coopFromRow_(v[i]);
+  }
+  return null;
+}
+
+/* ---- 集計 ---- */
+
+function aggregate() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  return aggregateCore_();
+}
+
+function nightlyAggregate() {
+  try { aggregateCore_(); } catch (e) { console.error('nightlyAggregate 失敗: ' + e.message); }
+}
+
+function typeOrder_() { return Object.keys(UNIT.types); }
+
+function aggregateCore_() {
+  var cfg = config_();
+  var v = sh_(SHEETS.LOG).getDataRange().getValues();
+  var child = {}, typeMiss = {}, wrongCnt = {};
+  var named = namedMails_();   // 分析の対象は、名簿に email と氏名の両方がある児童だけ
+
+  function slot(mail, row) {
+    if (!child[mail]) {
+      child[mail] = { name: row[LOG_COL_.NAME], grade: row[LOG_COL_.GRADE], cls: row[LOG_COL_.CLS], no: row[LOG_COL_.NO], t: {}, miss: 0 };
+    }
+    return child[mail];
+  }
+
+  // 期間窓。全期間平均にすると直近の変化が薄まって伸びが見えなくなる。
+  var days = Number(cfg.window_days) || 0;
+  var cutoff = days > 0 ? (Date.now() - days * 86400000) : 0;
+  var used = 0;
+
+  for (var i = 1; i < v.length; i++) {
+    var mail = String(v[i][LOG_COL_.MAIL]).toLowerCase();
+    if (!mail || !named[mail]) continue;
+    var row = v[i];
+
+    if (cutoff) {
+      var ts = rowTime_(row[LOG_COL_.TS]);
+      if (ts && ts < cutoff) continue;    // 読めない ts は残す（見落としを避ける）
+    }
+    used++;
+
+    String(row[LOG_COL_.TSTAT] || '').split(',').forEach(function (t) {
+      if (!t) return;
+      var p = t.split(':');
+      if (p.length < 3) return;
+      var c = slot(mail, row);
+      if (!c.t[p[0]]) c.t[p[0]] = [0, 0, 0, 0, 0, 0, 0];
+      c.t[p[0]][0] += Number(p[1]) || 0;
+      c.t[p[0]][1] += Number(p[2]) || 0;
+      var x = typeStat_(t);               // 初打鍵を記録するようになってからの行
+      if (x) {
+        c.t[p[0]][2] += x.ntk; c.t[p[0]][3] += x.tk; c.t[p[0]][4] += x.tk2;
+        c.t[p[0]][5] += x.ln;  c.t[p[0]][6] += x.ln2;
+      }
+    });
+
+    String(row[LOG_COL_.MISS] || '').split(',').forEach(function (t) {
+      if (!t) return;
+      var ty = t.split(':')[0];
+      if (!ty) return;
+      typeMiss[ty] = (typeMiss[ty] || 0) + 1;
+      slot(mail, row).miss++;
+    });
+
+    String(row[LOG_COL_.WRONG] || '').split(',').forEach(function (t) {
+      if (!t || t.indexOf('|') < 0) return;
+      wrongCnt[t] = (wrongCnt[t] || 0) + 1;
+    });
+  }
+
+  writeWeakChild_(child, cfg);
+  writeWeakClass_(typeMiss, wrongCnt);
+  writeMistakes_(v, named);
+
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
+  var span = days > 0 ? ('直近' + days + '日') : '全期間';
+  try {
+    sh_(SHEETS.WCHILD).getRange(1, typeOrder_().length + 9)
+      .setValue('最終集計: ' + stamp + '（' + span + '）').setFontColor('#888888');
+  } catch (e) {}
+  return '集計しました（' + span + ' ' + used + ' 試行 / 全 ' + (v.length - 1) + ' 試行 / ' + stamp + '）';
+}
+
+/**
+ * "1/200" と問題型から "1km200m" のような単位つき表示を作る。
+ * UNIT.fieldsByType が無い単元（九九など、答えが単一値でよい単元）では素の値を返す。
+ */
+function fmtByType_(type, joined) {
+  var vals = String(joined).split('/');
+  // 欄の順と読みの順が違う単元（筆算は一の位から打つ）は、単元が読める形に直す
+  if (typeof UNIT.fmtAnswer === 'function') { try { return String(UNIT.fmtAnswer(type, vals)); } catch (e) {} }
+  var fields = UNIT.fieldsByType && UNIT.fieldsByType[type];
+  if (!fields || fields.length !== vals.length) return vals.join(' ');
+  return vals.map(function (v, i) { return v + fields[i]; }).join('');
+}
+
+/**
+ * 誰が・どの問題を・何と間違えたかを1行1件で並べる。
+ * log の wrong_items を展開する。新しい記録ほど上に来る。直近2000件まで。
+ * 旧形式（型｜出題｜誤答 の3分割）にも後方互換で対応する（正答欄は空欄になる）。
+ * named が渡されたときは、その集合に無い児童の記録を除く（名簿外は分析対象外）。
+ */
+function writeMistakes_(logRows, named) {
+  var sh = ss_().getSheetByName(SHEETS.MISTAKES) || ss_().insertSheet(SHEETS.MISTAKES);
+  sh.clear(); sh.setConditionalFormatRules([]);
+
+  var head = ['日時', '学年', '組', '番号', '氏名', 'モード', '問題型', 'もんだい', '正しい答え', 'こたえた値'];
+  var body = [];
+
+  for (var i = 1; i < logRows.length; i++) {
+    var row = logRows[i];
+    if (named && !named[String(row[LOG_COL_.MAIL] || '').toLowerCase()]) continue;
+    var wrongStr = String(row[LOG_COL_.WRONG] || '');
+    if (!wrongStr) continue;
+    wrongStr.split(',').forEach(function (entry) {
+      var p = entry.split('|');
+      if (p.length < 3) return;
+      var type = p[0], tag = p[1], correct, wrong;
+      if (p.length >= 4) { correct = fmtByType_(type, p[2]); wrong = fmtByType_(type, p[3]); }
+      else { correct = ''; wrong = fmtByType_(type, p[2]); }   // 旧形式
+      body.push([row[LOG_COL_.TS], row[LOG_COL_.GRADE], row[LOG_COL_.CLS], row[LOG_COL_.NO],
+                 row[LOG_COL_.NAME], row[LOG_COL_.MNAME], type, tag, correct, wrong]);
+    });
+  }
+  body.reverse();
+  if (body.length > 2000) body = body.slice(0, 2000);
+
+  var out = [head].concat(body);
+  sh.getRange(1, 1, out.length, head.length).setValues(out);
+  sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  if (body.length) sh.getRange(2, 1, body.length, 1).setNumberFormat('yyyy/mm/dd hh:mm');
+  else sh.getRange(2, 1).setValue('まだ誤答のデータがありません（この機能を入れる前の記録は対象外です）。');
+
+  sh.getRange('A1').setNote(
+    '誰が・どの問題を・何と間違えたかを1行1件で並べたものです。新しい記録ほど上にあります。\n' +
+    '個別に声をかけるときの参考にしてください。全体の傾向を見るなら weak_class を見てください。'
+  );
+  sh.setTabColor('#93C47D');
+}
+
+function writeWeakChild_(child, cfg) {
+  var sh = sh_(SHEETS.WCHILD);
+  sh.clear(); sh.setConditionalFormatRules([]);
+  var order = typeOrder_();
+
+  var wobble = Number(cfg.wobble_pct) || 40;
+
+  // 「遅い」は同じ学年・同じ型の児童の分布と比べる（秒の固定閾値は使わない）
+  var norms = gradeNorms_(Object.keys(child).map(function (k) {
+    var c = child[k], t = {};
+    Object.keys(c.t).forEach(function (ty) {
+      var x = c.t[ty];
+      if (x && x[2]) t[ty] = { n: x[2], ms: Math.exp(x[5] / x[2]) };
+    });
+    return { grade: c.grade, t: t };
+  }));
+  var BAND_BG = { 2: '#F8C9C9', 3: '#EE8E8E' };
+  var bgs = [];
+
+  var head = ['学年', '組', '番号', '氏名'];
+  order.forEach(function (t) { head.push(UNIT.types[t]); });
+  head.push('ゆらぎ', 'ゆらぎの型', '誤答数');
+
+  var rows = [head];
+  Object.keys(child).sort(function (a, b) {
+    var x = child[a], y = child[b];
+    return x.grade - y.grade || (x.cls < y.cls ? -1 : x.cls > y.cls ? 1 : 0) || x.no - y.no;
+  }).forEach(function (k) {
+    var c = child[k], r = [c.grade, c.cls, c.no, c.name], bg = [];
+    var wMax = 0, wType = '';
+    order.forEach(function (t) {
+      var x = c.t[t];
+      if (!x || !x[2]) { r.push(''); bg.push(null); return; }   // 初打鍵のデータが無い型は空欄
+      var n = x[2], mean = x[3] / n, gm = Math.exp(x[5] / n);
+      r.push(Math.round(gm / 100) / 10);         // 表示は秒。代表値は幾何平均（判定と同じ値）
+      // 回数が少ない型は平均が不安定なので色を付けない（分布にも入れていない）
+      var band = n >= SLOW_MIN_TRIES_ ? slowBand_(gm, (norms[c.grade] || {})[t]) : -1;
+      bg.push(BAND_BG[band] || null);
+
+      // ばらつきは 標準偏差÷平均（%）。試行が少ないと不安定なので5回以上の型だけ候補にする
+      if (n >= 5 && mean > 0) {
+        var vr = x[4] / n - mean * mean;
+        var cv = Math.round((vr > 0 ? Math.sqrt(vr) : 0) / mean * 100);
+        if (cv > wMax) { wMax = cv; wType = UNIT.types[t]; }
+      }
+    });
+    r.push(wMax || '', wType, c.miss);
+    rows.push(r); bgs.push(bg);
+  });
+
+  sh.getRange(1, 1, rows.length, head.length).setValues(rows);
+  sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
+  sh.setFrozenRows(1); sh.setFrozenColumns(4);
+
+  if (rows.length > 1) {
+    var n = rows.length - 1, wob = 5 + order.length;   // ゆらぎ列 / その右が型名 / さらに右が誤答数
+    sh.getRange(2, 5, n, order.length).setNumberFormat('0.0"秒"');
+    sh.getRange(2, wob, n, 1).setNumberFormat('0"%"');
+    sh.getRange(2, wob + 2, n, 1).setNumberFormat('0"回"');
+    // 基準が学年×型ごとに違うので、条件付き書式ではなくセルごとに色を塗る
+    if (order.length) sh.getRange(2, 5, n, order.length).setBackgrounds(bgs);
+    sh.setConditionalFormatRules([
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(wobble).setBackground('#FDE4B8')
+        .setRanges([sh.getRange(2, wob, n, 1)]).build()
+    ]);
+  }
+  sh.getRange('A1').setNote(
+    (UNIT.tips ? UNIT.tips.replace(/<[^>]+>/g, '') + '\n\n' : '') +
+    '各型の数字は「問題が出てから最初のキーを押すまで」の代表値（幾何平均）です（想起にかかった時間）。\n' +
+    'ときどき大きく遅れた回に引っぱられにくいよう、ふつうの平均ではなく幾何平均にしています。\n' +
+    '打鍵にかかる時間を含まないので、答えの桁数が違う型どうしを比べられます。\n' +
+    '赤いセルは、同じ学年・同じ型の児童の中央より 1σ以上遅い（濃い赤は2σ以上）。\n' +
+    'σは中央値からの絶対偏差（MAD）を標準偏差の目盛りにそろえたもので、時間は対数に直して比べています\n' +
+    '（時間は遅い側に裾が長く、ふつうの平均と標準偏差は数人の極端な値に引っぱられるため）。\n' +
+    '秒の固定の基準は使っていません（型ごとに打つ数や手順が違うため）。\n' +
+    'その型を ' + SLOW_MIN_TRIES_ + ' 回以上やった児童が ' + SLOW_MIN_KIDS_ + ' 人未満の学年・型、' + SLOW_MIN_TRIES_ + ' 回未満の児童には色を付けません。\n\n' +
+    '「ゆらぎ」は、その子がいちばん不安定だった型の ばらつき（標準偏差÷平均）です（' + wobble + '%超で色）。\n' +
+    '平均が基準内でもここが大きい子は、想起できる時と数えている時が混ざっています。\n' +
+    '平均だけを見ていると、この子は「基準内」に見えて素通りします。\n' +
+    '平均が遅い子は手続きの短縮、ゆらぎが大きい子は想起そのものの練習が要ります。\n\n' +
+    '空欄は、この期間にその型のデータが無いという意味です。\n' +
+    '（初打鍵の記録は途中から始めたため、それ以前の記録しかない子は空欄になります）'
+  );
+  sh.setTabColor('#93C47D');
+}
+
+function writeWeakClass_(typeMiss, wrongCnt) {
+  var sh = sh_(SHEETS.WCLASS);
+  sh.clear(); sh.setConditionalFormatRules([]);
+
+  var rows = [['問題型', '説明', '誤答数']];
+  typeOrder_().forEach(function (t) { rows.push([t, UNIT.types[t], typeMiss[t] || 0]); });
+  sh.getRange(1, 1, rows.length, 3).setValues(rows);
+  sh.getRange(1, 1, 1, 3).setFontWeight('bold');
+
+  var start = rows.length + 2;
+  sh.getRange(start, 1).setValue('よくある誤答（多い順）').setFontWeight('bold');
+  sh.getRange(start + 1, 1, 1, 5)
+    .setValues([['問題型', '出題', '正しい答え', 'こたえた値', '回数']]).setFontWeight('bold');
+
+  var list = Object.keys(wrongCnt).map(function (k) {
+    var p = k.split('|');
+    var type = p[0], tag = p[1], correct, wrong;
+    if (p.length >= 4) { correct = fmtByType_(type, p[2]); wrong = fmtByType_(type, p[3]); }
+    else { correct = ''; wrong = fmtByType_(type, p[2]); }   // 旧形式（正答が無い）
+    return [type, tag, correct, wrong, wrongCnt[k]];
+  }).sort(function (a, b) { return b[4] - a[4]; }).slice(0, 40);
+
+  if (list.length) sh.getRange(start + 2, 1, list.length, 5).setValues(list);
+  else sh.getRange(start + 2, 1).setValue('データなし');
+  sh.setColumnWidth(2, 150); sh.setColumnWidth(3, 130); sh.setColumnWidth(4, 130);
+
+  sh.getRange('A1').setNote(
+    '学級全体で、どの型の問題がよく間違えられているかの一覧です。\n' +
+    '下の「よくある誤答」は、正しい答えと実際の誤答を並べたものです。\n' +
+    '一斉指導でどの型を扱うか決めるときに使ってください。'
+  );
+  sh.setTabColor('#93C47D');
+}
+
+/* ---- 教師画面「ぶんせき」タブ ----
+ * weak_child / weak_class と同じ期間窓（window_days）と名簿条件で
+ * log を1回だけ読み、クラス別・児童別・日別の集計をまとめて返す。
+ * シートには書き込まない（weak_* は従来どおり nightly 集計が作る）。
+ * 年度替わり（4/1）を越える記録は分析に混ぜない。クラス替えの履歴が
+ * 新しいクラスに混入するのを防ぐためで、log の行自体は履歴として残る。
+ */
+
+/**
+ * miss_items / wrong_items は ',' 区切りだが、円と球の初版ではタグ自体に ',' が入っていた
+ * （例 'B:chord,rad,short,off'。現在は '-' 区切りで、tag の ',' は契約検査で禁止）。過去の行のために残す。
+ * 「既知の型名 + ':' または '|'」で始まる断片だけを
+ * 新しい要素として切り、それ以外は直前の要素のタグの続きとして連結して戻す。
+ */
+function splitCellItems_(cell, typeSet) {
+  var out = [];
+  String(cell || '').split(',').forEach(function (f) {
+    if (!f) return;
+    var c0 = f.indexOf(':'), c1 = f.indexOf('|');
+    var cut = c0 < 0 ? c1 : (c1 < 0 ? c0 : Math.min(c0, c1));
+    var head = cut < 0 ? '' : f.slice(0, cut);
+    if (head && typeSet[head]) out.push(f);
+    else if (out.length) out[out.length - 1] += ',' + f;
+    else out.push(f);   // 先頭が壊れていても落とさない（見落としを避ける）
+  });
+  return out;
+}
+function getAnalysis(fresh, fyear) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var fy = Number(fyear) || 0;
+  var key = 'analysis_' + fy;
+  if (!fresh) {
+    var hit = cache_().get(key);
+    if (hit) return JSON.parse(hit);
+  }
+  var out = buildAnalysis_(fy);
+  var json = JSON.stringify(out);
+  if (json.length < 90000) cache_().put(key, json, 120);
+  return out;
+}
+
+/* ============================================================
+ *  過年度（教師画面の「過年度」タブ）
+ *
+ *  log を年度（4/1〜翌3/31）ごとに畳み、型ごと・問題ごとに
+ *  「どこで時間がかかり、どこで誤答が多かったか」を出す。個人は出さない（集団の値だけ）。
+ *
+ *  問題ごとの出題数は log に残っていない（残るのは誤答・遅かった問題だけ）。
+ *  そこで出題の正本 UNIT.gen を回して「モードごとの各問題の出やすさ」を求め、
+ *  その年度の回ごとの解いた数（attempts）に掛けて出題数を推定する（推定出題数）。
+ *  genQueue_ は直前3問の重複を避けるので、実際の出題とは少しずれる（推定と明記して出す）。
+ *
+ *  個人情報の消去（児童001などへの置き換え）はハブの「過年度」タブで全単元まとめて行う。
+ *  単元ごとに振ると、同じ児童が単元ごとに別の番号になるため（apps/hub/Archive.gs）。
+ * ============================================================ */
+
+var PAST_FREQ_DRAWS_ = 3000;   // モードごとに gen を回す回数。1%の問題で相対誤差 約±18%（二項分布の標準誤差）
+var PAST_ITEM_MIN_ = 20;       // 推定出題数がこれ未満の問題は誤答率の順位に入れない（an_min_trials と同じ値）
+var PAST_ITEM_TOP_ = 15;
+
+/** モードごとの各問題の出やすさ { mode: { 't|tag': 確率 } }。gen は決定的なのでシードを固定すれば毎回同じ */
+function tagFreq_() {
+  var hit = cache_().get('tagfreq');
+  if (hit) return JSON.parse(hit);
+  var out = {};
+  modeIds_().forEach(function (m) {
+    var rand = rng_(20250401 + Number(m)), cnt = {}, f = {};
+    for (var i = 0; i < PAST_FREQ_DRAWS_; i++) {
+      var it = UNIT.gen(rand, m), k = (it.t || '') + '|' + it.tag;
+      cnt[k] = (cnt[k] || 0) + 1;
+    }
+    Object.keys(cnt).forEach(function (k) { f[k] = cnt[k] / PAST_FREQ_DRAWS_; });
+    out[m] = f;
+  });
+  var j = JSON.stringify(out);
+  if (j.length < 90000) cache_().put('tagfreq', j, 21600);
+  return out;
+}
+
+/**
+ * log の行 → 年度ごとの集計（純粋。tests/past.test.cjs が叩く）。
+ * rows: log の値（見出し行を含む）。fyOf: 時刻 → 年度。freq: tagFreq_() の形。order: 型の並び。
+ */
+function pastStats_(rows, fyOf, freq, order) {
+  var typeSet = {};
+  order.forEach(function (t) { typeSet[t] = true; });
+  var Y = {};
+  function yr(fy) {
+    return Y[fy] || (Y[fy] = { fy: fy, trials: 0, kids: {}, pii: {}, types: {}, items: {} });
+  }
+  function item(y, k) { return y.items[k] || (y.items[k] = { miss: 0, slow: 0, est: 0 }); }
+
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i], ts = rowTime_(row[LOG_COL_.TS]);
+    var fy = ts ? fyOf(ts) : 0;
+    if (!fy) continue;
+    var y = yr(fy), mail = String(row[LOG_COL_.MAIL] || '').trim().toLowerCase();
+    y.trials++;
+    if (mail) y.kids[mail] = true;
+    if (mail.indexOf('@') >= 0) y.pii[mail] = true;   // 消去前の児童（メールが残っている）
+
+    String(row[LOG_COL_.TSTAT] || '').split(',').forEach(function (e) {
+      var p = String(e).split(':');
+      if (p.length < 6 || !typeSet[p[0]]) return;
+      var a = y.types[p[0]] || (y.types[p[0]] = { n: 0, miss: 0, ntk: 0, ln: 0 });
+      a.n += Number(p[1]) || 0;                        // 1回目で正答した問題の数
+      var x = typeStat_(e);
+      if (x && x.ntk > 0 && x.ln) { a.ntk += x.ntk; a.ln += x.ln; }
+    });
+    splitCellItems_(row[LOG_COL_.MISS], typeSet).forEach(function (e) {
+      var c = e.indexOf(':'), t = e.slice(0, c);
+      if (c < 0 || !typeSet[t]) return;
+      var a = y.types[t] || (y.types[t] = { n: 0, miss: 0, ntk: 0, ln: 0 });
+      a.miss++;
+      item(y, t + '|' + e.slice(c + 1)).miss++;
+    });
+    splitCellItems_(row[LOG_COL_.SLOW], typeSet).forEach(function (e) {
+      // "型:タグ:ms"。タグに ':' は入らない（契約）が、念のため最後の ':' で切る
+      var c = e.indexOf(':'), l = e.lastIndexOf(':');
+      if (c < 0 || l <= c) return;
+      item(y, e.slice(0, c) + '|' + e.slice(c + 1, l)).slow++;
+    });
+    var f = freq[String(row[LOG_COL_.MODE])] || freq[Number(row[LOG_COL_.MODE])];
+    var att = Number(row[LOG_COL_.ATTEMPTS]) || 0;
+    if (f && att) Object.keys(f).forEach(function (k) { item(y, k).est += att * f[k]; });
+  }
+
+  return Object.keys(Y).map(Number).sort(function (a, b) { return b - a; }).map(function (fy) {
+    var y = Y[fy], types = {}, items = [];
+    order.forEach(function (t) {
+      var a = y.types[t];
+      if (!a) return;
+      var tot = a.n + a.miss;
+      types[t] = { n: tot, miss: a.miss,
+                   rate: tot ? Math.round(1000 * a.miss / tot) / 10 : null,       // 誤答率（%）
+                   ms: a.ntk ? Math.round(Math.exp(a.ln / a.ntk)) : null };       // 初打鍵までの幾何平均
+    });
+    Object.keys(y.items).forEach(function (k) {
+      var o = y.items[k];
+      if (!o.miss && !o.slow) return;
+      var p = k.indexOf('|');
+      var est = Math.round(o.est);
+      items.push({ t: k.slice(0, p), tag: k.slice(p + 1), miss: o.miss, slow: o.slow, est: est,
+                   rate: est >= PAST_ITEM_MIN_ ? Math.round(1000 * Math.min(o.miss, est) / est) / 10 : null });
+    });
+    function topBy(key) {
+      return items.filter(function (o) { return key === 'rate' ? (o.rate != null && o.miss > 0) : o.slow > 0; })
+        .sort(function (a, z) { return (z[key] - a[key]) || (z.miss - a.miss); }).slice(0, PAST_ITEM_TOP_);
+    }
+    return { fy: fy, trials: y.trials, kids: Object.keys(y.kids).length, pii: Object.keys(y.pii).length,
+             types: types, missTop: topBy('rate'), slowTop: topBy('slow') };
+  });
+}
+
+function getPastYears(fresh) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var key = 'past_' + today_();
+  if (!fresh) {
+    var hit = cache_().get(key);
+    if (hit) return JSON.parse(hit);
+  }
+  var v = sh_(SHEETS.LOG).getDataRange().getValues();
+  var order = typeOrder_(), cur = curSchoolYear_(), freq = tagFreq_();
+  // 「過年度すべて」は今年度より前の行を1つの年度（番号 1）として畳み直す。年度ごとの上位表を足し合わせると、
+  // 上位に入らなかった年度の分が抜けて誤答率がゆがむため
+  var all = pastStats_(v, function (ts) { var f = fyOfTime_(ts); return (f && f < cur) ? 1 : 0; }, freq, order);
+  var out = { cur: cur, order: order, types: UNIT.types, itemMin: PAST_ITEM_MIN_,
+              years: pastStats_(v, fyOfTime_, freq, order), allPast: all[0] || null,
+              rosters: ss_().getSheets().map(function (s) { return s.getName(); })
+                .filter(function (n) { return /^roster_\d{4}$/.test(n); }) };
+  var j = JSON.stringify(out);
+  if (j.length < 90000) cache_().put(key, j, 600);
+  return out;
+}
+
+/* ============================================================
+ *  「遅い」の判定
+ *
+ *  根拠と選択の理由は docs/ARCHITECTURE.md「遅いの判定」。要点だけ:
+ *  - 想起時間は遅い側に長く裾を引く（反応時間の一般的な性質）。対数に直してから扱う
+ *    （Ratcliff 1993）。児童の代表値は対数の平均＝幾何平均
+ *  - 学年の分布の中心と広がりは、平均・SD ではなく 中央値・MAD（×1.4826）で取る。
+ *    平均・SD は数人の極端な値に引っぱられる（Leys et al. 2013）
+ *  - 比べるのは同じ学年・同じ型だけ。型をまたぐと打鍵数・手順の数の差が混ざる
+ * ============================================================ */
+
+/** MAD を正規分布の標準偏差と同じ目盛りにそろえる係数（Leys et al. 2013） */
+var MAD_K_ = 1.4826;
+/** 比べる児童がこれより少ない学年・型は判定しない（中央値・MADが数人で決まってしまう）。根拠なしの保守的な値 */
+var SLOW_MIN_KIDS_ = 10;
+/** 児童の代表値を分布に入れる・色を付けるのに要る、その型の初打鍵の回数。根拠なし（ゆらぎの判定と同じ5にそろえた） */
+var SLOW_MIN_TRIES_ = 5;
+/** slow_items（1回の中で飛びぬけて遅い問題）のしきい値。Leys et al. 2013 の既定 2.5 */
+var SLOW_ITEM_Z_ = 2.5;
+/** 本人の中で苦手な型：本人の偏差値の中央値より、この値以上低い型（かつ誤差の2倍を超える） */
+var SELF_GAP_DV_ = 10;
+
+function median_(xs) {
+  var a = xs.slice().sort(function (p, q) { return p - q; }), n = a.length;
+  if (!n) return 0;
+  return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
+}
+
+/** 頑健な中心と広がり。xs は対数時間。{ n, med, s }（s は MAD×1.4826＝SD相当） */
+function robustNorm_(xs) {
+  var med = median_(xs);
+  var mad = median_(xs.map(function (x) { return Math.abs(x - med); }));
+  return { n: xs.length, med: med, s: mad * MAD_K_ };
+}
+
+/** 児童ごとの代表値（ms）の列 → 学年・型の分布（対数で中央値・MAD） */
+function slowNorm_(msList) {
+  return robustNorm_(msList.filter(function (x) { return x > 0; }).map(Math.log));
+}
+
+/** 分布の中での位置（頑健なz。＋が遅い）。判定できなければ null */
+function slowZ_(ms, nm) {
+  if (!(ms > 0) || !nm || nm.n < SLOW_MIN_KIDS_ || !(nm.s > 0)) return null;
+  return (Math.log(ms) - nm.med) / nm.s;
+}
+
+/**
+ * 段階：-1 判定なし／0 中央値以下／1 〜＋1σ／2 ＋1σ超（遅い）／3 ＋2σ超
+ * σ は MAD×1.4826（正規分布なら SD と一致する）。
+ */
+function slowBand_(ms, nm) {
+  var z = slowZ_(ms, nm);
+  if (z === null) return -1;
+  return z <= 0 ? 0 : z <= 1 ? 1 : z <= 2 ? 2 : 3;
+}
+
+/**
+ * 学年×型ごとの分布。kids は [{ grade, t: { 型: { n, ms } } }]（ms は児童の幾何平均）。
+ * 回数が SLOW_MIN_TRIES_ 未満の児童は分布に入れない（代表値が不安定）。
+ * 返り値 { 学年: { 型: { n, med, s } } }
+ */
+function gradeNorms_(kids) {
+  var xs = {};
+  kids.forEach(function (k) {
+    Object.keys(k.t || {}).forEach(function (ty) {
+      var o = k.t[ty];
+      if (!o || o.n < SLOW_MIN_TRIES_ || !(o.ms > 0)) return;
+      var g = xs[k.grade] || (xs[k.grade] = {});
+      (g[ty] || (g[ty] = [])).push(o.ms);
+    });
+  });
+  var out = {};
+  Object.keys(xs).forEach(function (g) {
+    out[g] = {};
+    Object.keys(xs[g]).forEach(function (ty) { out[g][ty] = slowNorm_(xs[g][ty]); });
+  });
+  return out;
+}
+
+/**
+ * 本人の中で遅い型（◆）。学年との比較だけだと、全体に遅い子は行全体が「遅い」になり、
+ * その子がとくに苦手な型が読めない。
+ *
+ * 個人内の差（得意・不得意の型）は、差をとる2つの値の誤差が両方乗るので、
+ * 見かけの凸凹が出やすい（下位検査のプロフィール分析への批判：McDermott et al. 1990 ほか）。
+ * そのため次の3つを満たす型だけに付ける。
+ *   1. 偏差値（dv）のある型が3つ以上（中心を決められる）
+ *   2. 本人の dv の中央値より SELF_GAP_DV_ 以上低い
+ *   3. その差が、その型の dv の標準誤差（se）の2倍を超える（回数が少なく揺れているだけの型を除く）
+ */
+function markSelfSlow_(t) {
+  var tys = Object.keys(t).filter(function (ty) { return t[ty].dv != null; });
+  if (tys.length < 3) return;
+  var center = median_(tys.map(function (ty) { return t[ty].dv; }));
+  tys.forEach(function (ty) {
+    var gap = center - t[ty].dv;
+    if (gap >= SELF_GAP_DV_ && gap > 2 * (t[ty].se || 0)) t[ty].self = true;
+  });
+}
+
+/**
+ * log の type_stats の1要素を読む。
+ * "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2[:Σln:Σln^2]"
+ * 対数の和が無い古い行は、平均の対数で代用する（その行の中のばらつきは0として扱う）。
+ * 初打鍵の無いさらに古い行は null。
+ */
+function typeStat_(e) {
+  var p = String(e).split(':');
+  if (p.length < 6 || !p[0]) return null;
+  var o = { t: p[0], ntk: Number(p[3]) || 0, tk: Number(p[4]) || 0, tk2: Number(p[5]) || 0, ln: 0, ln2: 0 };
+  if (p.length >= 8) { o.ln = Number(p[6]) || 0; o.ln2 = Number(p[7]) || 0; }
+  else if (o.ntk > 0 && o.tk > 0) { var l = Math.log(o.tk / o.ntk); o.ln = o.ntk * l; o.ln2 = o.ntk * l * l; }
+  return o;
+}
+
+/**
+ * 型ごとの想起時間の畳み込み。{ ntk, tk, tk2, ln, ln2 } → { n, ms, cv, sl }
+ * ms は代表値＝幾何平均（初打鍵まで）。cv は標準偏差÷平均（%、ゆらぎ）。sl は対数時間の標準偏差。
+ */
+function recallOut_(acc, miss) {
+  if (!acc || !acc.ntk) return { n: 0, ms: 0, cv: 0, sl: 0, miss: miss || 0 };
+  var mean = acc.tk / acc.ntk;
+  var vr = acc.tk2 / acc.ntk - mean * mean;
+  var cv = mean > 0 ? Math.round((vr > 0 ? Math.sqrt(vr) : 0) / mean * 100) : 0;
+  var lm = acc.ln / acc.ntk, lv = acc.ln2 / acc.ntk - lm * lm;
+  return { n: acc.ntk, ms: Math.round(Math.exp(lm)), cv: cv,
+           sl: Math.round((lv > 0 ? Math.sqrt(lv) : 0) * 1000) / 1000, miss: miss || 0 };
+}
+
+/**
+ * fyear: 参照したい年度の開始年（2025年度なら2025）。0/未指定で今年度。
+ * 今年度は「window_days 日前」と年度始まり（4/1）の遅い方を窓の下端にする。
+ * 過去年度はその年度の4/1〜翌3/31の全体を参考用に集計する。
+ */
+function newAcc_() { return { ntk: 0, tk: 0, tk2: 0, ln: 0, ln2: 0, miss: 0 }; }
+function addAcc_(a, x) { a.ntk += x.ntk; a.tk += x.tk; a.tk2 += x.tk2; a.ln += x.ln; a.ln2 += x.ln2; }
+
+function buildAnalysis_(fyear) {
+  var cfg = config_();
+  var days = Number(cfg.window_days) || 0;
+
+  var curFy = curSchoolYear_();
+  var viewFy = (fyear > 0 && fyear < curFy) ? fyear : curFy;
+  var now = new Date();
+
+  var cutoff, until = 0, span;
+  if (viewFy === curFy) {
+    // 今年度: 年度の切り替わりでリセット。進級・編入で所属が変わった児童の
+    // 過去分が新クラスに混ざるのを防ぐ（log の行は履歴として残る）
+    var win = days > 0 ? (now.getTime() - days * 86400000) : 0;
+    var fyStart = fyStartMs_(curFy);
+    cutoff = Math.max(win, fyStart);
+    span = win > fyStart ? ('直近' + days + '日') : '4/1以降';
+  } else {
+    cutoff = fyStartMs_(viewFy);
+    until = fyStartMs_(viewFy + 1);
+    span = viewFy + '年度';
+  }
+
+  var order = typeOrder_();
+  var typeSet = {};
+  order.forEach(function (t) { typeSet[t] = true; });
+  var wobble = Number(cfg.wobble_pct) || 40;
+
+  // 名簿。記録・分析の対象は email と氏名の両方がある児童だけ。
+  // 表示年度の名簿を読む（過去年度は roster_<年度>。無ければ空で、
+  // log 行が持つ「記録時点の学年・組・氏名」からその年度の名簿を組み立てる——
+  // 進級した児童が旧年度で新しいクラスに混ざるのを防ぐ）
+  var roster = {}, classes = {}, hasYearRoster = false;
+  rosterRows_(viewFy).forEach(function (rr) {
+    if (!rr.name) return;
+    hasYearRoster = true;
+    var ck = rr.grade + '-' + rr.cls;
+    roster[rr.mail] = { ck: ck, no: rr.no, name: rr.name };
+    if (!classes[ck]) classes[ck] = { cls: ck, label: rr.grade + '年' + rr.cls + '組', grade: rr.grade, room: rr.cls, n: 0, trials: 0 };
+    classes[ck].n++;
+  });
+
+  // ck -> { trials, types: {t: {ntk,tk,tk2,miss}}, daily: {date: n}, wrong: {entry: n}, kids: {mail: stu} }
+  var perCls = {};
+  function bag(ck) {
+    var b = perCls[ck];
+    if (!b) b = perCls[ck] = { trials: 0, types: {}, daily: {}, wrong: {}, kids: {} };
+    return b;
+  }
+
+  var v = sh_(SHEETS.LOG).getDataRange().getValues();
+  var minTs = 0;   // 年度選択肢を出すための最古の記録時刻
+  for (var i2 = 1; i2 < v.length; i2++) {
+    var row = v[i2], m = String(row[LOG_COL_.MAIL]).toLowerCase();
+    var ts = rowTime_(row[LOG_COL_.TS]);
+    if (!ts) continue;
+    // 年度選択肢のために最古の記録を追う。記録が残っていれば、卒業した児童の
+    // 分（現行名簿に無い）も年度リストに出せる。氏名の無い行は対象外
+    if (String(row[LOG_COL_.NAME] || '').trim() && (!minTs || ts < minTs)) minTs = ts;
+    if (ts < cutoff || (until && ts >= until)) continue;
+
+    var rc = roster[m];
+    if (!rc && !hasYearRoster && String(row[LOG_COL_.NAME] || '').trim()) {
+      // 年度名簿が無い過去年度: log 行の所属（その時点の学年・組）を名簿にする
+      var g = Number(row[LOG_COL_.GRADE]), rm = String(row[LOG_COL_.CLS]).trim();
+      var ck = g + '-' + rm;
+      rc = roster[m] = { ck: ck, no: Number(row[LOG_COL_.NO]), name: String(row[LOG_COL_.NAME]).trim() };
+      if (!classes[ck]) classes[ck] = { cls: ck, label: g + '年' + rm + '組', grade: g, room: rm, n: 0, trials: 0 };
+      classes[ck].n++;
+    }
+    if (!rc) continue;
+
+    var b = bag(rc.ck);
+    b.trials++;
+    if (classes[rc.ck]) classes[rc.ck].trials++;
+    var d = dstr_(row[LOG_COL_.TS]);
+    b.daily[d] = (b.daily[d] || 0) + 1;
+
+    var st = b.kids[m];
+    if (!st) st = b.kids[m] = { name: rc.name, no: rc.no, tries: 0, miss: 0, t: {} };
+    st.tries++;
+
+    // type_stats … "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2"
+    String(row[LOG_COL_.TSTAT] || '').split(',').forEach(function (e) {
+      var x = typeStat_(e);
+      if (!x) return;                          // 初打鍵の無い古い行は想起の集計に入れない
+      var ty = x.t;
+      var acc = b.types[ty] || (b.types[ty] = newAcc_());
+      var sa = st.t[ty] || (st.t[ty] = newAcc_());
+      addAcc_(acc, x); addAcc_(sa, x);
+    });
+
+    splitCellItems_(row[LOG_COL_.MISS], typeSet).forEach(function (e) {
+      var ty = e.split(':')[0];
+      if (!ty) return;
+      var acc = b.types[ty] || (b.types[ty] = newAcc_());
+      acc.miss++;
+      st.miss++;
+    });
+
+    splitCellItems_(row[LOG_COL_.WRONG], typeSet).forEach(function (e) {
+      if (e.indexOf('|') < 0) return;
+      b.wrong[e] = (b.wrong[e] || 0) + 1;
+    });
+  }
+
+  // 「全体」= 全クラスの合算。クラス別と同じ形にして画面側の分岐を減らす
+  var all = { trials: 0, types: {}, daily: {}, wrong: {} };
+  Object.keys(perCls).forEach(function (ck) {
+    var b = perCls[ck];
+    all.trials += b.trials;
+    Object.keys(b.types).forEach(function (ty) {
+      var a = all.types[ty] || (all.types[ty] = newAcc_());
+      var x = b.types[ty];
+      addAcc_(a, x); a.miss += x.miss;
+    });
+    Object.keys(b.daily).forEach(function (dd) { all.daily[dd] = (all.daily[dd] || 0) + b.daily[dd]; });
+    Object.keys(b.wrong).forEach(function (k) { all.wrong[k] = (all.wrong[k] || 0) + b.wrong[k]; });
+  });
+
+  function scopeOut(b) {
+    var types = {}, wrongTop = [];
+    order.forEach(function (ty) { types[ty] = recallOut_(b.types[ty], b.types[ty] ? b.types[ty].miss : 0); });
+    Object.keys(b.wrong).forEach(function (k) {
+      var p = k.split('|'), ty = p[0];
+      wrongTop.push({
+        t: ty, tag: p[1] || '',
+        ok: p.length >= 4 ? fmtByType_(ty, p[2]) : '',
+        ng: fmtByType_(ty, p.length >= 4 ? p[3] : p[2]),   // 旧形式（正答なし）は3分割
+        n: b.wrong[k]
+      });
+    });
+    wrongTop.sort(function (a, z) { return z.n - a.n; });
+    var daily = Object.keys(b.daily).sort().map(function (dd) { return [dd, b.daily[dd]]; });
+    return { trials: b.trials, types: types, wrongTop: wrongTop.slice(0, 12), daily: daily };
+  }
+
+  var scopes = { all: scopeOut(all) };
+  Object.keys(perCls).forEach(function (ck) { scopes[ck] = scopeOut(perCls[ck]); });
+
+  // 児童別。名簿の児童は記録がなくても行を出す（「まだやっていない」が見えるように）。
+  // 期間内の記録が1件も無いクラスも同じ形で出す（未実施児童が全員 '–' の表になる）。
+  var students = {};
+  Object.keys(classes).forEach(function (ck) {
+    var bk = (perCls[ck] || { kids: {} }).kids, kids = [];
+    Object.keys(roster).forEach(function (m) {
+      if (roster[m].ck !== ck) return;
+      var st = bk[m] || { name: roster[m].name, no: roster[m].no, tries: 0, miss: 0, t: {} };
+      var wMax = 0, wType = '', t = {};
+      order.forEach(function (ty) {
+        var o = recallOut_(st.t[ty]);
+        if (!o.n) return;
+        t[ty] = { n: o.n, ms: o.ms, cv: o.cv, sl: o.sl };
+        // 試行が少ないとばらつきが不安定なので、weak_child と同じく5回以上の型だけ候補にする
+        if (o.n >= 5 && o.cv > wMax) { wMax = o.cv; wType = ty; }
+      });
+      kids.push({ no: st.no, name: st.name, tries: st.tries, miss: st.miss,
+                  wobble: wMax, wobbleType: wType ? (UNIT.types[wType] || wType) : '', t: t });
+    });
+    kids.sort(function (a, z) { return a.no - z.no; });
+    students[ck] = kids;
+  });
+
+  // 「遅い」の段階（b）。同じ学年・同じ型の児童の分布と比べる（秒の固定閾値は使わない）
+  var flat = [];
+  Object.keys(students).forEach(function (ck) {
+    students[ck].forEach(function (k) { flat.push({ grade: classes[ck].grade, t: k.t }); });
+  });
+  var norms = gradeNorms_(flat);
+  Object.keys(students).forEach(function (ck) {
+    var nm = norms[classes[ck].grade] || {};
+    students[ck].forEach(function (k) {
+      Object.keys(k.t).forEach(function (ty) {
+        var o = k.t[ty];
+        o.b = o.n >= SLOW_MIN_TRIES_ ? slowBand_(o.ms, nm[ty]) : -1;
+        // 偏差値。速いほど高い（50−10×頑健z）。se は偏差値の標準誤差（その子の対数時間のばらつき÷√回数）
+        if (o.b >= 0) {
+          o.dv = Math.round(50 - 10 * slowZ_(o.ms, nm[ty]));
+          o.se = Math.round(10 * (o.sl / Math.sqrt(o.n)) / nm[ty].s * 10) / 10;
+        }
+      });
+      markSelfSlow_(k.t);
+    });
+  });
+  // クラス・全体の型平均も同じ分布に当てる。全体は学年が1つのときだけ（学年をまたぐ分布は無い）
+  var grades = {};
+  Object.keys(classes).forEach(function (ck) { grades[classes[ck].grade] = true; });
+  Object.keys(scopes).forEach(function (sk) {
+    var g = sk === 'all' ? (Object.keys(grades).length === 1 ? Object.keys(grades)[0] : null)
+                         : (classes[sk] ? classes[sk].grade : null);
+    var nm = g != null ? (norms[g] || {}) : {};
+    Object.keys(scopes[sk].types).forEach(function (ty) {
+      var o = scopes[sk].types[ty];
+      o.b = o.n ? slowBand_(o.ms, nm[ty]) : -1;
+    });
+  });
+
+  var clsList = Object.keys(classes).map(function (k) { return classes[k]; })
+    .sort(function (a, b) {
+      return a.grade - b.grade ||
+        (a.room < b.room ? -1 : a.room > b.room ? 1 : 0);
+    });
+
+  // 年度選択肢: 最古の記録が属する年度から今年度まで（記録がなければ今年度のみ）
+  var years = [curFy];
+  if (minTs) {
+    var firstFy = fyOfTime_(minTs);
+    for (var y = curFy - 1; y >= firstFy; y--) years.push(y);
+  }
+
+  return {
+    span: span,
+    fy: viewFy,
+    years: years,
+    days: days,
+    at: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'M/d H:mm'),
+    wobble: wobble, slowMinKids: SLOW_MIN_KIDS_, slowMinTries: SLOW_MIN_TRIES_,
+    norms: norms, selfGap: SELF_GAP_DV_,
+    order: order, types: UNIT.types,
+    classes: clsList,
+    scopes: scopes,
+    students: students
+  };
+}
+
+/* ============================================================
+ *  Unit.gs の契約検査
+ *
+ *  新しい単元を増やしたとき、宣言の漏れや形のずれをここが拾う。
+ *  setup() の末尾と、教師画面の読み込み（getConfigForUI）で呼ばれる。
+ *  検査は宣言と gen の実働の両方を見る。宣言だけ合っていても、
+ *  実際に gen が返す形がずれていれば画面は壊れるため。
+ * ============================================================ */
+
+/* ============================================================
+ *  学年の色（全単元共通の配色の正本）
+ *
+ *  学年ごとに「進みの色」を1色持つ（タイマーの帯・せいかい数・いま打つ欄）。
+ *  どの学年も背景 #101728 の黒で、まちがい・注意は共通の赤 #FF1A30 を使う。
+ *  7色は check-palette.mjs で、背景・白文字・赤と見分けられることを実測して決めた。
+ *
+ *  単元がもう1色使いたいとき（units の単位色、slotColor）は、別の学年の色を使う。
+ *  ただし自分の学年の色と色覚タイプによって同じに見える組があるので、
+ *  使ってよい色は GRADE_EXTRA_ に限る（validateUnit_ が検査する）。
+ * ============================================================ */
+var GRADE_ACCENT_ = { 1: '#F1B1E4', 2: '#49B9DF', 3: '#35D0A5', 4: '#8A6CE5', 5: '#D4D454', 6: '#E4B195' };
+var ALERT_COLOR_ = '#FF1A30';
+/**
+ * 学年ごとに、もう1色として使ってよい別学年の色。
+ * 自分の学年の色と、一般・1型・2型・3型のどれでも色差18以上、
+ * または明るさの比1.25以上（その場合は文字や形が別であること）の組だけを残した。
+ * 例：3年はからし（1型で色差16）・そら（3型で4）・あんず（1型で4）が落ちる。
+ */
+var GRADE_EXTRA_ = {
+  1: ['#49B9DF', '#35D0A5', '#8A6CE5'],
+  2: ['#F1B1E4', '#8A6CE5', '#D4D454', '#E4B195'],
+  3: ['#F1B1E4', '#8A6CE5'],
+  4: ['#F1B1E4', '#49B9DF', '#35D0A5', '#D4D454', '#E4B195'],
+  5: ['#49B9DF', '#8A6CE5'],
+  6: ['#49B9DF', '#8A6CE5']
+};
+function gradeAccent_() { return UNIT.category === 'special' && UNIT.grade === null ? '#85ADFF' : (GRADE_ACCENT_[UNIT.grade] || GRADE_ACCENT_[3]); }
+
+/**
+ * 「？」（問われている位置を示す印）の色。
+ * 赤はまちがい・注意に予約するので使わない。進みの色と混ざらないよう
+ * GRADE_EXTRA_ の先頭から取る（各学年とも進みの色・赤・背景と見分けられる組だけを残してある）。
+ */
+function questionColor_() {
+  var ex = GRADE_EXTRA_[UNIT.grade] || [];
+  return ex[0] || '#FFFFFF';
+}
+
+/**
+ * 背景の床（成長する図形）の第二の色。第一の色は学年の色。
+ * 第二の色はサイト（単元）ごとに変え、どのサイトの床かが色で分かるようにする。
+ * 単元が UNIT.floorColor で FLOOR_GEMS_ の中から1色を宣言する（validateUnit_ が検査する）。
+ * 割り当ての台帳は design リポジトリの growing-figures/COLORS.md が正本。
+ *
+ * 床の色は薄く塗る背景で、意味を伝える色（進み・まちがい・？の印）ではない。
+ * そのため GRADE_EXTRA_（見分けの検査を通した組）には縛らず、宝石の名の8色から選ぶ。
+ * 学年の色と同じ色だけは禁止（2つの層が見分けられなくなる）。
+ */
+/** 床の図形として選べる生成器（common/index.html に写した generators.js の id） */
+var FLOOR_PATTERNS_ = ['penrose','octagon','heptagon','dodecagon','sunflower','whirl','flower','mandala','decagon','petals','tape','clockstar','pascal','chair','fibgrid','farey','padovan','decimal','scaleswirl','scalefib','circlesphere','carry','borrow','factor720','kake1','kake2'];
+
+var FLOOR_GEMS_ = {
+  amethyst:   '#8A6CE5',   // すみれ
+  sapphire:   '#3D6FD6',   // 青
+  topaz:      '#E0A43A',   // こはく
+  peridot:    '#8DC63F',   // 若葉
+  aquamarine: '#49B9DF',   // 空
+  rose:       '#E27DB0',   // 桃
+  garnet:     '#B5476B',   // えんじ
+  citrine:    '#D4C04A'    // からし
+};
+function floorColor_() {
+  var c = String(UNIT.floorColor || '');
+  if (FLOOR_GEMS_[c]) return FLOOR_GEMS_[c];
+  var ex = GRADE_EXTRA_[UNIT.grade] || [];
+  return ex[1] || ex[0] || FLOOR_GEMS_.amethyst;
+}
+
+/**
+ * UNIT が共通エンジンの契約に合っているかを調べる。
+ * 問題点の文字列の配列を返す（空なら合格）。
+ * エディタからは checkUnit() で手動確認できる。
+ */
+function validateUnit_() {
+  var probs = [];
+  if (typeof UNIT !== 'object' || !UNIT) {
+    return ['UNIT が定義されていません（Unit.gs が読み込まれていない）'];
+  }
+  if (!UNIT.id) probs.push('UNIT.id がありません');
+  if (!UNIT.title) probs.push('UNIT.title がありません');
+  if (!UNIT.teacherTitle) probs.push('UNIT.teacherTitle がありません');
+  // 学年はプレビューのメニューとリポジトリの置き場（apps/grade<学年>/）の分類に使う
+  if (!(UNIT.category === 'special' && UNIT.grade === null) && !(UNIT.grade >= 1 && UNIT.grade <= 6 && UNIT.grade % 1 === 0)) probs.push('UNIT.grade（1〜6、または category:special と grade:null）がありません');
+  if (UNIT.answerOrder && UNIT.answerOrder !== 'unordered') probs.push('answerOrder が不正です');
+  // 単元が足す色（単位の色・目立たせる欄の色）は、別学年の色のうち GRADE_EXTRA_ にあるものだけ
+  var extraOk = GRADE_EXTRA_[UNIT.grade] || [];
+  function checkColor(where, c) {
+    if (!c) return;
+    if (extraOk.indexOf(String(c).toUpperCase()) < 0) {
+      probs.push(where + ' の色 ' + c + ' は ' + UNIT.grade + '年で使えません（使える色: ' + extraOk.join(' ') + '）');
+    }
+  }
+  Object.keys(UNIT.units || {}).forEach(function (k) { checkColor('units.' + k, UNIT.units[k]); });
+  Object.keys(UNIT.slotColor || {}).forEach(function (k) { checkColor('slotColor.' + k, UNIT.slotColor[k]); });
+  if (typeof UNIT.gen !== 'function') probs.push('UNIT.gen がありません');
+
+  // モードの宣言
+  var modeIds = [];
+  if (!Array.isArray(UNIT.modes) || !UNIT.modes.length) {
+    probs.push('UNIT.modes が空です');
+  } else {
+    var seenMode = {};
+    UNIT.modes.forEach(function (m) {
+      if (m.id == null || !m.name) {
+        probs.push('モードの宣言に id または name がありません');
+        return;
+      }
+      if (seenMode[m.id]) probs.push('モード id ' + m.id + ' が重複しています');
+      seenMode[m.id] = true;
+      modeIds.push(m.id);
+    });
+  }
+
+  // 解放条件の参照先とループ
+  (UNIT.modes || []).forEach(function (m) {
+    if (!m.needs) return;
+    if (!(m.needs.mode > 0)) { probs.push('モード ' + m.id + ' の needs.mode がありません'); return; }
+    if (modeIds.indexOf(m.needs.mode) < 0) probs.push('モード ' + m.id + ' の needs.mode=' + m.needs.mode + ' は存在しません');
+    if (!(m.needs.tries > 0)) probs.push('モード ' + m.id + ' の needs.tries がありません');
+  });
+  // 別記録版（pair）の参照先。相方は pair を持たない実在のモード
+  (UNIT.modes || []).forEach(function (m) {
+    if (!m.pair) return;
+    var b = null;
+    UNIT.modes.forEach(function (x) { if (x.id === m.pair) b = x; });
+    if (!b) probs.push('モード ' + m.id + ' の pair=' + m.pair + ' は存在しません');
+    else if (b.pair) probs.push('モード ' + m.id + ' の pair 先 ' + m.pair + ' も pair を持っています');
+    if (m.needs) probs.push('モード ' + m.id + ' は pair を持つので needs は相方に書いてください');
+  });
+  // 段階解放の閾値は、pair を持たない実在のモードに書く
+  Object.keys(UNIT.nUnlock || {}).forEach(function (k) {
+    var b = null;
+    (UNIT.modes || []).forEach(function (x) { if (String(x.id) === String(k)) b = x; });
+    if (!b) probs.push('UNIT.nUnlock のモード ' + k + ' は modes にありません');
+    else if (b.pair) probs.push('UNIT.nUnlock のモード ' + k + ' は pair を持つので、相方に書いてください');
+    else if (!(Number(UNIT.nUnlock[k]) > 0)) probs.push('UNIT.nUnlock のモード ' + k + ' の値は正の数にしてください');
+  });
+  // ループ検出（AがB、BがA を必要とする形だと永遠に開かない）
+  modeIds.forEach(function (id) {
+    var cur = id, hops = 0;
+    while (cur && hops < 10) {
+      var m = null;
+      UNIT.modes.forEach(function (x) { if (x.id === cur) m = x; });
+      if (!m || !m.needs) break;
+      cur = m.needs.mode; hops++;
+      if (cur === id) { probs.push('モード ' + id + ' の解放条件がループしています'); break; }
+    }
+  });
+
+  if (!UNIT.types || !Object.keys(UNIT.types).length) probs.push('UNIT.types が空です');
+  if (!UNIT.digitCap) probs.push('注意：UNIT.digitCap がありません（自動確定の桁数が決められません）');
+
+  if (UNIT.floorColor !== undefined) {
+    if (!FLOOR_GEMS_[UNIT.floorColor]) probs.push('UNIT.floorColor は ' + Object.keys(FLOOR_GEMS_).join('/') + ' のどれかにしてください');
+    else if (FLOOR_GEMS_[UNIT.floorColor].toUpperCase() === String(gradeAccent_()).toUpperCase()) probs.push('UNIT.floorColor が学年の色と同じです（床の2つの層が見分けられません）');
+  }
+  if (UNIT.floorPattern !== undefined && FLOOR_PATTERNS_.indexOf(UNIT.floorPattern) < 0) {
+    probs.push('UNIT.floorPattern は ' + FLOOR_PATTERNS_.join('/') + ' のどれかにしてください');
+  }
+  if (UNIT.floorPrior !== undefined) {
+    Object.keys(UNIT.floorPrior).forEach(function (m) {
+      if (!(Number(UNIT.floorPrior[m]) > 0)) probs.push('UNIT.floorPrior のモード ' + m + ' は正の数（1分あたりの正答）にしてください');
+    });
+  }
+
+  // 育ちの倍率の既定：単元のモードの id に、0.5〜3 の数
+  if (UNIT.growWeights !== undefined) {
+    var gmIds = modeIds_().map(String);
+    Object.keys(UNIT.growWeights).forEach(function (m) {
+      var w = Number(UNIT.growWeights[m]);
+      if (gmIds.indexOf(String(m)) < 0) probs.push('UNIT.growWeights のモード ' + m + ' は modes にありません');
+      else if (!(w >= GROW_W_MIN_ && w <= GROW_W_MAX_)) probs.push('UNIT.growWeights のモード ' + m + ' は ' + GROW_W_MIN_ + '〜' + GROW_W_MAX_ + ' の数にしてください');
+    });
+  }
+
+  // 設定キーは defaults に宣言があること（無いと config_() が拾えず保存も効かない）
+  (UNIT.settings || []).forEach(function (s) {
+    if (!s.key) { probs.push('UNIT.settings に key の無い項目があります'); return; }
+    if (BASE_DEFAULTS[s.key] !== undefined) probs.push('UNIT.settings のキー ' + s.key + ' は共通の設定名と重なっています');
+    if ((UNIT.defaults || {})[s.key] === undefined) probs.push('UNIT.settings のキー ' + s.key + ' が UNIT.defaults にありません');
+    if (s.type !== undefined && s.type !== 'text' && s.type !== 'number' && s.type !== 'onoff') probs.push('UNIT.settings のキー ' + s.key + ' の type は text/number/onoff のどれかにしてください');
+    if (s.type === 'onoff' && [0, 1].indexOf(Number((UNIT.defaults || {})[s.key])) < 0) probs.push('UNIT.settings のキー ' + s.key + ' は onoff なので、既定値は 0 か 1 にしてください');
+    if (s.type !== 'text' && s.type !== 'onoff' && (s.min == null || s.max == null)) probs.push('注意：UNIT.settings のキー ' + s.key + ' に min/max がありません');
+  });
+
+  // gen の実働検査。モードごとに固定シードで引いて、返す形を見る
+  // 同じ指摘を60回分並べないよう、重複は1件にまとめる
+  var seenTypes = {}, said = {};
+  function say(msg) { if (!said[msg]) { said[msg] = true; probs.push(msg); } }
+  function warn(msg) { say('注意：' + msg); }
+  if (typeof UNIT.gen === 'function') {
+    modeIds.forEach(function (mid) {
+      var rand = rng_(20260903 + Number(mid));
+      for (var i = 0; i < 60; i++) {
+        var it;
+        try { it = UNIT.gen(rand, Number(mid)); }
+        catch (e) { say('gen(モード' + mid + ') が例外: ' + e.message); break; }
+        if (!it || typeof it !== 'object') { say('gen(モード' + mid + ') が問題を返しませんでした'); break; }
+        if (!it.t || !UNIT.types[it.t]) say('gen(モード' + mid + ') の型 ' + it.t + ' が UNIT.types にありません');
+        else seenTypes[it.t] = true;
+        if (typeof it.tag !== 'string' || !it.tag) say('gen(モード' + mid + ') の tag が文字列ではありません');
+        // ',' は log の miss_items / wrong_items の区切り。含むと mistakes シートと誤り数の集計で1件が割れる
+        else if (/[|\n",]/.test(it.tag)) say('gen(モード' + mid + ') の tag に | ・,・改行・" が含まれています: ' + it.tag);
+        // q が空でも、まきじゃく・はかり・図で問う型は正しい
+        if (!Array.isArray(it.q)) say('gen(モード' + mid + ') の q が配列ではありません');
+        else if (!it.q.length && !it.ruler && !it.dial && !it.fig) say('gen(モード' + mid + ') の q が空です（図や道具での出題なら正しい）');
+        else if (it.q.some(function (x) { return x === undefined || (typeof x === 'number' && isNaN(x)); })) say('gen(モード' + mid + ') の q に undefined/NaN があります');
+        if (!Array.isArray(it.f) || !it.f.length) say('gen(モード' + mid + ') の f が空です');
+        else {
+          var seenF = {};
+          it.f.forEach(function (f) {
+            if (seenF[f]) say('gen(モード' + mid + ') の f に重複があります');
+            seenF[f] = true;
+            var a = it.ans ? it.ans[f] : undefined;
+            if (a === undefined || a === null || isNaN(Number(a))) say('gen(モード' + mid + ') の ans[' + f + '] が数値ではありません');
+            else {
+              var dc = (UNIT.digitCap || {})[it.t] || (UNIT.digitCap || {})[mid];
+              // 欄の宣言が無いと答えの桁数がそのまま確定タイミングになる（桁数がヒントとして漏れる）
+              if (!dc) warn('digitCap に型 ' + it.t + '（またはモード ' + mid + '）の宣言がありません');
+              else if (dc[f] === undefined) warn('digitCap の型 ' + it.t + ' に欄 ' + f + ' の宣言がありません（答えの桁数で確定されます）');
+              else if (dc[f] < String(a).length) say('digitCap の ' + f + ' = ' + dc[f] + ' が答え ' + a + ' の桁数より小さいです（モード' + mid + '、型 ' + it.t + '）');
+            }
+            // byTotal の単位は scale の換算率が無いと合計が合わない
+            if (UNIT.byTotal && UNIT.byTotal(it)) {
+              var k = (UNIT.scale || {})[f];
+              if (!k) say('UNIT.scale に欄 ' + f + ' の換算率がありません（byTotal の判定に必要）');
+            }
+          });
+        }
+        // 採点の合計判定は、児童側（index.html の isRight）が ruler/dial の有無、
+        // サーバー側（match_）が UNIT.byTotal で切り替える。両者がずれると
+        // 正しく答えた児童が「まちがい」になるので、一致をここで検査する
+        var wantsTotal = UNIT.byTotal ? !!UNIT.byTotal(it) : false;
+        if (wantsTotal !== !!(it.ruler || it.dial)) say('gen(モード' + mid + ') の型 ' + it.t + ': byTotal=' + wantsTotal + ' ですが ruler/dial 出題が ' + !!(it.ruler || it.dial) + ' です（児童側は ruler/dial で合計判定するため正答が誤採点になります）');
+        if (it.rows !== undefined) {
+          var us = String(it.rows).split('').filter(function (c) { return c === '_'; }).length;
+          if (us !== (it.f || []).length) say('gen(モード' + mid + ') の rows の空欄数 ' + us + ' が f の数 ' + (it.f || []).length + ' と合いません');
+        }
+        if (it.veil !== undefined && it.veil !== null) {
+          if (!(it.veil > 0) || it.veil > (it.f || []).length) say('gen(モード' + mid + ') の veil ' + it.veil + ' が f の範囲外です');
+        }
+        if (it.fig !== undefined && it.fig !== null) {
+          var fs = String(it.fig);
+          if (fs.indexOf('<svg') !== 0 || fs.slice(-6) !== '</svg>') say('gen(モード' + mid + ') の fig が <svg>...</svg> ではありません');
+          if (fs.length > 4000) say('gen(モード' + mid + ') の fig が大きすぎます（' + fs.length + '字）');
+          if (/NaN|undefined/.test(fs)) say('gen(モード' + mid + ') の fig に NaN/undefined が含まれています');
+        }
+      }
+    });
+    // 宣言した型が1つも出ないと、練習の選択肢に現れても実際には出ない
+    Object.keys(UNIT.types || {}).forEach(function (t) {
+      if (!seenTypes[t]) warn('型 ' + t + ' は全モードで出題されませんでした（宣言だけ残っている可能性）');
+    });
+    // 同じシードで同じ並びが出ること（児童が「同じ問題が出る」と迷わないため）
+    var r1 = rng_(7), r2 = rng_(7);
+    try {
+      var tags1 = [], tags2 = [];
+      for (var j = 0; j < 50; j++) { tags1.push(UNIT.gen(r1, Number(modeIds[0])).tag); }
+      for (var k2 = 0; k2 < 50; k2++) { tags2.push(UNIT.gen(r2, Number(modeIds[0])).tag); }
+      if (JSON.stringify(tags1) !== JSON.stringify(tags2)) probs.push('gen がシードに対して決定的ではありません');
+    } catch (e2) { /* gen の例外は上で拾う */ }
+  }
+  return probs;
+}
+
+/** 検査結果をキャッシュする（教師画面の読み込みで毎回 gen 60回×モード数を回さないため） */
+function unitCheck_() {
+  var hit = cache_().get('unitcheck');
+  if (hit) return JSON.parse(hit);
+  var probs;
+  try { probs = validateUnit_(); } catch (e) { probs = ['単元の検査中に失敗: ' + e.message]; }
+  cache_().put('unitcheck', JSON.stringify(probs), TTL.roster);
+  return probs;
+}
+
+/** エディタから手動で走らせる確認口。問題があれば文字列で列挙して返す */
+function checkUnit() {
+  var probs = validateUnit_();
+  return probs.length ? ('Unit.gs の確認:\n- ' + probs.join('\n- ')) : 'Unit.gs: 問題ありません';
+}
+
+/* ============================================================
+ *  自動セットアップ（手動実行は不要）
+ * ============================================================ */
+
+/**
+ * 準備が要るのは設置直後と版を上げた直後だけ。通常はプロパティを1つ読んで終わる。
+ *
+ * 以前は「済んだ印」をスクリプトキャッシュに置いていた。キャッシュは消えるので、
+ * 消えた直後に40人が同時に開くと、40の実行が同じシート操作を並行に走らせる。
+ * ensureSheets_ は書き込みを含み、ensureSchema_ は30秒待つロックを取るので、
+ * 実行は直列化したまま同時実行の枠（1ユーザーあたり30）を埋め、
+ * その間に来た boot / startSession が実行できなくなる。
+ * 「40人中1人だけ動いた」の主因はここ。
+ *
+ * 印は消えないプロパティに持ち、ロックは取れなければ待たずに諦める。
+ * 準備は誰か1つの実行がやれば足りる。待つ側に回るくらいなら、
+ * その実行はそのまま先へ進めたほうがよい（シートは既にあることがほとんど）。
+ */
+var READY_KEY = 'ready_schema';
+
+function ensureReady_() {
+  // 速い順に見る。キャッシュは消えるので判断の正本ではないが、
+  // 消えていない間はプロパティの読み取り（毎回100ms前後かかることがある）を省ける
+  if (cache_().get('ready') === String(SCHEMA_VERSION)) return;
+
+  var props = props_();
+  if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) {
+    cache_().put('ready', String(SCHEMA_VERSION), 3600);
+    return;
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(0)) return;              // 誰かが準備中。待たない
+  try {
+    if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) return;
+    ensureSheets_();
+    ensureSchema_();
+    ensureTriggers_();
+    signKey_();                              // 署名の鍵はロックの中で1回だけ作る（同時に作ると鍵が割れる）
+    props.setProperty(READY_KEY, String(SCHEMA_VERSION));
+    cache_().put('ready', String(SCHEMA_VERSION), 3600);
+  } catch (e) {
+    console.error('ensureReady_ 失敗: ' + e.message);   // 印を立てない＝次回再挑戦
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
+  }
+}
+
+/**
+ * スキーマの自動移行。手動実行は不要。
+ * 呼ぶのは ensureReady_ だけで、そこで排他ロックを取っている。
+ */
+function ensureSchema_() {
+  var props = props_();
+  if (Number(props.getProperty('schema_version')) >= SCHEMA_VERSION) return;
+  migrateSummaryV2_();
+  migrateModeNameAndWrong_();
+  props.setProperty('schema_version', String(SCHEMA_VERSION));
+}
+
+/** v1 (kind / best_count なし) から v2 へ。既存データは本番・更新1回として扱う */
+function migrateSummaryV2_() {
+  var sh = ss_().getSheetByName(SHEETS.SUMMARY);
+  if (!sh || sh.getLastRow() === 0) return;
+  var head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  if (head.indexOf('kind') >= 0) return;                 // 既に v2
+
+  sh.insertColumnAfter(3);
+  sh.getRange(1, 4).setValue('kind').setFontWeight('bold');
+  var n = sh.getLastRow() - 1;
+  if (n > 0) sh.getRange(2, 4, n, 1).setValue('r');
+
+  var last = sh.getLastColumn() + 1;
+  sh.getRange(1, last).setValue('best_count').setFontWeight('bold');
+  if (n > 0) sh.getRange(2, last, n, 1).setValue(1);      // 少なくとも1回は達成している
+}
+
+/**
+ * log / summary / daily に「モード名」列を追加する。
+ * 既存データの「モード名」は、その行の mode 番号から逆引きして埋める。
+ * 各シートの見た目（タブ色・A1の注記）もここで整える。冪等。
+ */
+function migrateModeNameAndWrong_() {
+  function insertModeName(sh, modeCol) {
+    if (!sh || sh.getLastRow() === 0) return;
+    var head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+    if (head.indexOf('モード名') >= 0) return;               // 済み
+    sh.insertColumnAfter(modeCol);
+    sh.getRange(1, modeCol + 1).setValue('モード名').setFontWeight('bold');
+    var n = sh.getLastRow() - 1;
+    if (n > 0) {
+      var modes = sh.getRange(2, modeCol, n, 1).getValues();
+      var names = modes.map(function (r) { return [modeName_(Number(r[0])) || '']; });
+      sh.getRange(2, modeCol + 1, n, 1).setValues(names);
+    }
+  }
+
+  insertModeName(ss_().getSheetByName(SHEETS.LOG), LOG_COL_.MODE + 1);   // mode 列（1始まり）の直後に入れる
+  insertModeName(ss_().getSheetByName(SHEETS.SUMMARY), 2);
+  insertModeName(ss_().getSheetByName(SHEETS.DAILY), 3);
+
+  applyFriendlyStyling_();
+}
+
+/**
+ * どのシートを見ればよいか一目で分かるよう、タブに色をつけ、
+ * 直接編集しないほうがよいシートには A1 に注記を入れる。冪等。
+ */
+function applyFriendlyStyling_() {
+  var ss = ss_();
+  var technical = { config: '#B7B7B7', class_config: '#B7B7B7', roster: '#4A86E8',
+                     log: '#B7B7B7', daily: '#B7B7B7',
+                     coop: '#B7B7B7', coop_log: '#B7B7B7', coop_save: '#B7B7B7' };
+  var friendly = { summary: '#93C47D', weak_child: '#93C47D', weak_class: '#93C47D' };
+
+  Object.keys(technical).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (sh) sh.setTabColor(technical[name]);
+  });
+  Object.keys(friendly).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (sh) sh.setTabColor(friendly[name]);
+  });
+
+  var notes = {
+    roster: 'ここに児童を登録します（email／学年／組／番号／氏名）。\n学年・組の表記はそろえてください（「2」に統一。「2組」などを混ぜない）。\n記録・分析（weak_child など）の対象になるのは、email と氏名の両方が入っている児童だけです。\n名簿にないアカウントも「おためし」として全モードを使えますが、記録は一切されません。',
+    config: '各種設定です。通常は教師用ページ（?page=teacher）から変更してください。\n直接編集した場合、児童への反映は最大1分遅れます（教師用ページから保存すると即時）。',
+    class_config: 'クラスごとに、どのモードを児童に見せるかの設定です。チェックの無いモードは表示されません。\n' +
+                  'A列は roster の「学年」「組」から作る「学年-組」と1文字も違ってはいけません（例: 3-1）。\n' +
+                  '通常は教師用ページ（?page=teacher）から操作してください。直接編集した場合、児童への反映は最大1分遅れます。',
+    log: '1回のプレイ（1試行）を1行で記録した内部データです。直接は読まなくてよいシートです。\n個々の誤答を読みたいときは mistakes シートを、傾向を見たいときは weak_child / weak_class を見てください。',
+    daily: '当日の学級内ランキングを計算するための内部データです。直接は見なくてよいシートです。',
+    summary: '児童ごと・モードごと・制限時間ごとの累計成績とハイスコアです。kind列は r=本番／p=練習です。',
+    coop: '協力モードのセッション履歴です（1開始＝1行）。教師用ページの「きょうりょく」から操作してください。',
+    coop_log: '協力モードの提出記録（内部データ）です。直接は読まなくてよいシートです。',
+    coop_save: '協力モードの保存データです（再生用のスナップショット）。教師用ページの「きょうりょく」から読み込みます。'
+  };
+  Object.keys(notes).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (sh) sh.getRange('A1').setNote(notes[name]);
+  });
+}
+
+function ensureSheets_() {
+  var ss = ss_(), defs = {};
+  defs[SHEETS.CONFIG] = ['key', 'value'];
+  defs[SHEETS.ROSTER] = ['email', '学年', '組', '番号', '氏名'];
+  defs[SHEETS.CLASS] = classHead_();
+  defs[SHEETS.LOG] = LOG_HEAD_;
+  defs[SHEETS.DAILY] = ['date', 'class', 'mode', 'モード名', 'limit_sec', 'email', 'best', 'ts'];
+  defs[SHEETS.SUMMARY] = ['email', 'mode', 'モード名', 'limit_sec', 'kind',
+                          'tries', 'total_correct', 'total_attempts', 'best', 'best_count'];
+  defs[SHEETS.WCHILD] = [];
+  defs[SHEETS.WCLASS] = [];
+  defs[SHEETS.COOP] = ['id', 'class', 'pattern', 'seed', 'mode', 'gn', 'groups',
+                       'names', 'nos', 'start', 'end', 'status', 'total', 'prior', 'origins', 'origin_pos', 'grow_w'];
+  defs[SHEETS.COOPLOG] = ['session', 't', 'email', 'correct', 'mode'];
+  defs[SHEETS.COOPSAVE] = ['save_id', 'name', 'saved', 'session', 'payload'];
+  defs[SHEETS.USED] = ['token', 'ts'];
+
+  // 旧形式の class_config（フラグ単位の allow_* 列）が残っていると、
+  // 列がずれたまま読み込んで公開設定を誤読する。見出しごと作り直す。
+  // モード単位に変えた時点で中身は読めないので、残しても意味がない。
+  var made = false, reset = {};
+  var cls = ss.getSheetByName(SHEETS.CLASS);
+  if (cls && cls.getLastRow() > 0) {
+    var h0 = cls.getRange(1, 1, 1, cls.getLastColumn()).getValues()[0].map(String);
+    var hasMode = h0.some(function (x) { return x.indexOf('mode_') === 0; });
+    // 作り直したら made を立てる。キャッシュに旧形式の読み取り結果が残ったままだと、
+    // 消した直後の最大60秒、公開設定を古い列のまま返し続ける。
+    if (!hasMode) {
+      cls.clear();
+      // clear() の直後に getLastRow() が0を返すとは限らない（保留中の変更が
+      // 反映される保証が無い）。見出しを書くかどうかをそこに賭けると、
+      // 見出しの無い class_config が残り、公開設定が全部オフのまま読まれる。
+      // 消したことは自分で覚えておく。
+      reset[SHEETS.CLASS] = true;
+      made = true;
+    }
+  }
+
+  for (var name in defs) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) { sh = ss.insertSheet(name); made = true; }
+    if (defs[name].length && (reset[name] || sh.getLastRow() === 0)) {
+      sh.getRange(1, 1, 1, defs[name].length).setValues([defs[name]]).setFontWeight('bold');
+      sh.setFrozenRows(1);
+    }
+  }
+  // 書式の指定は書き込み。毎回やると、開いただけの実行が全部シートに書きに行く
+  if (made) ss.getSheetByName(SHEETS.DAILY).getRange('A:A').setNumberFormat('@');
+
+  var cf = ss.getSheetByName(SHEETS.CONFIG);
+  if (cf.getLastRow() <= 1) {
+    var def = defaults_(), rows = [];
+    for (var k in def) rows.push([k, def[k]]);
+    cf.getRange(2, 1, rows.length, 2).setValues(rows);
+    made = true;
+  }
+  if (made) {
+    cache_().remove('config'); cache_().remove('classcfg');
+    applyFriendlyStyling_();
+  }
+  return made;
+}
+
+function ensureTriggers_() {
+  // まとめたプロジェクトでは、全単元を回す *All を1つずつ置く（単元ごとには置かない）
+  var want = isMulti_() ? { nightlyAggregateAll: 23, rolloverRosterAll: 2, resetDailyAll: 3 }
+                        : { nightlyAggregate: 23, rolloverRoster: 2, resetDaily: 3 }, have = {};
+  ScriptApp.getProjectTriggers().forEach(function (t) { have[t.getHandlerFunction()] = true; });
+  for (var fn in want) {
+    if (!have[fn]) ScriptApp.newTrigger(fn).timeBased().atHour(want[fn]).everyDays(1).create();
+  }
+}
+
+/**
+ * 単元の自己紹介を meta シートに書く。ハブの横断分析（apps/hub/Analysis.gs）がこれを読む。
+ * ハブは別プロジェクトなので UNIT.types を直接は読めない。型の定義の正本は Unit.gs のままにし、
+ * ハブへはデータとして渡す（依存の向きを保つ。docs/ANALYSIS_REQUIREMENTS.md「データの取り方」）。
+ *
+ * 書くのは setup と教師画面を開いたときだけ。児童の起動では書かない（「開いただけの実行で書き込まない」）。
+ * 中身が同じなら書かない。
+ */
+var META_SHEET = 'meta';
+function writeMeta_() {
+  var rows = [
+    ['unit_id', String(UNIT.id)],
+    ['grade', Number(UNIT.grade) || 0],
+    ['title', String(UNIT.teacherTitle || UNIT.title || UNIT.id)],
+    ['engine_ver', ENGINE_VER],
+    ['types', JSON.stringify(UNIT.types || {})],
+    ['modes', JSON.stringify((UNIT.modes || []).map(function (m) { return { id: m.id, name: m.name }; }))]
+  ];
+  try {
+    var ss = ss_(), sh = ss.getSheetByName(META_SHEET);
+    if (sh && sh.getLastRow() === rows.length) {
+      var cur = sh.getRange(1, 1, rows.length, 2).getValues();
+      var same = cur.every(function (r, i) { return String(r[0]) === String(rows[i][0]) && String(r[1]) === String(rows[i][1]); });
+      if (same) return false;
+    }
+    if (!sh) sh = ss.insertSheet(META_SHEET);
+    sh.clear();
+    sh.getRange(1, 1, rows.length, 2).setValues(rows);
+    return true;
+  } catch (e) {
+    console.error('writeMeta_ 失敗: ' + e.message);
+    return false;
+  }
+}
+
+/** 承認のために最初に1度だけ実行する */
+function setup() {
+  if (isMulti_()) {
+    ownerOnly_();
+    return unitIds_().map(function (id) { useUnit_(id); return '【' + id + '】' + setupOne_(); }).join('\n\n');
+  }
+  return setupOne_();
+}
+function setupOne_() {
+  props_().deleteProperty(READY_KEY);
+  cache_().remove('ready');
+  cache_().remove('unitcheck');
+  ensureReady_();
+  writeMeta_();
+  return 'セットアップ完了（シート・トリガーを確認しました）\n' + checkUnit();
+}

@@ -106,8 +106,311 @@ function defaults_() {
  *  基盤
  * ============================================================ */
 
-function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
-function cache_() { return CacheService.getScriptCache(); }
+function ss_() { return isMulti_() ? unitSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet(); }
+function cache_() { return isMulti_() ? nsCache_(UNIT.id) : CacheService.getScriptCache(); }
+/** スクリプトのプロパティ。全単元をまとめたプロジェクトでは、名前の頭に単元の id を付けて分ける */
+function props_() { return isMulti_() ? nsProps_(UNIT.id) : PropertiesService.getScriptProperties(); }
+
+/* ============================================================
+ *  全単元を1つの GAS にまとめる（UNIT_DEFS に2単元以上がある時）
+ *
+ *  単元が1つだけのプロジェクト（今までの設置）では、ここは何もしない。
+ *  まとめたプロジェクトでは：
+ *    - URL の ?unit=<id> で単元を選ぶ（doGet）
+ *    - 画面からの呼び出しは apiCall(<id>, 関数名, 引数) を通り、呼ぶ前に UNIT を差し替える
+ *    - 記録は単元ごとのスプレッドシート（今までの単元のスプレッドシートをそのまま使う）
+ *    - 一時保存・プロパティの名前は単元ごとに分ける
+ *    - 毎晩・毎朝の処理は全単元について回す（*All）
+ * ============================================================ */
+
+function isMulti_() {
+  return typeof UNIT_DEFS !== 'undefined' && Object.keys(UNIT_DEFS).length > 1;
+}
+
+/** この実行で使う単元を決める。知らない id なら止める */
+function useUnit_(id) {
+  id = String(id || '');
+  if (typeof UNIT_DEFS === 'undefined' || !Object.prototype.hasOwnProperty.call(UNIT_DEFS, id)) {
+    throw new Error('単元がありません: ' + id);
+  }
+  UNIT = UNIT_DEFS[id];
+  return UNIT;
+}
+
+function unitIds_() { return typeof UNIT_DEFS === 'undefined' ? [] : Object.keys(UNIT_DEFS); }
+
+/** 単元のスプレッドシートの ID を置く場所（単元で分けない、プロジェクト共通のプロパティ） */
+function unitSheetKey_(id) { return 'unit_sheet:' + id; }
+
+var UNIT_SS_MEMO_ = {};
+/**
+ * いまの単元のスプレッドシート。登録が無ければ新しく作って登録する。
+ * 同じ実行の中で開き直しても 2ms 程度（実測 2026-11-05）だが、1回の実行で何十回も呼ぶので覚えておく。
+ */
+function unitSpreadsheet_() {
+  var id = UNIT.id;
+  if (UNIT_SS_MEMO_[id]) return UNIT_SS_MEMO_[id];
+  var gp = PropertiesService.getScriptProperties(), sid = gp.getProperty(unitSheetKey_(id));
+  var ss;
+  if (sid) {
+    ss = SpreadsheetApp.openById(sid);
+  } else {
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      sid = gp.getProperty(unitSheetKey_(id));
+      if (sid) ss = SpreadsheetApp.openById(sid);
+      else {
+        ss = SpreadsheetApp.create('算数TA ' + (UNIT.teacherTitle || UNIT.title || id) + '（' + id + '）');
+        gp.setProperty(unitSheetKey_(id), ss.getId());
+      }
+    } finally { lock.releaseLock(); }
+  }
+  UNIT_SS_MEMO_[id] = ss;
+  return ss;
+}
+
+/**
+ * 移行：今までの単元のスプレッドシートを、まとめたプロジェクトに登録する（エディタから単元ごとに1回）。
+ * 例：registerUnitSheet('kuku', 'https://docs.google.com/spreadsheets/d/xxxx/edit')
+ * 記録はそのスプレッドシートに書き続ける（移し替えない）。
+ */
+function registerUnitSheet(id, urlOrId) {
+  ownerOnly_();
+  useUnit_(id);
+  var s = String(urlOrId || '').trim(), m = s.match(/\/d\/([a-zA-Z0-9_-]{20,})/), sid = m ? m[1] : s;
+  if (!/^[a-zA-Z0-9_-]{20,}$/.test(sid)) throw new Error('スプレッドシートのURLかIDを入れてください: ' + s);
+  var ss = SpreadsheetApp.openById(sid);   // 開けなければここで止まる
+  PropertiesService.getScriptProperties().setProperty(unitSheetKey_(id), sid);
+  delete UNIT_SS_MEMO_[id];
+  return id + ' → ' + ss.getName();
+}
+
+/**
+ * 移行：ハブの links シートの sheet 列（単元の記録スプレッドシート）から、全単元をまとめて登録する（エディタから1回）。
+ * links の id が単元の id と一致する行だけを使う。結果の一覧を返す（登録できなかった単元も書く）。
+ */
+function importUnitSheetsFromHub() {
+  ownerOnly_();
+  var v = hubLinks_(), out = [], done = {};
+  for (var i = 1; i < v.length; i++) {
+    var id = String(v[i][0]).trim(), sheet = String(v[i][8] || '').trim();
+    if (!id || !Object.prototype.hasOwnProperty.call(UNIT_DEFS, id)) continue;
+    if (!sheet) { out.push(id + '\t× links の sheet 列が空'); continue; }
+    try { out.push(id + '\t○ ' + registerUnitSheet(id, sheet)); done[id] = true; }
+    catch (e) { out.push(id + '\t× ' + e.message); }
+  }
+  unitIds_().forEach(function (id) { if (!done[id] && !out.some(function (l) { return l.indexOf(id + '\t') === 0; })) out.push(id + '\t- links に行が無い（最初に開いた時に新しいスプレッドシートを作る）'); });
+  return out.join('\n');
+}
+
+/**
+ * 移行：ハブの links シートの url 列を、まとめたプロジェクトの ?unit=<id> に書き換える（エディタから1回）。
+ * 書き換える前の links シートを links_backup に写して残す。戻す時は restoreHubLinks。
+ */
+function switchHubLinks() {
+  ownerOnly_();
+  var hub = Base.hub(), sh = hub.getSheetByName('links');
+  if (!sh) throw new Error('ハブに links シートがありません');
+  var v = sh.getDataRange().getValues();
+  if (hub.getSheetByName('links_backup')) throw new Error('links_backup が既にあります（戻すなら restoreHubLinks、やり直すなら links_backup を消してから）');
+  var bk = hub.insertSheet('links_backup');
+  bk.getRange(1, 1, v.length, v[0].length).setValues(v);
+  var base = ScriptApp.getService().getUrl(), out = [];
+  if (!base) throw new Error('先にこのプロジェクトをウェブアプリとしてデプロイしてください');
+  for (var i = 1; i < v.length; i++) {
+    var id = String(v[i][0]).trim();
+    if (!Object.prototype.hasOwnProperty.call(UNIT_DEFS, id)) continue;
+    var u = base + '?unit=' + encodeURIComponent(id);
+    sh.getRange(i + 1, 4).setValue(u);
+    out.push(id + '\t' + u);
+  }
+  return out.join('\n') + '\n（ハブの links の保存は最大1分で切り替わる）';
+}
+
+/** switchHubLinks を取り消す：links_backup の url 列を links に戻す */
+function restoreHubLinks() {
+  ownerOnly_();
+  var hub = Base.hub(), sh = hub.getSheetByName('links'), bk = hub.getSheetByName('links_backup');
+  if (!sh || !bk) throw new Error('links または links_backup がありません');
+  var b = bk.getDataRange().getValues(), cur = sh.getDataRange().getValues(), byId = {}, n = 0;
+  for (var i = 1; i < b.length; i++) byId[String(b[i][0]).trim()] = b[i][3];
+  for (var j = 1; j < cur.length; j++) {
+    var id = String(cur[j][0]).trim();
+    if (Object.prototype.hasOwnProperty.call(byId, id)) { sh.getRange(j + 1, 4).setValue(byId[id]); n++; }
+  }
+  return n + ' 行の url を戻した（links_backup は残してある）';
+}
+
+function hubLinks_() {
+  if (!hubRoster_()) throw new Error('先にスクリプトのプロパティ HUB_ID にハブのスプレッドシートの ID を入れてください');
+  var sh = Base.hub().getSheetByName('links');
+  if (!sh) throw new Error('ハブに links シートがありません');
+  return sh.getDataRange().getValues();
+}
+
+/** 登録の一覧（エディタから実行して確かめる） */
+function listUnitSheets() {
+  ownerOnly_();
+  var gp = PropertiesService.getScriptProperties();
+  return unitIds_().map(function (id) { return id + '\t' + (gp.getProperty(unitSheetKey_(id)) || '（未登録：最初に開いた時に新しく作る）'); }).join('\n');
+}
+
+/**
+ * エディタ用の関数は、名前が _ で終わらないので画面（google.script.run）からも直接呼べてしまう。
+ * 所有者がエディタで実行した時だけ動かす（「自分として実行」では、開いた人と所有者が違う）。
+ */
+function ownerOnly_() {
+  var a = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  var e = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+  if (!a || a !== e) throw new Error('この関数は、スプレッドシートの所有者が Apps Script のエディタから実行してください');
+}
+
+/** 名前の頭に単元の id を付ける CacheService（今までの呼び方 get/put/remove/…All をそのまま使える） */
+function nsCache_(id) {
+  var c = CacheService.getScriptCache(), p = 'u:' + id + ':';
+  function pre(keys) { return keys.map(function (k) { return p + k; }); }
+  return {
+    get: function (k) { return c.get(p + k); },
+    put: function (k, v, t) { return t === undefined ? c.put(p + k, v) : c.put(p + k, v, t); },
+    remove: function (k) { return c.remove(p + k); },
+    getAll: function (keys) {
+      var got = c.getAll(pre(keys)), out = {};
+      keys.forEach(function (k) { if (got[p + k] != null) out[k] = got[p + k]; });
+      return out;
+    },
+    putAll: function (m, t) { var o = {}; for (var k in m) o[p + k] = m[k]; return t === undefined ? c.putAll(o) : c.putAll(o, t); },
+    removeAll: function (keys) { return c.removeAll(pre(keys)); }
+  };
+}
+
+/** 名前の頭に単元の id を付ける ScriptProperties */
+function nsProps_(id) {
+  var g = PropertiesService.getScriptProperties(), p = 'u:' + id + ':';
+  return {
+    getProperty: function (k) { return g.getProperty(p + k); },
+    setProperty: function (k, v) { g.setProperty(p + k, v); return this; },
+    deleteProperty: function (k) { g.deleteProperty(p + k); return this; }
+  };
+}
+
+/**
+ * 画面からの呼び出しの入口（まとめたプロジェクトだけで使う）。
+ * 画面の google.script.run.xxx(…) は、画面側の差し替え（multiShim_）でここに来る。
+ * 呼べるのは、今まで画面から直接呼べた関数（プロジェクトに書いた、名前が _ で終わらない大域の関数）と同じ範囲。
+ * 組み込みの関数（eval など）は呼ばせない（呼べると、画面から任意のコードを所有者の権限で動かせてしまう）。
+ */
+var API_DENY_ = { apiCall: 1, doGet: 1, setup: 1, registerUnitSheet: 1, listUnitSheets: 1,
+  nightlyAggregate: 1, rolloverRoster: 1, resetDaily: 1, nightlyAggregateAll: 1, rolloverRosterAll: 1, resetDailyAll: 1,
+  continueAll: 1, include: 1, checkUnit: 1, baseSetHub: 1, baseClearCache: 1,
+  importUnitSheetsFromHub: 1, switchHubLinks: 1, restoreHubLinks: 1 };
+function apiCall(unitId, name, args) {
+  useUnit_(unitId);
+  name = String(name || '');
+  var fn = globalThis[name];
+  // 組み込みの関数（eval・Function など）は呼ばせない。GAS が画面から呼ばせるのも、プロジェクトに書いた関数だけ
+  var native = typeof fn === 'function' && /\[native code\]/.test(Function.prototype.toString.call(fn));
+  if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name) || API_DENY_[name] || typeof fn !== 'function' || native) {
+    throw new Error('呼べない関数です: ' + name);
+  }
+  return fn.apply(null, Array.isArray(args) ? args : []);
+}
+
+/**
+ * 画面の google.script.run を、apiCall を通るものに差し替える小さな script。
+ * index.html / teacher.html の head でテンプレートとして埋め込む。単元が1つのプロジェクトでは空。
+ * withSuccessHandler / withFailureHandler / withUserObject のつなぎ方は今までどおり使える。
+ */
+function multiShim_() {
+  if (!isMulti_()) return '';
+  return '<script>(function(){' +
+    'if(typeof google==="undefined"||!google.script||!google.script.run)return;' +
+    'var real=google.script.run,KEY=' + JSON.stringify(String(UNIT.id)) + ';' +
+    'var W={withSuccessHandler:1,withFailureHandler:1,withUserObject:1};' +
+    'function mk(h){return new Proxy({},{get:function(t,k){' +
+    'if(W[k])return function(f){var n={};for(var x in h)n[x]=h[x];n[k]=f;return mk(n);};' +
+    'return function(){var r=real;for(var x in h)r=r[x](h[x]);' +
+    'return r.apiCall(KEY,k,Array.prototype.slice.call(arguments));};}});}' +
+    'try{Object.defineProperty(google.script,"run",{value:mk({}),configurable:true,writable:true});}' +
+    'catch(e){google.script.run=mk({});}})();</script>';
+}
+
+/** この単元の画面の URL。まとめたプロジェクトでは ?unit=<id> を付ける */
+function unitUrl_(extra) {
+  var u = '';
+  try { u = ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
+  if (!u) return '';
+  var q = [];
+  if (isMulti_()) q.push('unit=' + encodeURIComponent(UNIT.id));
+  if (extra) q.push(extra);
+  return q.length ? u + (u.indexOf('?') >= 0 ? '&' : '?') + q.join('&') : u;
+}
+
+/**
+ * 毎晩・毎朝の処理を全単元について回す。1単元が失敗しても他は続ける。
+ * 1回の実行は6分で止められる（GAS の上限）。単元ごとのプロジェクトでは単元ごとに6分あったが、
+ * まとめると全単元で6分になる。そこで4分半を越えたら残りの単元をプロパティに残し、
+ * 1分後に continueAll で続きを回す（残りが無くなるまで繰り返す）。
+ */
+var ALL_BUDGET_MS_ = 270 * 1000;
+var ALL_TODO_KEY_ = 'all_todo';
+var ALL_JOBS_ = {
+  nightlyAggregate: function () { nightlyAggregate(); },
+  rolloverRoster: function () { rolloverRoster(new Date()); },
+  resetDaily: function () { resetDaily(); }
+};
+function runAll_(job, ids) {
+  var gp = PropertiesService.getScriptProperties(), start = Date.now(), errs = [];
+  ids = (ids || unitIds_()).slice();
+  while (ids.length) {
+    if (Date.now() - start > ALL_BUDGET_MS_) {
+      var todo = {};
+      try { todo = JSON.parse(gp.getProperty(ALL_TODO_KEY_) || '{}'); } catch (e) {}
+      todo[job] = ids;
+      gp.setProperty(ALL_TODO_KEY_, JSON.stringify(todo));
+      ScriptApp.newTrigger('continueAll').timeBased().after(60 * 1000).create();
+      break;
+    }
+    var id = ids.shift();
+    try { useUnit_(id); ALL_JOBS_[job](); }
+    catch (e) { errs.push(id + ': ' + (e && e.message || e)); console.error(job + ' ' + id + ' 失敗: ' + (e && e.message || e)); }
+  }
+  return errs;
+}
+function nightlyAggregateAll() { return runAll_('nightlyAggregate'); }
+function rolloverRosterAll() { return runAll_('rolloverRoster'); }
+function resetDailyAll() { return runAll_('resetDaily'); }
+/** 時間切れで残った単元の続き（runAll_ が1回だけの自動実行で呼ぶ） */
+function continueAll() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'continueAll') ScriptApp.deleteTrigger(t);
+  });
+  var gp = PropertiesService.getScriptProperties(), todo = {};
+  try { todo = JSON.parse(gp.getProperty(ALL_TODO_KEY_) || '{}'); } catch (e) {}
+  gp.deleteProperty(ALL_TODO_KEY_);
+  var errs = [];
+  Object.keys(todo).forEach(function (job) {
+    if (ALL_JOBS_[job]) errs = errs.concat(runAll_(job, todo[job].filter(function (id) { return unitIds_().indexOf(id) >= 0; })));
+  });
+  return errs;
+}
+
+/** 名簿をハブから Base.gs で読むか（Base.gs が貼られ、ハブが設定されている時） */
+function hubRoster_() {
+  try { return typeof Base !== 'undefined' && !!Base.hubId(); } catch (e) { return false; }
+}
+
+/** 全単元をまとめたプロジェクトで、単元を選ばずに開いた時の一覧 */
+function unitIndexPage_() {
+  var base = '';
+  try { base = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+  var items = unitIds_().map(function (id) {
+    var u = UNIT_DEFS[id];
+    return '<li><a href="' + base + '?unit=' + encodeURIComponent(id) + '">' + String(u.title || id).replace(/[<>&]/g, '') + '</a></li>';
+  }).join('');
+  return HtmlService.createHtmlOutput('<base target="_top"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<div style="font-family:sans-serif;font-size:20px;line-height:2;padding:16px"><ul>' + items + '</ul></div>').setTitle('算数タイムアタック');
+}
 
 function sh_(name) {
   var s = ss_().getSheetByName(name);
@@ -213,6 +516,12 @@ function fyStartMs_(fy) { return new Date(fy, 3, 1).getTime(); }
  */
 function rosterRows_(fy) {
   if (fy === undefined) fy = curSchoolYear_();
+  if (hubRoster_()) {
+    // ハブの名簿を Base.gs で読む（IMPORTRANGE をやめる）。過去年度はハブの roster_<年度>、
+    // 無ければ今までどおり単元のスプレッドシートの roster_<年度>（4/1 に単元ごとに残していた分）
+    var hr = Base.roster(fy).map(function (r) { return { mail: r.mail, grade: r.grade, cls: r.cls, no: r.no, name: r.name }; });
+    if (hr.length || fy === curSchoolYear_()) return hr;
+  }
   var s;
   if (fy === curSchoolYear_()) {
     s = sh_(SHEETS.ROSTER);                    // 現在年度は常にライブの roster
@@ -556,6 +865,11 @@ function include(name) {
 }
 
 function doGet(e) {
+  if (isMulti_()) {
+    var uid = (e && e.parameter && e.parameter.unit) || '';
+    if (!uid || !Object.prototype.hasOwnProperty.call(UNIT_DEFS, uid)) return unitIndexPage_();
+    useUnit_(uid);
+  }
   ensureReady_();
   var page = (e && e.parameter && e.parameter.page) || '';
   if (page === 'teacher') {
@@ -905,7 +1219,7 @@ var TOKEN_DAYS_ = 7;                       // 端末に退避した記録を受�
 var SIGN_KEY_ = 'sign_key';
 
 function signKey_() {
-  var props = PropertiesService.getScriptProperties();
+  var props = props_();
   var k = props.getProperty(SIGN_KEY_);
   if (!k) {
     // 通常は ensureReady_ がロックの中で作る。ここは作られていなかったときの保険
@@ -1293,6 +1607,7 @@ function rolloverRoster(now) {
   now = (now instanceof Date) ? now : new Date();   // トリガー呼び出しはイベントobjが来る
   var tz = Session.getScriptTimeZone();
   if (Utilities.formatDate(now, tz, 'MMdd') !== '0401') return;
+  if (hubRoster_()) return;                              // 名簿の年度保存はハブが行う（単元の roster は使っていない）
   var ss = ss_();
   var rs = ss.getSheetByName(SHEETS.ROSTER);
   if (!rs) return;
@@ -1344,12 +1659,7 @@ function resetDaily() {
  * 名前とURLを画面に出しておけば、取り違えはその場で分かる。
  */
 /** 教師画面の URL。いま動いているデプロイに ?page=teacher を付ける */
-function teacherUrl_() {
-  try {
-    var u = ScriptApp.getService().getUrl();
-    return u ? (u + (u.indexOf('?') >= 0 ? '&' : '?') + 'page=teacher') : '';
-  } catch (e) { return ''; }
-}
+function teacherUrl_() { return unitUrl_('page=teacher'); }
 
 function where_() {
   var out = { file: '', id: '', url: '', sheetUrl: '' };
@@ -1358,7 +1668,7 @@ function where_() {
   // 名前は写しても同じになる。取り違えを確かめられるのは ID のほうで、
   // スプレッドシートの URL の /d/ と /edit のあいだにある文字列と突き合わせる
   try { out.id = ss_().getId(); } catch (e) {}
-  try { out.url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+  out.url = unitUrl_('');
   return out;
 }
 
@@ -1673,7 +1983,7 @@ function coopPub_(s, since) {
 var COOP_GRP_KEY = 'coop_grp_';
 function coopGrpLoad_(cls) {
   try {
-    var p = JSON.parse(PropertiesService.getScriptProperties().getProperty(COOP_GRP_KEY + cls) || 'null');
+    var p = JSON.parse(props_().getProperty(COOP_GRP_KEY + cls) || 'null');
     var gn = Number(p && p.gn);
     if (!p || !p.by || !(gn >= 2 && gn <= COOP_GN_MAX)) return null;
     return { gn: gn, by: p.by };
@@ -1704,7 +2014,7 @@ function coopPlanGet_(cls, kids) {
 }
 /** 編成を保存する。gi が null なら消す（番号順の等分に戻す） */
 function coopPlanPut_(cls, gn, order, gi) {
-  var props = PropertiesService.getScriptProperties();
+  var props = props_();
   if (!gi) { props.deleteProperty(COOP_GRP_KEY + cls); return; }
   var by = {};
   order.forEach(function (m, i) { by[m] = gi[i]; });
@@ -3440,7 +3750,7 @@ function ensureReady_() {
   // 消えていない間はプロパティの読み取り（毎回100ms前後かかることがある）を省ける
   if (cache_().get('ready') === String(SCHEMA_VERSION)) return;
 
-  var props = PropertiesService.getScriptProperties();
+  var props = props_();
   if (props.getProperty(READY_KEY) === String(SCHEMA_VERSION)) {
     cache_().put('ready', String(SCHEMA_VERSION), 3600);
     return;
@@ -3468,7 +3778,7 @@ function ensureReady_() {
  * 呼ぶのは ensureReady_ だけで、そこで排他ロックを取っている。
  */
 function ensureSchema_() {
-  var props = PropertiesService.getScriptProperties();
+  var props = props_();
   if (Number(props.getProperty('schema_version')) >= SCHEMA_VERSION) return;
   migrateSummaryV2_();
   migrateModeNameAndWrong_();
@@ -3622,7 +3932,9 @@ function ensureSheets_() {
 }
 
 function ensureTriggers_() {
-  var want = { nightlyAggregate: 23, rolloverRoster: 2, resetDaily: 3 }, have = {};
+  // まとめたプロジェクトでは、全単元を回す *All を1つずつ置く（単元ごとには置かない）
+  var want = isMulti_() ? { nightlyAggregateAll: 23, rolloverRosterAll: 2, resetDailyAll: 3 }
+                        : { nightlyAggregate: 23, rolloverRoster: 2, resetDaily: 3 }, have = {};
   ScriptApp.getProjectTriggers().forEach(function (t) { have[t.getHandlerFunction()] = true; });
   for (var fn in want) {
     if (!have[fn]) ScriptApp.newTrigger(fn).timeBased().atHour(want[fn]).everyDays(1).create();
@@ -3666,7 +3978,14 @@ function writeMeta_() {
 
 /** 承認のために最初に1度だけ実行する */
 function setup() {
-  PropertiesService.getScriptProperties().deleteProperty(READY_KEY);
+  if (isMulti_()) {
+    ownerOnly_();
+    return unitIds_().map(function (id) { useUnit_(id); return '【' + id + '】' + setupOne_(); }).join('\n\n');
+  }
+  return setupOne_();
+}
+function setupOne_() {
+  props_().deleteProperty(READY_KEY);
   cache_().remove('ready');
   cache_().remove('unitcheck');
   ensureReady_();
