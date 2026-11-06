@@ -161,6 +161,21 @@ t('自動実行：スプレッドシートが未登録の単元は飛ばし、�
   assert.equal(env.created.length, 0);
 });
 
+t('登録を付け替えると「準備済み」の印も消える（新しいスプレッドシートにシートを作り直す）', () => {
+  const env = gasEnv(); const c = env.ctx;
+  env.mkSS('KUKUxxxxxxxxxxxxxxxxxxxxxx', '九九');
+  c.useUnit_('kuku');
+  c.props_().setProperty('ready_schema', '7'); c.cache_().put('ready', '7');
+  c.registerUnitSheet('kuku', 'KUKUxxxxxxxxxxxxxxxxxxxxxx');
+  c.useUnit_('kuku');
+  assert.equal(c.props_().getProperty('ready_schema'), null);
+  assert.equal(c.cache_().get('ready'), null);
+  c.props_().setProperty('ready_schema', '7');
+  delete env.props['unit_sheet:weight']; c.useUnit_('weight'); c.props_().setProperty('ready_schema', '7');
+  c.ss_();                                                   // 未登録 → 新しく作る
+  assert.equal(c.props_().getProperty('ready_schema'), null, '新しく作った時も印を消す');
+});
+
 t('setup：まとめたプロジェクトでは全単元を準備し、所有者だけが実行できる', () => {
   const env = gasEnv(); const c = env.ctx; const seen = [];
   c.setupOne_ = () => { seen.push(c.UNIT.id); c.ss_(); return 'ok'; };

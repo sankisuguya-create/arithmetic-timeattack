@@ -163,6 +163,7 @@ function unitSpreadsheet_() {
       else {
         ss = SpreadsheetApp.create('算数TA ' + (UNIT.teacherTitle || UNIT.title || id) + '（' + id + '）');
         gp.setProperty(unitSheetKey_(id), ss.getId());
+        clearUnitReady_(id);
       }
     } finally { lock.releaseLock(); }
   }
@@ -183,6 +184,7 @@ function registerUnitSheet(id, urlOrId) {
   var ss = SpreadsheetApp.openById(sid);   // 開けなければここで止まる
   PropertiesService.getScriptProperties().setProperty(unitSheetKey_(id), sid);
   delete UNIT_SS_MEMO_[id];
+  clearUnitReady_(id);
   return id + ' → ' + ss.getName();
 }
 
@@ -267,7 +269,7 @@ function forgetCreatedUnitSheets() {
   }
   unitIds_().forEach(function (id) {
     var sid = gp.getProperty(unitSheetKey_(id));
-    if (sid && sid !== want[id]) { gp.deleteProperty(unitSheetKey_(id)); out.push(id + '\t登録を外した（' + sid + '）'); }
+    if (sid && sid !== want[id]) { gp.deleteProperty(unitSheetKey_(id)); clearUnitReady_(id); out.push(id + '\t登録を外した（' + sid + '）'); }
   });
   var msg = out.length ? out.join('\n') : '外す登録はなかった';
   console.log(msg);
@@ -297,6 +299,16 @@ function ownerOnly_() {
   var a = String(Session.getActiveUser().getEmail() || '').toLowerCase();
   var e = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
   if (!a || a !== e) throw new Error('この関数は、スプレッドシートの所有者が Apps Script のエディタから実行してください');
+}
+
+/**
+ * 単元の「準備済み」の印を消す。登録するスプレッドシートを付け替えた時に呼ぶ。
+ * 印は単元ごとに持つので、消さないと新しいスプレッドシートにシートを作らないまま「準備済み」と見なす
+ * （2026-11-06 本番：付け替えた後の九九で「シートが見つかりません: config」）。
+ */
+function clearUnitReady_(id) {
+  nsProps_(id).deleteProperty(READY_KEY);
+  nsCache_(id).remove('ready');
 }
 
 /** 名前の頭に単元の id を付ける CacheService（今までの呼び方 get/put/remove/…All をそのまま使える） */
