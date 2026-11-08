@@ -157,6 +157,13 @@ details.qh summary::-webkit-details-marker{display:none}
 details.qh[open] summary{border-color:var(--ink);color:var(--ink)}
 .qhp{display:block;font-size:.78rem;font-weight:400;color:var(--mute);border-left:3px solid var(--line);padding:.15rem .6rem;margin:.3rem 0;line-height:1.6}
 .note{font-size:.76rem;color:var(--mute);margin:.1rem 0 .5rem;line-height:1.6}
+/* 抜け一覧。種類は色に加えて字の札で示す（色だけに頼らない） */
+.gapT{border-collapse:collapse;margin:.3rem 0 .4rem;font-size:.86rem}
+.gapT td{border-bottom:1px solid var(--line);padding:.35rem .6rem;vertical-align:top}
+.gapT td.nm{white-space:nowrap;font-weight:700}
+.gapT td > div + div{margin-top:.15rem}
+.gp{display:inline-block;font-size:.7rem;font-weight:800;border-radius:5px;padding:0 .35rem;margin-right:.4rem;color:#fff;min-width:3.2em;text-align:center}
+.gp.gw{background:#B5179E}.gp.gm{background:#C86A00}.gp.gs{background:#0F5EA8}.gp.gf{background:#101728}
 .chart{width:100%;height:auto;display:block;overflow:visible}
 .chart .blbl{font-size:11.5px;fill:var(--ink);font-weight:600}
 .chart .bval{font-size:11px;fill:var(--mute);font-weight:700}
@@ -198,6 +205,22 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 #distTip b{color:#FFD9A8}
 .wrong td{font-size:.82rem}
 .wrong td.n{font-weight:800}
+
+/* ===== ようごタブ =====
+ * 投影は児童画面と同じ黒地。図は名前が指すところだけ学年の色、ほかは灰。 */
+.termT{border-collapse:collapse;margin:.6rem 0;font-size:.9rem}
+.termT td{border-bottom:1px solid var(--line);padding:.3rem .7rem}
+.termT .tg{font-size:.72rem;color:var(--mute)}
+#termStage{display:none;position:fixed;inset:0;z-index:50;background:#101728;color:#fff;
+  grid-template-rows:auto 1fr auto;justify-items:center;align-items:center;padding:3vmin;user-select:none;cursor:pointer}
+#termStage.on{display:grid}
+#termClose{position:absolute;top:2vmin;left:2vmin;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);
+  border-radius:9px;padding:.4vmin 1.4vmin;font-size:clamp(.8rem,2vmin,1.1rem);cursor:pointer}
+#termProg{font-size:clamp(.8rem,2.2vmin,1.2rem);color:#9AA0B0;letter-spacing:.3em}
+#termFig{width:min(70vw,95vmin);height:100%;max-height:50vh;display:flex;align-items:center;justify-content:center}
+#termFig svg{width:100%;height:100%}
+#termName{font-size:clamp(2.4rem,12vmin,8rem);font-weight:800;min-height:1.6em;line-height:1.25}
+#termName rt{font-size:.32em;color:#C9D1E8;font-weight:700}
 
 /* ===== 協力プレイタブ =====
  * ステージは箱の中では16:9の枠、「全画面でうつす」で fixed に変わる（モニターうつし）。
@@ -465,6 +488,7 @@ details.more[open] summary{border-color:var(--ink)}
     <nav class="tabs" role="tablist">
       <button class="tab on" id="tabMode" role="tab" aria-current="page">公開モード</button>
       <button class="tab" id="tabCoop" role="tab">協力プレイ</button>
+      <button class="tab" id="tabTerm" role="tab">ようご</button>
       <button class="tab" id="tabSet" role="tab">全般設定</button>
       <button class="tab" id="tabAna" role="tab">分析</button>
       <button class="tab" id="tabPast" role="tab">過年度</button>
@@ -561,6 +585,28 @@ details.more[open] summary{border-color:var(--ink)}
 
   </div>
   </div><!-- /pageSet -->
+
+  <div id="pageTerm" style="display:none">
+  <div class="box">
+    <h2>ようご（毎時間の読み上げ）</h2>
+    <p class="lead">図を映し、<b>押すと名前が出て、もう一度押すと次の図</b>に進みます。</p>
+    <div class="stat" id="termStat">読み込み中…</div>
+    <table class="termT" id="termList"></table>
+    <div class="bar">
+            <button class="bview" id="termGo" type="button">モニターに投影して始める</button>
+      <button class="bview sm" id="termNew" type="button"><span class="ic" aria-hidden="true">↻</span>図を引き直す</button>
+    </div>
+    <details class="help"><summary>投影中の操作</summary>
+      <p>画面のタップ・スペース・→キーで「名前を出す → 次の図」と進みます。←で前の図、Escで終了。最後まで進むと出した回数が記録され、次回の既習の用語の選び方に使われます</p>
+    </details>
+  </div>
+  <div id="termStage" aria-live="polite">
+    <button id="termClose" type="button">× もどる</button>
+    <div id="termProg"></div>
+    <div id="termFig"></div>
+    <div id="termName"></div>
+  </div>
+  </div><!-- /pageTerm -->
 
   <div id="pageAna" style="display:none">
   <div class="box">
@@ -972,8 +1018,8 @@ function esc(s){
   });
 }
 
-/* ---- タブ（公開モード｜協力プレイ｜全般設定｜分析｜過年度）。押したタブの区画だけを出す ---- */
-var PAGES = { mode: 'pageMode', coop: 'pageCoop', set: 'pageSet', ana: 'pageAna', past: 'pagePast' };
+/* ---- タブ（公開モード｜協力プレイ｜ようご｜全般設定｜分析｜過年度）。押したタブの区画だけを出す ---- */
+var PAGES = { mode: 'pageMode', coop: 'pageCoop', term: 'pageTerm', set: 'pageSet', ana: 'pageAna', past: 'pagePast' };
 function showPage(p){
   Object.keys(PAGES).forEach(function(k){
     var on = (p === k), tab = $('tab' + k[0].toUpperCase() + k.slice(1));
@@ -983,6 +1029,7 @@ function showPage(p){
   });
   if(p === 'ana' && !anaAsked){ anaAsked = true; loadAnalysis(false); }
   if(p === 'past' && !PAST.asked){ PAST.asked = true; loadPast(false); }
+  if(p === 'term' && !TERM.asked){ TERM.asked = true; termLoad(); }
   // 床のプレビューは全般設定タブの中にある。隠れている間は枠の大きさが0なので、開いた時に描き直す
   if(p === 'set' && FP.on) fpDraw(FP.shown);
   if(p === 'coop'){ coopFit_(); coopTabShow_(); }
@@ -1636,6 +1683,103 @@ function wrongTable(list, types){
 /* 各セクションの見方を説明する「？」ボタン。details なので開閉の仕組みは要らない */
 function qh(t){ return '<details class="qh"><summary aria-label="説明を開く">?</summary><span class="qhp">' + esc(t) + '</span></details>'; }
 
+/* ---- 抜け一覧：児童ごとに「どこに理解の抜けがあるか」を最大3件、言葉で出す（サーバーの gapsOf_）。
+   基準は本人の中での比較。全体に誤答が多い子は「全体に多い」とだけ出す（型の差では読めないため） ---- */
+function gapSection(r, scope){
+  var h = '<h3 class="sec" style="margin-top:.4rem">抜け一覧' + qh('児童ごとに、その子の他の型と比べて目立つ抜けを最大3件出します。「誤概念」は同じまちがいの選び方を2回以上、「誤答」はその子の誤答率の中央値より20ポイント以上高い型、「遅い」はその子の他の型より遅い型（◆と同じ）。') + '</h3>';
+  if(scope === 'all') return h + '<div class="note">クラスを選ぶと、児童ごとの抜けが出ます。</div>';
+  var kids = (r.students || {})[scope] || [];
+  if(!kids.length) return h + '<div class="note">roster に児童が登録されていません。</div>';
+  function tn(t){ return esc(r.types[t] || t); }
+  function item(x){
+    if(x.k === 'wrong') return '<span class="gp gw">誤概念</span><b>' + tn(x.t) + '</b>：' + esc(x.txt) + '（' + x.n + '回）';
+    if(x.k === 'miss') return '<span class="gp gm">誤答</span><b>' + tn(x.t) + '</b>：誤答率 ' + x.rate + '%';
+    return '<span class="gp gs">遅い</span><b>' + tn(x.t) + '</b>';
+  }
+  var rows = [], none = [], few = [];
+  kids.forEach(function(k){
+    var g = k.gap || { st: 'few', items: [] };
+    if(g.st === 'few' && !g.items.length){ few.push(k); return; }
+    if(g.st !== 'flat' && !g.items.length){ none.push(k); return; }
+    rows.push('<tr><td class="num">' + esc(k.no) + '</td><td class="nm">' + esc(k.name) + '</td><td>' +
+      (g.st === 'flat' ? '<div><span class="gp gf">全体</span>どの型も誤答が多い（誤答率の中央 ' + g.med + '%）→ 用語・前のモードから</div>' : '') +
+      g.items.map(function(x){ return '<div>' + item(x) + '</div>'; }).join('') + '</td></tr>');
+  });
+  function names(a){ return a.map(function(k){ return esc(k.no + ' ' + k.name); }).join('、'); }
+  return h +
+    (rows.length ? '<table class="gapT"><tbody>' + rows.join('') + '</tbody></table>'
+                 : '<div class="note">目立つ抜けのある児童はいません。</div>') +
+    '<div class="note">目立つ抜けなし ' + none.length + '名' +
+      (few.length ? '／判定に足りない（どの型も10問未満）' + few.length + '名：' + names(few) : '') + '</div>';
+}
+
+/* ===== ようご ===== */
+var TERM = { asked: false, deck: [], seq: [], i: 0, ph: '' };
+function termLoad(){
+  $('termStat').textContent = '読み込み中…';
+  google.script.run.withSuccessHandler(function(r){
+    TERM.deck = r.deck || [];
+    $('termStat').textContent = !TERM.deck.length ? 'この単元の用語はまだ登録されていません（Unit.gs の terms）。'
+      : r.declared ? '' : 'この単元の用語は未登録です。下の学年の用語だけを出します。';
+    $('termList').innerHTML = TERM.deck.map(function(c, i){
+      return '<tr><td><input type="checkbox" checked data-ti="' + i + '" aria-label="' + esc(c.name) + '"></td>' +
+        '<td><b>' + esc(c.name) + '</b>（' + esc(c.yomi) + '）</td>' +
+        '<td class="tg">' + (c.cur ? 'この単元' : '既習（しばらく出していない順）') + '</td>' +
+        '<td class="tg">出した回数 ' + c.n + '</td></tr>';
+    }).join('');
+  }).withFailureHandler(function(e){ setStat('termStat', '読み込めません: ' + e.message, true); }).getTermDeck();
+}
+function termPicked(){
+  return Array.prototype.filter.call(document.querySelectorAll('#termList input[data-ti]'), function(b){ return b.checked; })
+    .map(function(b){ return TERM.deck[Number(b.dataset.ti)]; });
+}
+$('termNew').onclick = termLoad;
+$('termGo').onclick = function(){
+  var a = termPicked();
+  if(!a.length) return;
+  for(var i = a.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; }
+  TERM.seq = a; TERM.i = 0; TERM.shown = {};
+  $('termStage').classList.add('on');
+  try { if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); } catch(e){}
+  termCard();
+};
+/* ① 図だけ */
+function termCard(){
+  var c = TERM.seq[TERM.i];
+  TERM.ph = 'q';
+  $('termProg').textContent = (TERM.i + 1) + ' / ' + TERM.seq.length;
+  $('termFig').innerHTML = c.figs[Math.floor(Math.random() * c.figs.length)];   // 向きを毎回変える
+  $('termName').innerHTML = '';
+}
+/* ② 押すと名前。もう一度押すと次の図 */
+function termNext(){
+  var c = TERM.seq[TERM.i];
+  if(TERM.ph === 'q'){
+    TERM.ph = 'a';
+    $('termName').innerHTML = '<ruby>' + esc(c.name) + '<rt>' + esc(c.yomi) + '</rt></ruby>';
+    return;
+  }
+  TERM.shown[c.id] = true;
+  if(TERM.i + 1 >= TERM.seq.length) return termEnd(true);
+  TERM.i++; termCard();
+}
+function termEnd(done){
+  TERM.ph = 'end';
+  if(done) google.script.run.withSuccessHandler(function(){ termLoad(); }).withFailureHandler(function(){}).termDone(Object.keys(TERM.shown));
+  $('termStage').classList.remove('on');
+  try { if(document.fullscreenElement) document.exitFullscreen(); } catch(e){}
+}
+$('termStage').addEventListener('click', function(e){
+  if(e.target.id === 'termClose') return termEnd(false);
+  if(TERM.ph !== 'end') termNext();
+});
+document.addEventListener('keydown', function(e){
+  if(!$('termStage').classList.contains('on')) return;
+  if(e.key === 'Escape') return termEnd(false);
+  if(e.key === ' ' || e.key === 'ArrowRight' || e.key === 'Enter'){ e.preventDefault(); termNext(); }
+  if(e.key === 'ArrowLeft' && TERM.i > 0){ e.preventDefault(); TERM.i--; termCard(); }
+});
+
 function renderAnalysis(){
   var r = ANA; if(!r) return;
   $('anaChips').innerHTML =
@@ -1677,7 +1821,7 @@ function renderAnalysis(){
                valTxt: sc.types[ty].miss + '件', over: false };
     }).sort(function(a, b){ return b.val - a.val; });
 
-  $('anaBody').innerHTML =
+  $('anaBody').innerHTML = gapSection(r, anaScope) +
     '<h3 class="sec">型ごとのおもいだす時間（平均）' + qh('問題が出てから最初のキーを押すまでの時間の平均（正確には幾何平均。極端に遅い1回に引っぱられにくい値）。棒が長いほど時間がかかる型です。橙の棒は、同じ学年の児童とくらべて特に遅い型です。') + '</h3>' +
     '<div class="note">打鍵している時間は含みません。強調した棒は、同じ学年の児童の分布で＋標準偏差1つを超える型。</div>' +
     hbarChart(recall, {}) +
