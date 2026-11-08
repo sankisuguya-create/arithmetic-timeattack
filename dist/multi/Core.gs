@@ -138,6 +138,8 @@ function useUnit_(id) {
 }
 
 function unitIds_() { return typeof UNIT_DEFS === 'undefined' ? [] : Object.keys(UNIT_DEFS); }
+/** 検査用（学習BASE の中で apiCall が包んだ中の関数を見つけられるかを確かめる）。単元の id の一覧を返すだけ */
+function unitIdsForTest() { return unitIds_(); }
 
 /** 単元のスプレッドシートの ID を置く場所（単元で分けない、プロジェクト共通のプロパティ） */
 function unitSheetKey_(id) { return 'unit_sheet:' + id; }
@@ -224,7 +226,7 @@ function switchHubLinks() {
   for (var i = 1; i < v.length; i++) {
     var id = String(v[i][0]).trim();
     if (!Object.prototype.hasOwnProperty.call(UNIT_DEFS, id)) continue;
-    var u = base + '?unit=' + encodeURIComponent(id);
+    var u = unitHref_(base, id);
     sh.getRange(i + 1, 4).setValue(u);
     out.push(id + '\t' + u);
   }
@@ -311,6 +313,24 @@ function clearUnitReady_(id) {
   nsCache_(id).remove('ready');
 }
 
+/* ------------------------------------------------------------
+ *  学習BASE（learning-base の読み込み係）の中で動く時
+ *  読み込み係は、このファイルを関数の中に包んで実行し、次の大域の名前を用意する。単体の GAS ではどれも未定義で、今までどおり動く。
+ *    LB_FILES        画面のファイル（'tamath/index' など）。GAS のファイルの代わりにここから読む
+ *    LB_APP_QUERY    URL に付ける 'app=tamath'（学習BASE の URL は1つなので、どのアプリかを示す）
+ *    LB_PLATFORM_TRIGGERS  true なら自動実行は読み込み係が置く（ここでは置かない）
+ *  包んだ関数の中の LB_RESOLVE_ は、画面から呼ぶ関数を名前で探す（包むと関数が globalThis に載らないため）
+ * ------------------------------------------------------------ */
+function lbFile_(name) {
+  return (typeof LB_FILES !== 'undefined' && LB_FILES && LB_FILES['tamath/' + name] != null) ? LB_FILES['tamath/' + name] : null;
+}
+function tplFromFile_(name) {
+  var src = lbFile_(name);
+  return src != null ? HtmlService.createTemplate(src) : HtmlService.createTemplateFromFile(name);
+}
+function appQuery_() { return typeof LB_APP_QUERY !== 'undefined' && LB_APP_QUERY ? String(LB_APP_QUERY) : ''; }
+function unitHref_(base, id) { var a = appQuery_(); return base + '?' + (a ? a + '&' : '') + 'unit=' + encodeURIComponent(id); }
+
 /** 名前の頭に単元の id を付ける CacheService（今までの呼び方 get/put/remove/…All をそのまま使える） */
 function nsCache_(id) {
   var c = CacheService.getScriptCache(), p = 'u:' + id + ':';
@@ -352,7 +372,7 @@ var API_DENY_ = { apiCall: 1, doGet: 1, setup: 1, registerUnitSheet: 1, listUnit
 function apiCall(unitId, name, args) {
   useUnit_(unitId);
   name = String(name || '');
-  var fn = globalThis[name];
+  var fn = typeof LB_RESOLVE_ === 'function' ? LB_RESOLVE_(name) : globalThis[name];
   // 組み込みの関数（eval・Function など）は呼ばせない。GAS が画面から呼ばせるのも、プロジェクトに書いた関数だけ
   var native = typeof fn === 'function' && /\[native code\]/.test(Function.prototype.toString.call(fn));
   if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name) || API_DENY_[name] || typeof fn !== 'function' || native) {
@@ -386,6 +406,7 @@ function unitUrl_(extra) {
   try { u = ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
   if (!u) return '';
   var q = [];
+  if (appQuery_()) q.push(appQuery_());
   if (isMulti_()) q.push('unit=' + encodeURIComponent(UNIT.id));
   if (extra) q.push(extra);
   return q.length ? u + (u.indexOf('?') >= 0 ? '&' : '?') + q.join('&') : u;
@@ -453,7 +474,7 @@ function unitIndexPage_() {
   try { base = ScriptApp.getService().getUrl() || ''; } catch (e) {}
   var items = unitIds_().map(function (id) {
     var u = UNIT_DEFS[id];
-    return '<li><a href="' + base + '?unit=' + encodeURIComponent(id) + '">' + String(u.title || id).replace(/[<>&]/g, '') + '</a></li>';
+    return '<li><a href="' + unitHref_(base, id) + '">' + String(u.title || id).replace(/[<>&]/g, '') + '</a></li>';
   }).join('');
   return HtmlService.createHtmlOutput('<base target="_top"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<div style="font-family:sans-serif;font-size:20px;line-height:2;padding:16px"><ul>' + items + '</ul></div>').setTitle('算数タイムアタック');
@@ -908,6 +929,8 @@ function packQueue_(q) {
  * ============================================================ */
 
 function include(name) {
+  var src = lbFile_(name);
+  if (src != null) return src;
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 
@@ -923,14 +946,14 @@ function doGet(e) {
     if (!isTeacher_(email_())) {
       return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">この画面を開く権限がありません。</p>');
     }
-    var t = HtmlService.createTemplateFromFile('teacher');
+    var t = tplFromFile_('teacher');
     // ハブの「協力プレイ↗」は ?page=teacher&tab=coop で来る。最初に開くタブ（知らない値は既定のタブ）
     t.startTab = ['mode', 'coop', 'set', 'ana', 'past'].indexOf(e.parameter.tab) >= 0 ? e.parameter.tab : '';
     return t.evaluate()
       .setTitle(UNIT.teacherTitle)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
-  return HtmlService.createTemplateFromFile('index').evaluate()
+  return tplFromFile_('index').evaluate()
     .setTitle(UNIT.title)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -3979,6 +4002,7 @@ function ensureSheets_() {
 }
 
 function ensureTriggers_() {
+  if (typeof LB_PLATFORM_TRIGGERS !== 'undefined' && LB_PLATFORM_TRIGGERS) return;   // 学習BASE の読み込み係が置く
   // まとめたプロジェクトでは、全単元を回す *All を1つずつ置く（単元ごとには置かない）
   var want = isMulti_() ? { nightlyAggregateAll: 23, rolloverRosterAll: 2, resetDailyAll: 3 }
                         : { nightlyAggregate: 23, rolloverRoster: 2, resetDaily: 3 }, have = {};
