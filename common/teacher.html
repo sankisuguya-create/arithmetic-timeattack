@@ -454,6 +454,39 @@ details.more[open] summary{border-color:var(--ink)}
 /* 失敗：開始ボタンを隠さず、その上に理由を出す（すぐ押し直せるように） */
 #coopCount.err{background:none;align-items:flex-start;padding:30vmin 8vmin 0;text-align:center;
   font-size:clamp(.9rem,3vmin,1.6rem);color:var(--alert)}
+
+/* ===== ui-layout の規則による改良（操作対象は48px以上。同じ役割の並びは寸法を揃え、文字量で幅を決めない） ===== */
+/* 上部タブ: 5つとも同じ幅・48px */
+.topbar .tab{min-height:48px;width:7.5rem;padding:0 .3rem;text-align:center}
+/* 公開モード: 列の見出しにモード名を書く（凡例との往復をなくす）。マス全体が押せるチェック */
+#clsTable th.mh{max-width:7.5rem;font-size:.82rem;line-height:1.25;white-space:normal;vertical-align:bottom}
+#clsTable td.ck{padding:0}
+#clsTable td.ck label{display:flex;align-items:center;justify-content:center;min-width:7.5rem;min-height:52px;cursor:pointer}
+#clsTable td.ck label:hover{background:var(--fillA)}
+#clsTable td input[type=checkbox]{width:28px;height:28px}
+#clsTable .bstep.sm{min-height:48px;width:4.6rem;padding:0;font-size:.9rem}
+#clsSave,#clsReload{min-height:48px;padding:0 1.2rem}
+/* 全般設定: 入力欄・選択欄は48px。「＋20問」などは同じ幅の4列 */
+.row input,.row select,.grow1 input{min-height:48px;box-sizing:border-box}
+#save{min-height:48px;padding:0 1.2rem}
+.fpBtns{display:grid!important;grid-template-columns:repeat(4,1fr);gap:.5rem}
+.fpBtns .bstep{min-height:48px;padding:0}
+/* 協力プレイ: クラスは「組」と「人数」を2行にして切らない。−＋・選ぶ札・詳細・開くは48px */
+.coopBox .clsPick button{min-height:56px;padding:.2rem;white-space:normal;line-height:1.2}
+.coopBox .clsPick button small{display:block;margin:0}
+.coopBox .step{width:48px;height:48px}
+.coopBox input[type=number],.coopBox select{min-height:48px;box-sizing:border-box}
+.coopBox .pick{min-height:48px;min-width:4.5rem}
+details.cadv summary{min-height:48px;line-height:48px;padding:0}
+.cstep .cgo{min-height:48px;width:4.6rem;padding:0;font-size:.9rem}
+#coopNext1{min-height:48px}
+#coopPrevOn,#coopStart{min-height:48px}
+details.cadv button,details.cadv select,details.cadv input{min-height:48px;box-sizing:border-box}
+details.cadv .step{width:48px;height:48px}
+details.cadv .pick{min-width:4.5rem}
+#clsSave,#clsReload{width:14rem}
+.fpBtns > :not(button){grid-column:1/-1}
+.clsWrap .legend .n{display:none}   /* 列の見出しに名前を出したので、番号は不要。説明だけ残す */
 </style>
 </head>
 <body>
@@ -550,7 +583,7 @@ details.more[open] summary{border-color:var(--ink)}
       <span id="fpAll"></span>
     </div>
     <div class="fpFrame"><canvas id="fpCanvas" aria-label="背景の床のプレビュー"></canvas></div>
-    <div class="bar">
+    <div class="bar fpBtns">
       <button id="fp1" class="bstep" type="button">＋20問</button>
       <button id="fp10" class="bstep" type="button">＋200問</button>
       <button id="fp50" class="bstep" type="button">＋1000問</button>
@@ -1138,7 +1171,7 @@ function renderClasses(){
   var head = $('clsHead');
   head.innerHTML = '<th>クラス</th><th>人数</th>' +
     CLS.modes.map(function(m, i){
-      return '<th class="c">'+(i+1)+'</th>';
+      return '<th class="c mh">'+esc(m.name)+'</th>';   // 番号ではなく名前（凡例との往復をなくす）
     }).join('') +
     (CLS.hasNeeds ? '<th class="c">順序の<br>解除</th>' : '') +
     (CLS.nUnlock ? '<th class="c">段階<br>解放</th>' : '') +
@@ -1146,8 +1179,8 @@ function renderClasses(){
 
   $('clsBody').innerHTML = CLS.classes.map(function(c){
     var cells = CLS.modes.map(function(m){
-      return '<td class="c"><input type="checkbox" data-cls="'+esc(c.cls)+
-             '" data-m="'+m.id+'"'+(c.modes[m.id]?' checked':'')+'></td>';
+      return '<td class="c ck"><label><input type="checkbox" data-cls="'+esc(c.cls)+
+             '" data-m="'+m.id+'"'+(c.modes[m.id]?' checked':'')+' aria-label="'+esc(c.grade)+'年'+esc(c.room)+'組 '+esc(m.name)+'"></label></td>';
     }).join('');
     if(CLS.hasNeeds){
       cells += '<td class="c"><input type="checkbox" data-cls="'+esc(c.cls)+
