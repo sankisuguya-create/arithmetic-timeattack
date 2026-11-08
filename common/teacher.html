@@ -211,16 +211,14 @@ table.heat{border-collapse:collapse;font-size:.8rem;min-width:100%}
 .termT{border-collapse:collapse;margin:.6rem 0;font-size:.9rem}
 .termT td{border-bottom:1px solid var(--line);padding:.3rem .7rem}
 .termT .tg{font-size:.72rem;color:var(--mute)}
-.termT .nw{font-size:.72rem;font-weight:800;color:#B5179E}
 #termStage{display:none;position:fixed;inset:0;z-index:50;background:#101728;color:#fff;
-  grid-template-rows:auto 1fr auto auto;justify-items:center;align-items:center;padding:3vmin;user-select:none;cursor:pointer}
+  grid-template-rows:auto 1fr auto;justify-items:center;align-items:center;padding:3vmin;user-select:none;cursor:pointer}
 #termStage.on{display:grid}
 #termClose{position:absolute;top:2vmin;left:2vmin;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);
   border-radius:9px;padding:.4vmin 1.4vmin;font-size:clamp(.8rem,2vmin,1.1rem);cursor:pointer}
 #termProg{font-size:clamp(.8rem,2.2vmin,1.2rem);color:#9AA0B0;letter-spacing:.3em}
 #termFig{width:min(70vw,95vmin);height:100%;max-height:50vh;display:flex;align-items:center;justify-content:center}
 #termFig svg{width:100%;height:100%}
-#termCue{font-size:clamp(1.4rem,6.5vmin,4rem);font-weight:800;min-height:1.3em;color:#FFD9A8}
 #termName{font-size:clamp(2.4rem,12vmin,8rem);font-weight:800;min-height:1.6em;line-height:1.25}
 #termName rt{font-size:.32em;color:#C9D1E8;font-weight:700}
 
@@ -591,26 +589,21 @@ details.more[open] summary{border-color:var(--ink)}
   <div id="pageTerm" style="display:none">
   <div class="box">
     <h2>ようご（毎時間の読み上げ）</h2>
-    <p class="lead">図を映し、<b>黙って数秒考える → 合図で全員で言う → 名前が出る</b>の順に進みます。
-      名前を先に見せると、読める子の声をまねるだけになるためです。はじめての用語（2回目まで）だけは、名前を先に出して読み上げます。</p>
+    <p class="lead">図を映し、<b>押すと名前が出て、もう一度押すと次の図</b>に進みます。</p>
     <div class="stat" id="termStat">読み込み中…</div>
     <table class="termT" id="termList"></table>
     <div class="bar">
-      <label>考える時間 <select id="termThink"><option>2</option><option selected>3</option><option>4</option><option>5</option></select> 秒</label>
-      <label>くり返し <select id="termRounds"><option value="1">1周</option><option value="2" selected>2周</option></select></label>
-      <span class="stat" id="termEta"></span>
-      <button class="bview" id="termGo" type="button">モニターに投影して始める</button>
+            <button class="bview" id="termGo" type="button">モニターに投影して始める</button>
       <button class="bview sm" id="termNew" type="button"><span class="ic" aria-hidden="true">↻</span>図を引き直す</button>
     </div>
     <details class="help"><summary>投影中の操作</summary>
-      <p>画面のタップ・スペース・→キーで次へ進みます（待たずに進めたいとき）。←で前の用語、Escで終了。最後まで進むと、出した回数が記録され、次回の既習の用語の選び方に使われます。</p>
+      <p>画面のタップ・スペース・→キーで「名前を出す → 次の図」と進みます。←で前の図、Escで終了。最後まで進むと出した回数が記録され、次回の既習の用語の選び方に使われます</p>
     </details>
   </div>
   <div id="termStage" aria-live="polite">
     <button id="termClose" type="button">× もどる</button>
     <div id="termProg"></div>
     <div id="termFig"></div>
-    <div id="termCue"></div>
     <div id="termName"></div>
   </div>
   </div><!-- /pageTerm -->
@@ -1721,7 +1714,7 @@ function gapSection(r, scope){
 }
 
 /* ===== ようご ===== */
-var TERM = { asked: false, deck: [], seq: [], i: 0, ph: '', timer: 0 };
+var TERM = { asked: false, deck: [], seq: [], i: 0, ph: '' };
 function termLoad(){
   $('termStat').textContent = '読み込み中…';
   google.script.run.withSuccessHandler(function(r){
@@ -1732,85 +1725,47 @@ function termLoad(){
       return '<tr><td><input type="checkbox" checked data-ti="' + i + '" aria-label="' + esc(c.name) + '"></td>' +
         '<td><b>' + esc(c.name) + '</b>（' + esc(c.yomi) + '）</td>' +
         '<td class="tg">' + (c.cur ? 'この単元' : '既習（しばらく出していない順）') + '</td>' +
-        '<td>' + (c.isNew ? '<span class="nw">はじめて：名前を先に出す</span>' : '<span class="tg">出した回数 ' + c.n + '</span>') + '</td></tr>';
+        '<td class="tg">出した回数 ' + c.n + '</td></tr>';
     }).join('');
-    termEta();
   }).withFailureHandler(function(e){ setStat('termStat', '読み込めません: ' + e.message, true); }).getTermDeck();
 }
 function termPicked(){
   return Array.prototype.filter.call(document.querySelectorAll('#termList input[data-ti]'), function(b){ return b.checked; })
     .map(function(b){ return TERM.deck[Number(b.dataset.ti)]; });
 }
-/* 1語あたり：考える＋合図1.2秒＋名前2秒（はじめての語は名前つき4秒＋合図1.2秒） */
-function termEta(){
-  var th = Number($('termThink').value), rd = Number($('termRounds').value), sec = 0;
-  termPicked().forEach(function(c){ sec += c.isNew ? 5.2 : th + 3.2; });
-  $('termEta').textContent = sec ? 'およそ ' + Math.round(sec * rd) + ' 秒' : '';
-}
-$('termThink').onchange = termEta; $('termRounds').onchange = termEta;
-$('termList').addEventListener('change', termEta);
 $('termNew').onclick = termLoad;
-function termShuffle(a){
-  a = a.slice();
-  for(var i = a.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; }
-  return a;
-}
 $('termGo').onclick = function(){
-  var cards = termPicked();
-  if(!cards.length) return;
-  var seq = [], rd = Number($('termRounds').value);
-  for(var r = 0; r < rd; r++){
-    var o = termShuffle(cards);
-    // 周の境目で同じ語が続かないようにする
-    if(seq.length && o.length > 1 && o[0] === seq[seq.length - 1]) o.push(o.shift());
-    seq = seq.concat(o);
-  }
-  TERM.seq = seq; TERM.i = 0; TERM.shown = {};
+  var a = termPicked();
+  if(!a.length) return;
+  for(var i = a.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; }
+  TERM.seq = a; TERM.i = 0; TERM.shown = {};
   $('termStage').classList.add('on');
   try { if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); } catch(e){}
   termCard();
 };
-function termName(c){ return '<ruby>' + esc(c.name) + '<rt>' + esc(c.yomi) + '</rt></ruby>'; }
-function termAt(ph, ms){ clearTimeout(TERM.timer); TERM.ph = ph; if(ms) TERM.timer = setTimeout(termNext, ms); }
+/* ① 図だけ */
 function termCard(){
   var c = TERM.seq[TERM.i];
+  TERM.ph = 'q';
   $('termProg').textContent = (TERM.i + 1) + ' / ' + TERM.seq.length;
   $('termFig').innerHTML = c.figs[Math.floor(Math.random() * c.figs.length)];   // 向きを毎回変える
-  if(c.isNew){
-    $('termCue').textContent = 'よんでみよう';
-    $('termName').innerHTML = termName(c);
-    termAt('newshow', 4000);
-  } else {
-    $('termName').innerHTML = '';
-    termThink(Number($('termThink').value));
-  }
+  $('termName').innerHTML = '';
 }
-/* 考える間は「？」と残りの点だけ。声は出さない */
-function termThink(left){
-  $('termCue').textContent = '？ ' + new Array(left + 1).join('●');
-  if(left <= 0) return termSay();
-  termAt('think', 0);
-  TERM.timer = setTimeout(function(){ termThink(left - 1); }, 1000);
-}
-function termSay(){ $('termCue').textContent = 'せーの！'; termAt('say', 1200); }
+/* ② 押すと名前。もう一度押すと次の図 */
 function termNext(){
   var c = TERM.seq[TERM.i];
-  if(TERM.ph === 'think'){ return termSay(); }
-  if(TERM.ph === 'newshow'){ $('termCue').textContent = 'いっしょに！'; return termAt('newsay', 1200); }
-  if(TERM.ph === 'say'){ $('termCue').textContent = ''; $('termName').innerHTML = termName(c); return termAt('reveal', 2000); }
+  if(TERM.ph === 'q'){
+    TERM.ph = 'a';
+    $('termName').innerHTML = '<ruby>' + esc(c.name) + '<rt>' + esc(c.yomi) + '</rt></ruby>';
+    return;
+  }
   TERM.shown[c.id] = true;
   if(TERM.i + 1 >= TERM.seq.length) return termEnd(true);
   TERM.i++; termCard();
 }
 function termEnd(done){
-  clearTimeout(TERM.timer); TERM.ph = 'end';
-  if(done){
-    $('termFig').innerHTML = ''; $('termProg').textContent = '';
-    $('termCue').textContent = ''; $('termName').textContent = 'おわり';
-    google.script.run.withSuccessHandler(function(){ termLoad(); }).withFailureHandler(function(){}).termDone(Object.keys(TERM.shown));
-    TERM.timer = setTimeout(function(){ termEnd(false); }, 1500);
-    return;
-  }
+  TERM.ph = 'end';
+  if(done) google.script.run.withSuccessHandler(function(){ termLoad(); }).withFailureHandler(function(){}).termDone(Object.keys(TERM.shown));
   $('termStage').classList.remove('on');
   try { if(document.fullscreenElement) document.exitFullscreen(); } catch(e){}
 }
@@ -1821,7 +1776,6 @@ $('termStage').addEventListener('click', function(e){
 document.addEventListener('keydown', function(e){
   if(!$('termStage').classList.contains('on')) return;
   if(e.key === 'Escape') return termEnd(false);
-  if(TERM.ph === 'end') return;
   if(e.key === ' ' || e.key === 'ArrowRight' || e.key === 'Enter'){ e.preventDefault(); termNext(); }
   if(e.key === 'ArrowLeft' && TERM.i > 0){ e.preventDefault(); TERM.i--; termCard(); }
 });

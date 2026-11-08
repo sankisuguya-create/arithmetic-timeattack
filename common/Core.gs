@@ -3195,12 +3195,7 @@ function buildAnalysis_(fyear) {
  *  用語モード（教師画面の「ようご」タブ）
  *
  *  毎時間の定例として教室モニターに映し、全員で声をそろえて読む。
- *  ねらいは最下層の児童に、図と名称の結びつきを焼き付けること。
- *
- *  流れは「図だけ → 黙って考える（数秒）→ 合図で全員で言う → 名称を出す」。
- *  名称を図と同時に出すと、できる子が読み、遅れる子はその声をまねるだけになり、
- *  自分で思い出す練習にならない（想起練習・生成効果）。
- *  ただし初めて出す用語（出した回数が TERM_NEW_UNTIL_ 未満）だけは、名称を先に見せて読み上げる。
+ *  ① 図だけを映す → ② 押すと名前が出る、の2段階。
  *
  *  台帳 TERMS_ は全単元共通で、並びは学習の順（学年→単元の順）。
  *  単元は UNIT.terms で自分の用語を宣言する。台帳でその単元の最初の用語より前にある用語は既習とみなし、
@@ -3208,7 +3203,6 @@ function buildAnalysis_(fyear) {
  *  図は Core.gs の中で描く（単元のプロジェクトをまたいで既習の用語を描くため）。
  * ============================================================ */
 var TERM_PAST_N_ = 2;       // 1回に混ぜる既習の用語の数。根拠なし（1〜2分に収める仮の値）
-var TERM_NEW_UNTIL_ = 2;    // 出した回数がこれ未満の用語は、名称を先に見せる
 var TERM_FIGS_ = 4;         // 1語あたりに用意する図の向きの数（毎回向きを変え、典型図への固着を避ける）
 var TERM_KEY_ = 'terms_seen';
 
@@ -3265,7 +3259,7 @@ function termById_(id) {
 /**
  * 今日の用語の束（純粋。tests/terms.test.cjs が叩く）。
  * cur: この単元の用語 id、seen: { id: { n: 出した回数, at: 最後に出した時刻 } }。
- * 返り値 [{ id, name, yomi, cur, n, isNew, figs: [svg...] }]。この単元の用語が先、既習が後。
+ * 返り値 [{ id, name, yomi, cur, n, figs: [svg...] }]。この単元の用語が先、既習が後。
  */
 function termDeck_(cur, seen, grade, rand) {
   cur = (cur || []).filter(function (id) { return !!termById_(id); });
@@ -3284,7 +3278,7 @@ function termDeck_(cur, seen, grade, rand) {
     var figs = [];
     for (var i = 0; i < TERM_FIGS_; i++) figs.push(x.fig(rand, hi));
     var n = (seen[x.id] || {}).n || 0;
-    return { id: x.id, name: x.name, yomi: x.yomi, cur: isCur, n: n, isNew: n < TERM_NEW_UNTIL_, figs: figs };
+    return { id: x.id, name: x.name, yomi: x.yomi, cur: isCur, n: n, figs: figs };
   }
   return cur.map(function (id) { return out(termById_(id), true); })
     .concat(past.map(function (x) { return out(x, false); }));
@@ -3302,7 +3296,7 @@ function getTermDeck() {
   return { deck: termDeck_(UNIT.terms || [], termSeen_(), UNIT.grade, rng_(seed)), declared: (UNIT.terms || []).length };
 }
 
-/** 教師画面：最後まで映し終えた用語を記録する（既習の用語の出す順と、名称を先に見せるかの判定に使う） */
+/** 教師画面：最後まで映し終えた用語を記録する（既習の用語の出す順に使う） */
 function termDone(ids) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   var lock = LockService.getScriptLock();

@@ -23,9 +23,9 @@ for (const u of unitNames()) {
 /* ---------- 今日の束 ---------- */
 const d0 = c.termDeck_(c.UNIT.terms, {}, 3, c.rng_(7));
 assert.deepEqual(d0.map(x => x.id), c.UNIT.terms, 'この単元の用語が先・既習はまだ無い（円と球が台帳の先頭）');
-assert.ok(d0.every(x => x.isNew && x.figs.length === c.TERM_FIGS_), 'はじめては名前を先に');
+assert.ok(d0.every(x => x.figs.length === c.TERM_FIGS_), '図の向きの数');
 const d1 = c.termDeck_(c.UNIT.terms, { radius: { n: 5, at: 1 } }, 3, c.rng_(7));
-assert.equal(d1.find(x => x.id === 'radius').isNew, false);
+assert.equal(d1.find(x => x.id === 'radius').n, 5);
 // 後ろの単元から見ると、台帳で前にある用語が既習。しばらく出していない順に TERM_PAST_N_ 個
 c.TERMS_.push({ id: 'zz', grade: 3, unit: 'zz', name: 'ぜっと', yomi: 'ぜっと', fig: () => '<svg viewBox="0 0 400 300"></svg>' });
 const seen = { circle: { n: 3, at: 50 }, center: { n: 3, at: 10 }, radius: { n: 3, at: 30 }, diameter: { n: 3, at: 20 }, sphere: { n: 3, at: 40 } };
