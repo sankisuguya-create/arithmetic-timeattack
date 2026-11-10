@@ -241,6 +241,8 @@ async function main() {
   // 共有層：実機は include() が coop_shared の中身を挿入する。プレビューも同じ場所に同じ中身を置く
   var incRe = /<\?!= include\('coop_shared'\) \?>/;
   if (!incRe.test(uiText)) { fail('common/index.html の共有層の挿入（<?!= include(\'coop_shared\') ?>）が見つかりませんでした。'); return; }
+  // 全単元をまとめた GAS 用の google.script.run の差し替え（multiShim_）は、プレビューでは要らないので消す
+  uiText = uiText.replace(/<\?!= typeof multiShim_ === 'function' \? multiShim_\(\) : '' \?>\n?/, '');
   var patchedUi = uiText.replace(appIdRe, JSON.stringify(unit)).replace(incRe, coopShared).replace(previewItemRe, newPreviewItem).replace(elseBlockRe, newElseBlock);
 
   var helperScript =

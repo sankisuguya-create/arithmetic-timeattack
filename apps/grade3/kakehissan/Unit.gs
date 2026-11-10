@@ -9,7 +9,10 @@
  * 実際の答えの桁数で欄を減らすと、欄の数が答えの大きさのヒントになる（docs/ADD_UNIT.md 3章）。
  * 上の位が 0 の欄は空けたまま「こたえあわせ」でよい（空欄は 0 とみなす。Core の match_）。
  */
-var UNIT = {
+// 単元の登録。1つの GAS に全単元をまとめても名前がぶつからないよう、UNIT_DEFS['<id>'] に置く。
+// 下の行（ファイルの最後）で、単元が1つだけのプロジェクトでは UNIT にもなる（今までの設置と同じに動く）。
+var UNIT_DEFS = UNIT_DEFS || {};
+UNIT_DEFS['kakehissan'] = {
   id: 'kakehissan',
   grade: 3,                 // 学習指導要領 3年 A(3) 2位数や3位数に1位数をかける乗法。置き場 apps/grade3/ と一致させる
   title: 'かけ算の筆算(1けた) タイムアタック！',
@@ -146,3 +149,7 @@ function kakeKind_(d, b) {
   if (d[1] === 0) return any ? 'G' : 'E0';   // 空位でくりあがり無しは出さない
   return any ? 'F' : 'E';
 }
+
+// 単元が1つだけのプロジェクト・テスト・プレビューでは、この単元が UNIT になる。
+// 全単元をまとめたプロジェクトでは、呼び出しごとに Core が UNIT を差し替える。
+var UNIT = UNIT || UNIT_DEFS['kakehissan'];

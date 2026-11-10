@@ -34,7 +34,10 @@ var VO_DIM = '#D4D454';     // 引き出し線（5年の進みの色）。へこ
 // 正面・上面・側面。重ね描きで奥の面を隠すので、半透明にせず背景 #101728 と混ぜた不透明色にする
 var VO_FACE = ['#282E3E', '#454A57', '#1A2031'];
 
-var UNIT = {
+// 単元の登録。1つの GAS に全単元をまとめても名前がぶつからないよう、UNIT_DEFS['<id>'] に置く。
+// 下の行（ファイルの最後）で、単元が1つだけのプロジェクトでは UNIT にもなる（今までの設置と同じに動く）。
+var UNIT_DEFS = UNIT_DEFS || {};
+UNIT_DEFS['volume'] = {
   id: 'volume',
   grade: 5,
   title: '体積 タイムアタック！',
@@ -80,7 +83,7 @@ var UNIT = {
       case 3: return voUnit_(rand);
       case 4: return rand() < 0.5 ? voLshape_(rand) : voNotch_(rand);
       case 5: return rand() < 0.6 ? voCapacity_(rand) : voLiter_(rand);
-      case 6: return UNIT.gen(rand, ri_(rand, 1, 5));
+      case 6: return UNIT_DEFS['volume'].gen(rand, ri_(rand, 1, 5));   // 全単元をまとめた時も自分の gen を呼ぶ
     }
     throw new Error('mode ' + mode);
   }
@@ -388,3 +391,7 @@ function voLiter_(rand) {
     fig: voTubFig_(w, h, d)
   };
 }
+
+// 単元が1つだけのプロジェクト・テスト・プレビューでは、この単元が UNIT になる。
+// 全単元をまとめたプロジェクトでは、呼び出しごとに Core が UNIT を差し替える。
+var UNIT = UNIT || UNIT_DEFS['volume'];

@@ -8,7 +8,10 @@ var OC_LINE = '#8C93AC';
 var OC_MARK = ['①', '②', '③', '④'];
 var OC_OPS = ['+', '−', '×', '÷'];
 
-var UNIT = {
+// 単元の登録。1つの GAS に全単元をまとめても名前がぶつからないよう、UNIT_DEFS['<id>'] に置く。
+// 下の行（ファイルの最後）で、単元が1つだけのプロジェクトでは UNIT にもなる（今までの設置と同じに動く）。
+var UNIT_DEFS = UNIT_DEFS || {};
+UNIT_DEFS['operation-choice'] = {
   id: 'operation-choice',
   grade: 3,
   title: 'なに算？ タイムアタック！',
@@ -334,3 +337,7 @@ function ocTwo_(rand) {
     OC_OPS.indexOf(op) + 1, 'S ' + type + ' s' + step,
     body + ocExprChoices_(expressions, choicesY), choicesY + 104 + 88);
 }
+
+// 単元が1つだけのプロジェクト・テスト・プレビューでは、この単元が UNIT になる。
+// 全単元をまとめたプロジェクトでは、呼び出しごとに Core が UNIT を差し替える。
+var UNIT = UNIT || UNIT_DEFS['operation-choice'];

@@ -6,8 +6,9 @@ const assert = require('node:assert/strict');
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const src = fs.readFileSync(path.join(__dirname, '..', 'common', 'index.html'), 'utf8');
 
-// サーバーのテンプレートが埋め込む箇所は2つだけ（単元の id と、協力プレイの共有層）
-const SCRIPTLETS = ['<?!= JSON.stringify(String(UNIT.id)) ?>', "<?!= include('coop_shared') ?>"];
+// サーバーのテンプレートが埋め込む箇所は3つだけ（単元の id と、協力プレイの共有層と、全単元をまとめた GAS 用の差し替え）
+// 差し替えは古い Core.gs（multiShim_ が無い）と組み合わせても評価で壊れないよう、typeof で確かめてから呼ぶ
+const SCRIPTLETS = ['<?!= JSON.stringify(String(UNIT.id)) ?>', "<?!= include('coop_shared') ?>", "<?!= typeof multiShim_ === 'function' ? multiShim_() : '' ?>"];
 for (const s of SCRIPTLETS) assert.equal(src.split(s).length - 1, 1, s + ' は1つだけ');
 // index.html には、ほかにテンプレートの記号が無い（あると GAS の評価で壊れる）
 assert.equal(src.split('<?').length - 1, SCRIPTLETS.length);
