@@ -6,16 +6,21 @@ const vm = require('vm'), fs = require('fs'), path = require('path');
 const d = f => fs.readFileSync(path.join(__dirname, '..', 'dist', 'multi', f), 'utf8');
 
 function platform() {
-  const props = {}, made = [], ctx = {
+  const props = { 'u:kuku:ready_schema': '7' }, made = [], ctx = {
     console,
-    LB_FILES: { 'tamath/index': 'INDEX<?!= 1 ?>', 'tamath/teacher': 'TEACHER', 'tamath/coop_shared': 'COOP' },
+    LB_FILES: { 'tamath/index': d('index.html'), 'tamath/teacher': d('teacher.html'), 'tamath/coop_shared': d('coop_shared.html') },
+    LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock() {}, releaseLock() {} }) },
     LB_APP_QUERY: 'app=tamath', LB_PLATFORM_TRIGGERS: true, LB_MODULES: {},
     Session: { getActiveUser: () => ({ getEmail: () => 'owner@edu.nishi.or.jp' }), getEffectiveUser: () => ({ getEmail: () => 'owner@edu.nishi.or.jp' }), getScriptTimeZone: () => 'Asia/Tokyo' },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {}, getAll: () => ({}), putAll() {}, removeAll() {} }) },
     ScriptApp: { getService: () => ({ getUrl: () => 'https://x/exec' }), getProjectTriggers: () => [], newTrigger: n => { made.push(n); return { timeBased: () => ({ atHour: () => ({ everyDays: () => ({ create() {} }) }) }) }; } },
     HtmlService: {
-      createTemplate: src => ({ src, evaluate() { return { src, setTitle() { return this; }, addMetaTag() { return this; } }; } }),
+      // 本物の GAS と同じく、<?!= ?> の中で見えるのはテンプレートに渡した名前と組み込みだけ（包んだ中の名前は見えない）
+      createTemplate: src => { const t = { evaluate() {
+        const names = Object.keys(t).filter(k => k !== 'evaluate'), vals = names.map(k => t[k]);
+        const html = src.replace(/<\?!=([\s\S]*?)\?>/g, (m, expr) => String(new Function(...names, 'return (' + expr + ');')(...vals)));
+        return { src: html, html, setTitle() { return this; }, addMetaTag() { return this; } }; } }; return t; },
       createTemplateFromFile: () => { throw new Error('学習BASE の中で GAS のファイルを読んだ'); },
       createHtmlOutputFromFile: () => { throw new Error('学習BASE の中で GAS のファイルを読んだ'); },
       createHtmlOutput: h => ({ html: h, setTitle() { return this; } })
@@ -32,7 +37,7 @@ const { ctx, made, M } = platform();
 // 包んだので、算数TA の関数は大域に出ない（読み込み係の doGet・apiCall を上書きしない）
 assert.equal(typeof ctx.doGet, 'undefined'); assert.equal(typeof ctx.apiCall, 'undefined'); assert.equal(typeof ctx.UNIT_DEFS, 'undefined');
 // 画面のファイルは LB_FILES から
-assert.equal(M.include('coop_shared'), 'COOP');
+assert.equal(M.include('coop_shared'), d('coop_shared.html'));
 M.useUnit('kuku');
 // URL に app=tamath
 assert.equal(M.unitUrl(), 'https://x/exec?app=tamath&unit=kuku');
@@ -47,4 +52,10 @@ assert.throws(() => M.apiCall('kuku', 'ss_', []), /呼べない関数/);
 assert.throws(() => M.apiCall('kuku', 'noSuchFn', []), /呼べない関数/);
 assert.throws(() => M.apiCall('kuku', 'registerUnitSheet', ['x', 'y']), /呼べない関数/);
 assert.equal(typeof M.apiCall('kuku', 'unitIdsForTest', []), 'object', 'テスト用の関数が見つからない');
+// 児童画面・教師画面をテンプレートとして評価できる（包んだ中の名前を渡している）。差し替え（apiCall につなぐ）が入っている
+const page = M.doGet({ parameter: { app: 'tamath', unit: 'kuku' } });
+assert.match(page.src, /var APP_ID = "kuku";/);
+assert.match(page.src, /r\.apiCall\(KEY/, '画面の差し替えが入っていない（サーバーを呼べない）');
+const tpage = M.doGet({ parameter: { app: 'tamath', unit: 'kuku', page: 'teacher' } });
+assert.match(tpage.src, /r\.apiCall\(KEY/);
 console.log('platform ok');

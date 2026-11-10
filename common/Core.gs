@@ -326,7 +326,16 @@ function lbFile_(name) {
 }
 function tplFromFile_(name) {
   var src = lbFile_(name);
-  return src != null ? HtmlService.createTemplate(src) : HtmlService.createTemplateFromFile(name);
+  var t = src != null ? HtmlService.createTemplate(src) : HtmlService.createTemplateFromFile(name);
+  // テンプレートの <?!= ?> は大域の名前しか見えない。学習BASE ではこのファイルが関数の中に包まれて
+  // UNIT などが大域に出ないので、テンプレートが使う名前をテンプレートに直接渡す（単体の GAS でも害はない）。
+  // 2026-11-10 本番：渡さなかったため「UNIT is not defined」。multiShim_ は typeof で確かめているので、
+  // 渡さないとエラーにならずに差し替えが抜け、画面からサーバーを呼べなくなる
+  t.UNIT = UNIT;
+  t.include = include;
+  t.floorGenForTeacher_ = floorGenForTeacher_;
+  t.multiShim_ = multiShim_;
+  return t;
 }
 function appQuery_() { return typeof LB_APP_QUERY !== 'undefined' && LB_APP_QUERY ? String(LB_APP_QUERY) : ''; }
 function unitHref_(base, id) { var a = appQuery_(); return base + '?' + (a ? a + '&' : '') + 'unit=' + encodeURIComponent(id); }
