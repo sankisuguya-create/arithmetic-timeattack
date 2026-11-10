@@ -367,6 +367,51 @@ function lbWriteSession_(s, mail, isPractice, items) {
 }
 /** 単元を決めて新しい形の記録を書く（学習BASE の検査が使う。名前が _ で終わるので画面からは呼べない） */
 function lbWriteForUnit_(unit, s, mail, isPractice, items) { useUnit_(unit); return lbWriteSession_(s, mail, isPractice, items); }
+/**
+ * 過去の記録（log シート）を、新しい形の集計に取り込める形にする（学習BASE の夜の処理が1回だけ使う）。
+ * log には1問ずつの記録は無いが、型ごとの統計（type_stats）と、一度で正答しなかった問題（miss_items）から、
+ * 技能ごとの 件数・一度で正答した数・時間の統計 が分かる：
+ *   一度で正答した数 = type_stats の1番目／件数 = それ ＋ miss_items のその型の数／時間 = type_stats の 初打鍵の数・Σln・Σln²
+ * 本人はメールで書かれているので、名簿（学習者ID）で引く。名簿にない人の行は取り込まない。
+ * before より前の行だけ（それ以後は新しい形の記録がある）。返す：[{ ts, lid, grade, cls, no, app, context, skills }]
+ */
+function lbLegacySessions_(unit, before) {
+  useUnit_(unit);
+  if (typeof Base === 'undefined' || !hubRoster_()) return [];
+  var sh = ss_().getSheetByName(SHEETS.LOG);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var lidOf = {};
+  Base.roster().forEach(function (r) { if (r.lid) { if (r.mail) lidOf[r.mail] = r.lid; lidOf['lid:' + r.lid] = r.lid; } });
+  var cut = before ? new Date(before).getTime() : Infinity, out = [];
+  sh.getRange(2, 1, sh.getLastRow() - 1, LOG_WIDTH_).getValues().forEach(function (r) {
+    var ts = rowTime_(r[LOG_COL_.TS]);
+    if (!ts || ts >= cut) return;
+    var lid = lidOf[String(r[LOG_COL_.MAIL]).trim().toLowerCase()];
+    if (!lid) return;
+    var skills = {};
+    String(r[LOG_COL_.TSTAT] || '').split(',').forEach(function (part) {
+      var v = part.split(':');
+      if (v.length < 8 || !v[0]) return;
+      skills[lbSkill_(v[0])] = { n: Number(v[1]) || 0, ok: Number(v[1]) || 0, tn: Number(v[3]) || 0, sl: Number(v[6]) || 0, sl2: Number(v[7]) || 0, mis: {} };
+    });
+    String(r[LOG_COL_.MISS] || '').split(',').forEach(function (m) {
+      var t = m.split(':')[0];
+      if (!t) return;
+      var k = lbSkill_(t), sk = skills[k] || (skills[k] = { n: 0, ok: 0, tn: 0, sl: 0, sl2: 0, mis: {} });
+      sk.n++;
+    });
+    if (!Object.keys(skills).length) return;
+    out.push({ ts: new Date(ts), lid: lid, grade: Number(r[LOG_COL_.GRADE]) || 0, cls: String(r[LOG_COL_.CLS]), no: Number(r[LOG_COL_.NO]) || 0,
+      app: 'tamath', context: 'live', skills: skills });
+  });
+  return out;
+}
+/** 過去の記録を取り込める単元（登録済み）。{ key, unit } */
+function lbLegacySources_() {
+  var gp = PropertiesService.getScriptProperties();
+  return unitIds_().filter(function (id) { return !!gp.getProperty(unitSheetKey_(id)); }).map(function (id) { return { key: 'tamath:' + id, unit: id }; });
+}
+
 /** 算数TA の技能の目録（全単元の型）。到達の基準の初期値は正答率90%・20問以上（単元ごとに Unit.gs の mastery で直せる） */
 function tamathCatalog_() {
   var skills = [];
