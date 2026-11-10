@@ -453,6 +453,13 @@ var UNIT = UNIT || UNIT_DEFS['bignum'];
  */
 
 var CI_MARK = ['①', '②', '③', '④'];
+/** タップの問いの誤答の選択肢 → 誤概念（UNIT.wrongLabel）。並びの意味は先頭の注記の表と同じ */
+var CI_WRONG_ = {
+  'A:near': '中心からずれた点を中心とみる', 'A:mid': '中心からずれた点を中心とみる', 'A:edge': '中心からずれた点を中心とみる',
+  'B:short': '円周まで届かない線を半径とみる', 'B:chord': '半分の長さの線（弦）を半径とみる', 'B:off': '中心を通らない線を半径とみる',
+  'C:hchord': '横の端から端（中心を通らない）を直径とみる', 'C:rad': '半径を直径とみる', 'C:part': '円周まで届かない線を直径とみる',
+  'F:up': '中心を通らない切り口を最大とみる', 'F:top': '中心を通らない切り口を最大とみる', 'F:down': '中心を通らない切り口を最大とみる'
+};
 var CI_LINE = '#8C93AC';    // 円の輪郭（背景の図）
 var CI_INK = '#FFFFFF';     // 選ぶ対象の線・点
 var CI_LABEL = '#C9D1E8';   // 長さの字
@@ -517,6 +524,25 @@ UNIT_DEFS['circle'] = {
         '「もんだい」の欄が選択肢の並び（例 B:chord-rad-short-off）で、' +
         '「こたえた値」が3なら③の short（円周まで届かない線）を選んだ、と読む。' +
         'ならび（I・J）で答えが正答のちょうど半分なら、ボール1こ分を半径で数えている可能性がある。',
+
+  /** 用語モード（教師画面の「ようご」）に出す用語。台帳は Core.gs の TERMS_ */
+  terms: ['circle', 'center', 'radius', 'diameter', 'sphere'],
+
+  /**
+   * 誤答 → 誤概念（教師画面の抜け一覧）。tag と、正しい答え・最初に間違えた値（文字列）から読む。
+   * 読めない誤り（単なる計算違い）は '' を返す。
+   */
+  wrongLabel: function (t, tag, want, got) {
+    var g = Number(got), w = Number(want);
+    if (/^[ABCF]$/.test(t)) {
+      var kinds = String(tag).split(':')[1];
+      var k = kinds ? kinds.split('-')[g - 1] : '';
+      return CI_WRONG_[t + ':' + k] || '';
+    }
+    if (/^[DEGH]$/.test(t) && g && (g * 2 === w || g === w * 2)) return '半径と直径を取りちがえる';
+    if (/^[IJK]$/.test(t) && g && (g * 2 === w || g === w * 2)) return 'ボール1こ分を半径で数える';
+    return '';
+  },
 
   gen: function (rand, mode) {
     switch (mode) {
