@@ -365,6 +365,8 @@ function lbWriteSession_(s, mail, isPractice, items) {
     context: isPractice ? 'practice' : 'live', ver: String(ENGINE_VER), items: items
   }, { learner: learner, by: ACT_.by || '', catalog: tamathCatalog_() }).ok;
 }
+/** 単元を決めて新しい形の記録を書く（学習BASE の検査が使う。名前が _ で終わるので画面からは呼べない） */
+function lbWriteForUnit_(unit, s, mail, isPractice, items) { useUnit_(unit); return lbWriteSession_(s, mail, isPractice, items); }
 /** 算数TA の技能の目録（全単元の型）。到達の基準の初期値は正答率90%・20問以上（単元ごとに Unit.gs の mastery で直せる） */
 function tamathCatalog_() {
   var skills = [];
