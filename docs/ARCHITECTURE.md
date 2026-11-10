@@ -152,7 +152,7 @@ a1234@kyoiku.edu.nishi.or.jp    → 児童（教師ではない）
 
 `indexOf('edu.nishi.or.jp') >= 0` や `endsWith('edu.nishi.or.jp')` で書くと、
 **児童が全員教師になる**。`weak_child`（誰がどの型で遅いか）まで児童の画面から開けてしまい、
-README が「児童に見せない前提」としているものが崩れる。
+他の児童の記録（教師だけが見る前提のもの）が児童に見えてしまう。
 
 `@` の右側を切り出して `TEACHER_DOMAIN` と完全一致で比べる（`isTeacherDomain_`）。
 `config.teachers` は例外の口として残す。別ドメインの教師（支援員・非常勤など）を1件ずつ足す。
