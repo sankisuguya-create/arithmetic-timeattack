@@ -392,81 +392,67 @@ assert.ok(tui.includes('id="coopNames"') && tui.includes('#coopStage.nonames #co
 assert.ok(/&& !CP\.endSeen\)\{/.test(tui));                           // 終わりの位置送りは最初の1回だけ（シークが飛ばない）
 assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));   // 列が縮んだら取り直す
 
-/* ---- 開始前の組分け（予定） ---- */
+/* ---- 開始前の編成（クラスごとに1つ。グループ数も編成が持つ。シートは使わない） ---- */
 {
   const J = x => JSON.stringify(Array.from(x));
   ctx.coopStop();
+  delete props['coop_grp_3-1'];                                       // 前の検査の coopSetGroups が残した編成を消す
   const pl = ctx.coopPlan('3-1', 3);
-  assert.ok(pl.ok); assert.equal(pl.names.length, 8);
-  assert.equal(J(pl.gi), '[0,0,0,1,1,1,2,2]');                        // 予定が無ければ番号順の等分
-  assert.ok(ctx.coopSavePlan('3-1', 3, [2, 2, 1, 1, 0, 0, 2, 1]).ok);
-  assert.ok(!ctx.coopSavePlan('3-1', 3, [0, 1]).ok);                   // 名簿と数が合わないものは通さない
-  assert.ok(ctx.coopStart({ cls: '3-1', mode: 'group', gn: 3, minutes: 5 }).ok);
-  assert.equal(J(ctx.coopLive_().gi), '[2,2,1,1,0,0,2,1]');           // 開始すると予定の組で始まる
-  assert.equal(J(ctx.coopPlan('3-1', 4).gi), '[0,0,1,1,2,2,3,3]');     // 組数ごとに別に持つ
-  ctx.coopSetGroups([0, 1, 2, 0, 1, 2, 0, 1]);                         // 遊んでいる途中の編集も予定に残る
+  assert.ok(pl.ok); assert.equal(pl.names.length, 8); assert.ok(!pl.saved);
+  assert.equal(J(pl.gi), '[0,0,0,1,1,1,2,2]');                        // 保存が無ければ欄の数で番号順の等分
+  assert.ok(ctx.coopSavePlan('3-1', 4, [3, 3, 2, 2, 1, 1, 0, 0]).ok);  // 2人ずつ4グループ
+  assert.ok(!ctx.coopSavePlan('3-1', 4, [0, 1]).ok);                   // 名簿と数が合わないものは通さない
+  assert.ok(!sheets['グループ分け'], 'シートは作らない');
+  // 欄のグループ数が何であっても、保存した編成（4グループ）で読み・始まる（以前は欄の数ごとに別に持ち、番号順に戻っていた）
+  [2, 3, 6].forEach(gn => {
+    const r = ctx.coopPlan('3-1', gn);
+    assert.ok(r.saved); assert.equal(r.gn, 4); assert.equal(J(r.gi), '[3,3,2,2,1,1,0,0]');
+  });
+  assert.ok(ctx.coopStart({ cls: '3-1', mode: 'group', gn: 6, minutes: 5 }).ok);
+  assert.equal(ctx.coopLive_().gn, 4);
+  assert.equal(J(ctx.coopLive_().gi), '[3,3,2,2,1,1,0,0]');
+  ctx.coopSetGroups([0, 1, 2, 3, 0, 1, 2, 3]);                         // 遊んでいる途中の編集も編成に残る
   ctx.coopStop();
-  assert.equal(J(ctx.coopPlan('3-1', 3).gi), '[0,1,2,0,1,2,0,1]');
-  assert.ok(ctx.coopStart({ cls: '3-1', mode: 'group', gn: 3, minutes: 5 }).ok);
-  assert.equal(J(ctx.coopLive_().gi), '[0,1,2,0,1,2,0,1]');           // 次の開始に引き継ぐ
-  ctx.coopStop();
-  // 名簿の並びが変わっても、組はメールで引き継ぐ（転入の児童だけ等分の位置に入る）
+  assert.equal(J(ctx.coopPlan('3-1', 3).gi), '[0,1,2,3,0,1,2,3]');
+  // 名簿の並びが変わっても、グループはメールで引き継ぐ（編成に無い転入の児童は人数の少ないグループへ）
   sheets.roster.values.push(['k00@kyoiku.edu.nishi.or.jp', 3, '1', 0, '転入']);
   const p2 = ctx.coopPlan('3-1', 3);
   assert.equal(p2.names[0], '転入'); assert.equal(p2.gi[0], 0);
-  assert.equal(J(Array.from(p2.gi).slice(1)), '[0,1,2,0,1,2,0,1]');
-  // 分け直すと予定を消して番号順の等分へ
+  assert.equal(J(Array.from(p2.gi).slice(1)), '[0,1,2,3,0,1,2,3]');
+  // 分け直すと保存を消して、欄の数で番号順の等分へ
   const p3 = ctx.coopSavePlan('3-1', 3, null, true);
-  assert.ok(p3.ok); assert.equal(J(p3.gi), '[0,0,0,1,1,1,2,2,2]');
+  assert.ok(p3.ok && !p3.saved); assert.equal(J(p3.gi), '[0,0,0,1,1,1,2,2,2]');
   sheets.roster.values.pop();
-  // 画面：組の編集はステージと別のポップアップ。開始前は予定（シート）へ、映している回はその回へ「保存」で書く
+  // 進行中の回は保存した編成を書きかえても変わらない。coopLivePlan で回の並びに合わせて読み、coopSetGroups で効かせる
+  ctx.coopSavePlan('3-1', 3, [0, 0, 0, 1, 1, 1, 2, 2]);
+  assert.ok(ctx.coopStart({ cls: '3-1', mode: 'group', gn: 3, minutes: 5 }).ok);
+  ctx.coopSavePlan('3-1', 3, [2, 0, 0, 1, 1, 1, 2, 2]);
+  assert.equal(J(ctx.coopLive_().gi), '[0,0,0,1,1,1,2,2]');
+  const lp = ctx.coopLivePlan();
+  assert.ok(lp.ok && lp.saved); assert.equal(J(lp.gi), '[2,0,0,1,1,1,2,2]');
+  ctx.coopSavePlan('3-1', 4, [0, 0, 1, 1, 2, 2, 3, 3]);
+  assert.ok(!ctx.coopLivePlan().ok, 'グループ数が違う編成は回に読み込まない');
+  ctx.coopStop();
+  ctx.coopSavePlan('3-1', 3, null, true);
+  // 画面
   assert.ok(tui.includes('id="coopPlanModal" class="cmodal" hidden') && tui.includes('id="coopPlan" class="cdlg" role="dialog"'));
   assert.ok(tui.includes('if(live) run.coopSetGroups(gi); else run.coopSavePlan(PLAN.cls, PLAN.gn, gi);'));
   assert.ok(!tui.includes('id="coopGedit"'), '名札のタップで組を変える古いボタンは無い（ポップアップに一本化）');
   assert.ok(tui.indexOf('id="coopPlan"') < tui.indexOf('<div id="coopStage"'));
-  // 正本は単元の「グループ分け」シート。保存するとクラス×グループ数の塊が書かれる
-  ctx.coopSavePlan('3-1', 3, [2, 2, 1, 1, 0, 0, 2, 1]);
-  const gs = sheets['グループ分け'];
-  assert.ok(gs, 'グループ分けシートができる');
-  assert.equal(J(gs.values[0]), J(['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email']));
-  const live = gs.values.slice(1).filter(r => r[0] === '3-1' && r[1] === 3);
-  assert.equal(live.length, 8);
-  assert.equal(J(live.map(r => r[4])), J(['C', 'C', 'B', 'B', 'A', 'A', 'C', 'B']));
-  assert.equal(live[0][3], '児童1');
-  assert.ok(ctx.coopPlan('3-1', 3).sheetUrl.includes('#gid=123'));
-  // 教師がシートを直接直す：グループは「A組」「1」「グループC」「Bグループ」も読み、クラスは「3年1組」も読む。メールが空なら番号で照らす
-  live[0][4] = 'A組'; live[1][4] = '2'; live[2][0] = '3年1組'; live[3][5] = ''; live[3][4] = 'a';
-  assert.equal(J(ctx.coopPlan('3-1', 3).gi), '[0,1,1,0,0,0,2,1]');
-  live[4][4] = 'グループC'; live[5][4] = 'Bグループ';
-  assert.equal(J(ctx.coopPlan('3-1', 3).gi.slice(4, 6)), '[2,1]');
-  live[4][4] = 'A'; live[5][4] = 'A';
-  // 読めない値の行は等分の位置に戻す
-  live[7][4] = 'Z';
-  assert.equal(ctx.coopPlan('3-1', 3).gi[7], 2);
-  // 他の組数の塊は別に残る
-  ctx.coopSavePlan('3-1', 4, [3, 3, 2, 2, 1, 1, 0, 0]);
-  assert.equal(gs.values.slice(1).filter(r => r[0] && Number(r[1]) === 4).length, 8);
-  assert.equal(ctx.coopPlan('3-1', 3).gi[0], 0);
-  // 以前の版（スクリプトプロパティ）の予定は、シートに塊が無い時だけ読み、保存するとシートへ移して消す
-  props['coop_plan_3-1_5'] = JSON.stringify({ order: ['k01@kyoiku.edu.nishi.or.jp', 'k02@kyoiku.edu.nishi.or.jp'], gi: [4, 4] });
-  const legacy = ctx.coopPlan('3-1', 5);
-  assert.ok(legacy.saved); assert.equal(legacy.gi[0], 4); assert.equal(legacy.gi[1], 4);
-  ctx.coopSavePlan('3-1', 5, Array.from(legacy.gi));
-  assert.ok(!('coop_plan_3-1_5' in props));
-  assert.equal(gs.values.slice(1).filter(r => Number(r[1]) === 5).length, 8);
-  // 進行中の回はシートを直接直しても変わらない。coopLivePlan で回の並びに合わせて読み、coopSetGroups で効かせる
-  ctx.coopSavePlan('3-1', 3, [0, 0, 0, 1, 1, 1, 2, 2]);
-  assert.ok(ctx.coopStart({ cls: '3-1', mode: 'group', gn: 3, minutes: 5 }).ok);
-  gs.values.slice(1).filter(r => r[0] === '3-1' && r[1] === 3)[0][4] = 'C';
-  assert.equal(J(ctx.coopLive_().gi), '[0,0,0,1,1,1,2,2]');
-  const lp = ctx.coopLivePlan();
-  assert.ok(lp.ok && lp.saved); assert.equal(J(lp.gi), '[2,0,0,1,1,1,2,2]');
-  assert.equal(J(ctx.coopLive_().gi), '[0,0,0,1,1,1,2,2]');           // 読むだけでは回に書かない
-  ctx.coopStop();
-  assert.ok(!ctx.coopLivePlan().ok || ctx.coopLive_().status !== 'run');
-  // 画面：見本はシートの編成で描く。映している回は「シートから読み込む」→「保存」
+  assert.ok(!tui.includes('coopPlanSheet'), 'シートへの導線は無い');
   assert.ok(/function coopPrevSession_\(\)\{[\s\S]*?prevPlanGi_\(/.test(tui));
   assert.ok(tui.includes('}).coopLivePlan();'));
+  // 貼り付けの読み取り：1行1グループ、頭の見出しは読み飛ばし、番号（全角も）・氏名で照らす
+  {
+    const fn = tui.match(/function planParse_\(text\)\{[\s\S]*?\n\}/)[0];
+    const env = vm.createContext({ PLAN: { nos: [1, 2, 3, 4, 5, 6, 7, 8], names: ['児童1', '児童2', '児童3', '児童4', '児童5', '児童6', '児童7', '児童8'], gi: [0, 0, 0, 0, 0, 0, 0, 0] } });
+    vm.runInContext(fn, env);
+    let r = env.planParse_('A: 1 5\n1班　2、6\nグループC 3,７\n\n4) 児童4 児童8');
+    assert.equal(r.gn, 4); assert.equal(J(r.gi), '[0,1,2,3,0,1,2,3]'); assert.equal(r.bad.length, 0);
+    r = env.planParse_('1 2 3\n4 5 99\n6 7 1');
+    assert.equal(r.gn, 3); assert.equal(J(r.bad), '["99"]'); assert.equal(J(r.dup), '["1"]');
+    assert.equal(r.gi[7], -1);                                         // 書かれていない児童は -1（画面で人数の少ないグループへ）
+  }
   // 画面：保存ボタンを押すまで書かない（チップを動かしただけでは保存しない）
   assert.ok(tui.includes('id="coopPlanSave"') && /function planMove\(i, g\)\{[\s\S]*?planSetDirty\(true\)/.test(tui));
   assert.ok(!/planMove[\s\S]{0,300}coopSavePlan/.test(tui.match(/function planMove\(i, g\)\{[\s\S]*?\n\}/)[0]));
@@ -881,26 +867,24 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   assert.ok(tui.includes('var u = (CP.OX + (d.x - CP.OX) / S) / CP.W, v = (CP.OY + (d.y - CP.OY) / S) / CP.H;'));
 }
 
-/* ---- 以前の「組分け」シートは、名前と見出しを「グループ分け」に付け替えて使う（中身はそのまま） ---- */
+/* ---- 以前の「組分け」「グループ分け」シートは読まない（グループの編成はスクリプトプロパティだけが持つ） ---- */
 {
   ctx.Session = teacherSession;
-  const gNew = sheets['グループ分け']; delete sheets['グループ分け'];
   const old = new Sheet('組分け', ['クラス', '組数', '番号', '氏名', '組', 'email']);
   old.values.push(['3-1', 2, 1, '児童1', 'B', 'k01@kyoiku.edu.nishi.or.jp'], ['3-1', 2, 2, '児童2', 'A', 'k02@kyoiku.edu.nishi.or.jp']);
   sheets['組分け'] = old;
+  delete props['coop_grp_3-1'];
   const pl = ctx.coopPlan('3-1', 2);
-  assert.equal(pl.gi[0], 1); assert.equal(pl.gi[1], 0);
-  assert.ok(!sheets['組分け'] && sheets['グループ分け'] === old, '名前を付け替える');
-  assert.equal(JSON.stringify(old.values[0]), JSON.stringify(['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email']), '見出しも新しい呼び方に');
-  delete sheets['グループ分け']; if (gNew) sheets['グループ分け'] = gNew;
+  assert.ok(!pl.saved); assert.equal(pl.gi[0], 0); assert.equal(pl.gi[1], 0);
+  delete sheets['組分け'];
   // 画面の呼び方も「グループ」にそろえる（クラスの「1組」は別）
   const tui = read('common/teacher.html'), ui = read('common/index.html');
   ['グループ数', 'グループ編成を確認・編集…', "'グループ' + COOP_LETTERS[g]", "('グループ' + 'ABCDEFGHIJ'[grpOf(i)] + ' ')"].forEach(k => assert.ok(tui.includes(k), k));
   ['組数', '組を編集', '組分け', "'組<small>'", "+ '組 ')"].forEach(k => assert.ok(!tui.includes(k), k));
   assert.ok(ui.includes("'じぶんの グループを 目立たせる'") && ui.includes("'あなたのグループの色'") && !ui.includes('くみを') && !ui.includes('あなたの組'));
-  // タブは「公開モード｜協力プレイ｜全般設定｜分析｜過年度」の順
+  // タブは「公開モード｜協力プレイ｜ようご｜全般設定｜分析｜過年度」の順
   const tabs = [...tui.slice(tui.indexOf('<nav class="tabs"'), tui.indexOf('</nav>')).matchAll(/role="tab"[^>]*>([^<]+)</g)].map(m => m[1]);
-  assert.equal(JSON.stringify(tabs), JSON.stringify(['公開モード', '協力プレイ', '全般設定', '分析', '過年度']));
+  assert.equal(JSON.stringify(tabs), JSON.stringify(['公開モード', '協力プレイ', 'ようご', '全般設定', '分析', '過年度']));
   // 書体：教師画面は BIZ UDPゴシック（読めなければ端末の日本語ゴシック）。時計と正答数は字幅のそろった BIZ UDゴシック
   assert.ok(tui.includes('family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700'));
   assert.ok(tui.includes('font-family:"BIZ UDPGothic","Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif'));
@@ -911,7 +895,7 @@ assert.ok(/r\.evN !== CP\.ev\.length \+ \(r\.ev \|\| \[\]\)\.length/.test(tui));
   const tui = read('common/teacher.html');
   assert.ok(tui.includes('function $(id){ return document.getElementById(id); }'));
   assert.equal((tui.match(/document\.getElementById\(/g) || []).length, 1, 'id での取得は $ に一本化');
-  assert.ok(tui.includes("var PAGES = { mode: 'pageMode', coop: 'pageCoop', set: 'pageSet', ana: 'pageAna', past: 'pagePast' };"));
+  assert.ok(tui.includes("var PAGES = { mode: 'pageMode', coop: 'pageCoop', term: 'pageTerm', set: 'pageSet', ana: 'pageAna', past: 'pagePast' };"));
   assert.ok(tui.includes('function coopLockForm_(lock){') && (tui.match(/coopLockForm_\(/g) || []).length >= 3);
   assert.ok(tui.includes('function coopSyncForm_(s){') && (tui.match(/coopSyncForm_\(/g) || []).length >= 3);
   // ボタンの役割は協力プレイ以外のタブにも

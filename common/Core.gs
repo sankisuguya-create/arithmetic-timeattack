@@ -1661,132 +1661,69 @@ function coopPub_(s, since) {
  * その間に届いた直前の回の送り直しをこちらに数える（開始を押した瞬間に前の回の取りこぼしが出ないように）
  */
 /*
- * 組の予定（開始前に教師が作っておく組分け）。単元のスプレッドシートの「組分け」シートが正本。
- * 教師はシートを直接直してもよいし、教師画面で並べ替えて「保存」してもよい（どちらも同じシートに書く）。
+ * グループ分け（開始前に教師が作っておく編成）。クラスごとに1つだけ、スクリプトプロパティ coop_grp_<クラス> に持つ。
+ *   { gn: グループ数, by: { email: グループ番号(0〜) } }
+ * グループ数は編成そのものが決める（教師画面のグループ数の欄とは別に持たない）。
  *
- *   クラス | 組数 | 番号 | 氏名 | 組 | email
- *   3-1    | 6    | 1    | 山田 | A  | xxx@...
- *
- * - 組は A〜J（「A組」「1」も読む）。クラスは「3-1」（「3年1組」も読む）
- * - 児童はメールで照らす（名簿の並びが変わってもずれない）。メールが空なら番号で照らす。
- *   シートに無い児童（転入など）は番号順の等分の位置に入る
- * - 組数ごとに別の行の塊として持つので、組数を一時的に変えて戻しても、作った組は消えない
- * - 以前の版はスクリプトプロパティ（coop_plan_<クラス>_<組数>）に持っていた。シートに行が無い時だけそちらを読み、
- *   次に保存した時にシートへ移して消す
+ * 以前は単元のスプレッドシートの「グループ分け」シートに、クラス×グループ数ごとの塊で持っていた。
+ * 欄のグループ数を変えると別の塊（無ければ番号順の等分）を読むので、「4人ずつにしたのに番号順になる」
+ * 「シートの値と画面の値が食い違う」が起きていた。シートはもう読まない（残っていても消してよい）。
+ * 教師画面では、編成を文字で貼り付けて読み取り、文字で写し取れる（コピー・貼り付けで持ち運ぶ）。
  */
-var COOP_GROUP_SHEET = 'グループ分け';
-var COOP_GROUP_SHEET_OLD = '組分け';   // 以前の名前。見つけたら新しい名前に付け替える（中身と並びは同じ）
-var COOP_GROUP_HEAD = ['クラス', 'グループ数', '番号', '氏名', 'グループ', 'email'];
-var COOP_GROUP_LETTERS = 'ABCDEFGHIJ';
-
-function coopPlanKey_(cls, gn) { return 'coop_plan_' + cls + '_' + gn; }
-function coopClsNorm_(v) {
-  return String(v == null ? '' : v).replace(/\s/g, '').replace(/年/, '-').replace(/組$/, '');
-}
-/** シートの「グループ」の欄 → 0〜gn-1。読めなければ -1（「A」「グループA」「Aグループ」「A組」「1」を読む） */
-function coopGrpParse_(v, gn) {
-  var t = String(v == null ? '' : v).trim().replace(/^グループ/, '').replace(/(組|グループ)$/, '').trim(), n = -1;
-  if (/^[A-Ja-j]$/.test(t)) n = t.toUpperCase().charCodeAt(0) - 65;
-  else if (/^\d+$/.test(t)) n = Number(t) - 1;
-  return (n >= 0 && n < gn) ? n : -1;
-}
-function coopGroupSheet_(create) {
-  var ss = ss_(), sh = ss.getSheetByName(COOP_GROUP_SHEET);
-  if (!sh) {
-    // 以前の「組分け」シート：名前と見出しを新しい呼び方に付け替えて使う（列の並びは同じなので中身はそのまま）
-    var old = ss.getSheetByName(COOP_GROUP_SHEET_OLD);
-    if (old) {
-      sh = old;
-      try { old.setName(COOP_GROUP_SHEET); old.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]); } catch (e) {}
-    }
-  }
-  if (!sh && create) {
-    sh = ss.insertSheet(COOP_GROUP_SHEET);
-    sh.getRange(1, 1, 1, COOP_GROUP_HEAD.length).setValues([COOP_GROUP_HEAD]).setFontWeight('bold');
-    sh.setFrozenRows(1);
-    try {
-      sh.getRange(1, 1).setNote('協力モードのグループ分け（教師画面の「グループを編集…」と同じもの）。\n' +
-        '「グループ」の欄を A〜J で書きかえると、次に開始した時そのグループで始まります。\n' +
-        'クラス×グループ数ごとの行の塊です。行が無いクラスは、教師画面で一度「保存」すると作られます。');
-    } catch (e) {}
-  }
-  return sh;
-}
-function coopGroupRows_() {
-  var sh = coopGroupSheet_(false);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, COOP_GROUP_HEAD.length).getValues();
+var COOP_GRP_KEY = 'coop_grp_';
+function coopGrpLoad_(cls) {
+  try {
+    var p = JSON.parse(PropertiesService.getScriptProperties().getProperty(COOP_GRP_KEY + cls) || 'null');
+    var gn = Number(p && p.gn);
+    if (!p || !p.by || !(gn >= 2 && gn <= COOP_GN_MAX)) return null;
+    return { gn: gn, by: p.by };
+  } catch (e) { return null; }
 }
 function coopPlanDefault_(gn, kids) {
   return kids.map(function (k, i) { return Math.min(gn - 1, Math.floor(i * gn / kids.length)); });
 }
-/** 予定があれば児童の並び（kids）に合わせた組番号の配列。無ければ null */
-function coopPlanGet_(cls, gn, kids) {
-  var byMail = {}, byNo = {}, found = false;
-  coopGroupRows_().forEach(function (r) {
-    if (coopClsNorm_(r[0]) !== cls || Number(r[1]) !== gn) return;
-    found = true;
-    var g = coopGrpParse_(r[4], gn);
-    if (g < 0) return;
-    var m = String(r[5] || '').trim().toLowerCase();
-    if (m) byMail[m] = g;
-    else if (r[2] !== '' && r[2] != null) byNo[Number(r[2])] = g;
+/**
+ * 保存した編成を児童の並び（kids）に合わせる。{ gn, gi } か、保存が無ければ null。
+ * 編成に無い児童（転入など）は、その時いちばん人数の少ないグループに入れる
+ */
+function coopPlanGet_(cls, kids) {
+  var p = coopGrpLoad_(cls);
+  if (!p) return null;
+  var gi = kids.map(function (k) {
+    var g = Number(p.by[k.mail]);
+    return (g >= 0 && g < p.gn && g === Math.floor(g)) ? g : -1;
   });
-  if (!found) {
-    // 以前の版の置き場（スクリプトプロパティ）
-    var p = null;
-    try { p = JSON.parse(PropertiesService.getScriptProperties().getProperty(coopPlanKey_(cls, gn)) || 'null'); } catch (e) {}
-    if (!p || !p.order || !p.gi) return null;
-    p.order.forEach(function (m, i) { var g = Number(p.gi[i]); if (g >= 0 && g < gn && g === Math.floor(g)) byMail[m] = g; });
-  }
-  var def = coopPlanDefault_(gn, kids);
-  return kids.map(function (k, i) {
-    if (byMail.hasOwnProperty(k.mail)) return byMail[k.mail];
-    if (byNo.hasOwnProperty(k.no)) return byNo[k.no];
-    return def[i];
+  var cnt = []; for (var g = 0; g < p.gn; g++) cnt.push(0);
+  gi.forEach(function (x) { if (x >= 0) cnt[x]++; });
+  gi = gi.map(function (x) {
+    if (x >= 0) return x;
+    var m = 0; for (var j = 1; j < p.gn; j++) if (cnt[j] < cnt[m]) m = j;
+    cnt[m]++; return m;
   });
+  return { gn: p.gn, gi: gi };
 }
-/** クラス×組数の行の塊を書き直す。gi が null なら塊を消す（番号順の等分に戻す） */
+/** 編成を保存する。gi が null なら消す（番号順の等分に戻す） */
 function coopPlanPut_(cls, gn, order, gi) {
-  var sh = coopGroupSheet_(true), kids = coopKids_(cls), byMail = {};
-  kids.forEach(function (k) { byMail[k.mail] = k; });
-  var old = coopGroupRows_();
-  var rows = old.filter(function (r) { return !(coopClsNorm_(r[0]) === cls && Number(r[1]) === gn); });
-  if (gi) {
-    order.forEach(function (m, i) {
-      var k = byMail[m] || {};
-      rows.push([cls, gn, k.no || '', k.name || '', COOP_GROUP_LETTERS[gi[i]] || 'A', m]);
-    });
-  }
-  rows.sort(function (a, b) {
-    var ca = coopClsNorm_(a[0]), cb = coopClsNorm_(b[0]);
-    return (ca < cb ? -1 : ca > cb ? 1 : 0) || Number(a[1]) - Number(b[1]) || Number(a[2]) - Number(b[2]);
-  });
-  if (old.length) sh.getRange(2, 1, old.length, COOP_GROUP_HEAD.length).clearContent();
-  if (rows.length) sh.getRange(2, 1, rows.length, COOP_GROUP_HEAD.length).setValues(rows);
-  try { PropertiesService.getScriptProperties().deleteProperty(coopPlanKey_(cls, gn)); } catch (e) {}
-}
-function coopGroupUrl_() {
-  try {
-    var sh = coopGroupSheet_(true);
-    return ss_().getUrl() + '#gid=' + sh.getSheetId();
-  } catch (e) { return ''; }
+  var props = PropertiesService.getScriptProperties();
+  if (!gi) { props.deleteProperty(COOP_GRP_KEY + cls); return; }
+  var by = {};
+  order.forEach(function (m, i) { by[m] = gi[i]; });
+  props.setProperty(COOP_GRP_KEY + cls, JSON.stringify({ gn: gn, by: by }));
 }
 function coopGnOf_(gn) { return Math.max(2, Math.min(COOP_GN_MAX, Number(gn) || 6)); }
 
-/** 開始前の組分けを読む。予定が無ければ番号順の等分 */
+/** 開始前の編成を読む。保存が無ければ、欄のグループ数（gn）で番号順の等分 */
 function coopPlan(cls, gn) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   cls = String(cls || ''); gn = coopGnOf_(gn);
   var kids = coopKids_(cls);
   if (!kids.length) return { ok: false, msg: 'そのクラスの児童が名簿にありません。' };
-  var plan = coopPlanGet_(cls, gn, kids);
-  return { ok: true, cls: cls, gn: gn, gi: plan || coopPlanDefault_(gn, kids), saved: !!plan,
-           sheetUrl: coopGroupUrl_(),   // 「シートで編集」の行き先（シートが無ければここで作る。教師の操作の中なので書いてよい）
+  var plan = coopPlanGet_(cls, kids);
+  return { ok: true, cls: cls, gn: plan ? plan.gn : gn, gi: plan ? plan.gi : coopPlanDefault_(gn, kids), saved: !!plan,
            names: kids.map(function (k) { return k.name; }), nos: kids.map(function (k) { return k.no; }) };
 }
 
-/** 開始前の組分けを「組分け」シートへ保存する。gi は coopPlan が返した児童の並びに合わせる。reset なら塊を消して番号順の等分に戻す */
+/** 開始前の編成を保存する。gi は coopPlan が返した児童の並びに合わせる。reset なら消して番号順の等分（gn）に戻す */
 function coopSavePlan(cls, gn, gi, reset) {
   if (!isTeacher_(email_())) throw new Error('権限がありません');
   cls = String(cls || ''); gn = coopGnOf_(gn);
@@ -2002,7 +1939,8 @@ function coopContBase_(cont, prev) {
     pace: Number(src.pace) || FLOOR_PRIOR_.perMin, total: tot }]);
   return { cls: String(src.cls), pat: String(src.pat), seed: Number(src.seed) || 1,
            mode: src.mode === 'group' ? 'group' : 'child', gn: Number(src.gn) || 6, org: Number(src.org) || 1, orgPts: src.orgPts || null, gw: src.gw || null,
-           keys: keys, prior: { dur: pin.dur + dur, ev: all, segs: segs } };
+           keys: keys, order: src.order || null, gi: src.gi || null,   // 続きの回のグループは前の回の編成のまま
+           prior: { dur: pin.dur + dur, ev: all, segs: segs } };
 }
 /** 引き継いだ正答の児童 index を、新しいセッションの名簿の並びへ付け替える */
 function coopContRemap_(base, kids) {
@@ -2042,7 +1980,9 @@ function coopStart_(o, pace) {
   if (FLOOR_PATTERNS_.indexOf(pat) < 0) pat = 'penrose';
   var minutes = coopMinOf_((o && o.minutes) || old.minutes || COOP_DEF_MIN);
   var mode = base ? base.mode : (((o && o.mode) || old.mode) === 'group' ? 'group' : 'child');
-  var gn = coopGnOf_(base ? base.gn : ((o && o.gn) || old.gn || 6));
+  // グループ数：保存した編成があればその数（欄の値より優先。欄と編成が食い違って番号順に戻るのを防ぐ）
+  var plan = (!base && mode === 'group') ? coopPlanGet_(cls, kids) : null;
+  var gn = coopGnOf_(base ? base.gn : plan ? plan.gn : ((o && o.gn) || old.gn || 6));
   var seed = base ? base.seed : Math.floor(Math.random() * 2147483647);
   // 起点の数：続きからは前の回のまま（変えると引き継いだ部分の形が変わる）。名簿・組数が減っていれば上限で切る
   var org = coopOrgOf_(base ? base.org : ((o && o.org) || old.org || 1), mode === 'group' ? gn : kids.length);
@@ -2051,12 +1991,15 @@ function coopStart_(o, pace) {
   // 育ちの倍率は開始の時点の設定を回に写す（あとで設定を変えても、その回の再生・見返し・続きからの形は変わらない）。続きからは前の回のまま
   var gw = (base && coopGw_(base.gw)) || growWeights_();
   var kidsMap = {}, order = [], gi = [];
-  // 組は「開始前に作った予定」を最優先にする。無ければ前回と同じ顔ぶれなら前の編成、それも無ければ番号順の等分
-  var plan = mode === 'group' ? coopPlanGet_(cls, gn, kids) : null;
+  // グループは保存した編成。無ければ番号順の等分。
+  // 続きからの回は前の回の編成を引き継ぐ（メールで照らす。前の回にいない児童は番号順の等分の位置）
+  var bmap = {};
+  if (base && base.order && base.gi) base.order.forEach(function (m, i) { bmap[m] = Number(base.gi[i]); });
   kids.forEach(function (k, i) {
     kidsMap[k.mail] = i; order.push(k.mail);
-    gi.push(plan ? plan[i]
-         : old.gi && old.order && old.order[i] === k.mail && old.gn === gn ? old.gi[i]
+    var bg = bmap[k.mail];
+    gi.push(plan ? plan.gi[i]
+         : (bg >= 0 && bg < gn) ? bg
          : Math.min(gn - 1, Math.floor(i * gn / kids.length)));
   });
   var prior = base ? coopContRemap_(base, kids) : null;
@@ -2151,15 +2094,14 @@ function coopSetGroups(gi) {
     s.gi = gi.map(function (g) { return Math.max(0, Math.min(s.gn - 1, Math.round(Number(g) || 0))); });
     coopPutLive_(s);
     coopRowWrite_(s.id, { gi: s.gi });
-    // 遊んでいる途中の編集も予定に残す（次の開始で同じ組から始められるように）
+    // 遊んでいる途中の編集も編成に残す（次の開始で同じグループから始められるように）
     if (s.order) { try { coopPlanPut_(s.cls, s.gn, s.order, s.gi); } catch (e) {} }
     return { ok: true };
   });
 }
 
 /**
- * 「グループ分け」シートの内容を、進行中（映している）回の児童の並びに合わせて読む。回には書かない。
- * 回の編成は開始の時点でシートから写すので、あとでシートを直接直しても回には届かない。
+ * 保存した編成を、進行中（映している）回の児童の並びに合わせて読む。回には書かない。
  * 教師画面はこれを窓に読み込み、「保存」（coopSetGroups）で回に効かせる。
  */
 function coopLivePlan() {
@@ -2167,8 +2109,9 @@ function coopLivePlan() {
   var s = coopLive_();
   if (!s || s.mode !== 'group' || !s.order) return { ok: false, msg: 'グループの協力プレイがありません。' };
   var kids = s.order.map(function (m, i) { return { mail: m, no: s.nos[i] }; });
-  var plan = coopPlanGet_(s.cls, s.gn, kids);
-  return { ok: true, gi: plan || coopPlanDefault_(s.gn, kids), saved: !!plan, sheetUrl: coopGroupUrl_() };
+  var plan = coopPlanGet_(s.cls, kids);
+  if (plan && plan.gn !== s.gn) return { ok: false, msg: '保存した編成は' + plan.gn + 'グループで、この回（' + s.gn + 'グループ）と数が違います。' };
+  return { ok: true, gi: plan ? plan.gi : coopPlanDefault_(s.gn, kids), saved: !!plan };
 }
 
 /** いまのセッションを再生データとして保存する。終了前でもその時点までを保存 */
@@ -2899,6 +2842,61 @@ function gradeNorms_(kids) {
   return out;
 }
 
+/* ============================================================
+ *  抜け一覧（教師画面の分析タブの先頭）
+ *
+ *  判断は「どの児童の、どこに理解の抜けがあるか」。集団の図表ではなく、児童ごとに
+ *  最大 GAP_MAX_ 件の「抜け」を言葉で出す。基準は本人の中での比較（学年との比較だと、
+ *  全体に低い子は全部の型が該当して、一覧から何も読めない）。
+ *
+ *  抜けの種類（強い順）
+ *    wrong … 同じ誤概念の誤答を GAP_WRONG_MIN_ 回以上（UNIT.wrongLabel のある単元だけ）
+ *    miss  … 本人の誤答率の中央値より GAP_RATE_ 以上高く、その差が誤答率の標準誤差の2倍を超える型
+ *    slow  … ◆（本人の他の型より遅い。markSelfSlow_）
+ *  状態
+ *    few  … 判定できる型（GAP_MIN_N_ 問以上）が無い
+ *    flat … 本人の誤答率の中央値が GAP_FLAT_ 以上（どの型も誤答が多く、型の差では読めない）
+ *    ok   … それ以外（抜けが0件なら「目立つ抜けなし」）
+ * ============================================================ */
+var GAP_MIN_N_ = 10;     // 型ごとの問題数（1回目正答＋誤答）の下限。10問で誤答率の標準誤差は最大±0.16。根拠なし（仮の値）
+var GAP_RATE_ = 0.2;     // 本人の中央値からの差。根拠なし（仮の値）
+var GAP_FLAT_ = 0.3;     // 中央値の誤答率がこれ以上なら「全体に誤答が多い」。根拠なし（仮の値）
+var GAP_WRONG_MIN_ = 2;  // 同じ誤概念を選んだ回数。1回は押し間違いと区別できない
+var GAP_MAX_ = 3;
+
+/**
+ * 純粋。tok/tm: { 型: 1回目正答数／誤答数 }、wl: { '型|誤概念': 回数 }、t: 児童の型ごとの想起（self 付き）。
+ * 返り値 { st: 'ok'|'few'|'flat', items: [{ t, k: 'wrong'|'miss'|'slow', txt, n, rate }] }
+ */
+function gapsOf_(tok, tm, wl, t, order) {
+  tok = tok || {}; tm = tm || {}; wl = wl || {}; t = t || {};
+  var rates = {}, elig = [];
+  order.forEach(function (ty) {
+    var m = tm[ty] || 0, N = (tok[ty] || 0) + m;
+    if (N >= GAP_MIN_N_) { rates[ty] = { r: m / N, N: N, m: m }; elig.push(ty); }
+  });
+  var items = [];
+  Object.keys(wl).forEach(function (k) {
+    if (wl[k] < GAP_WRONG_MIN_) return;
+    var i = k.indexOf('|');
+    items.push({ t: k.slice(0, i), k: 'wrong', txt: k.slice(i + 1), n: wl[k], s: 100 + wl[k] });
+  });
+  var center = elig.length ? median_(elig.map(function (ty) { return rates[ty].r; })) : 0;
+  elig.forEach(function (ty) {
+    var o = rates[ty], gap = o.r - center, se = Math.sqrt(Math.max(o.r * (1 - o.r), 0.01) / o.N);
+    if (elig.length >= 2 && gap >= GAP_RATE_ && gap > 2 * se) {
+      items.push({ t: ty, k: 'miss', txt: '', n: o.m, rate: Math.round(o.r * 100), s: 50 + gap * 10 });
+    }
+  });
+  order.forEach(function (ty) {
+    if (t[ty] && t[ty].self) items.push({ t: ty, k: 'slow', txt: '', n: t[ty].n, s: 10 });
+  });
+  items.sort(function (a, z) { return z.s - a.s; });
+  items = items.slice(0, GAP_MAX_).map(function (x) { delete x.s; return x; });
+  var stt = !elig.length && !items.length ? 'few' : (elig.length && center >= GAP_FLAT_ ? 'flat' : 'ok');
+  return { st: stt, items: items, med: Math.round(center * 100) };
+}
+
 /**
  * 本人の中で遅い型（◆）。学年との比較だけだと、全体に遅い子は行全体が「遅い」になり、
  * その子がとくに苦手な型が読めない。
@@ -3035,11 +3033,13 @@ function buildAnalysis_(fyear) {
     b.daily[d] = (b.daily[d] || 0) + 1;
 
     var st = b.kids[m];
-    if (!st) st = b.kids[m] = { name: rc.name, no: rc.no, tries: 0, miss: 0, t: {} };
+    if (!st) st = b.kids[m] = { name: rc.name, no: rc.no, tries: 0, miss: 0, t: {}, tok: {}, tm: {}, wl: {} };
     st.tries++;
 
     // type_stats … "型:試行数:Σ送信まで:初打鍵あり数:Σ初打鍵まで:Σ(初打鍵まで)^2"
     String(row[LOG_COL_.TSTAT] || '').split(',').forEach(function (e) {
+      var p0 = String(e).split(':');
+      if (typeSet[p0[0]] && p0.length >= 2) st.tok[p0[0]] = (st.tok[p0[0]] || 0) + (Number(p0[1]) || 0);   // 1回目で正答した数（抜け一覧の分母）
       var x = typeStat_(e);
       if (!x) return;                          // 初打鍵の無い古い行は想起の集計に入れない
       var ty = x.t;
@@ -3054,11 +3054,18 @@ function buildAnalysis_(fyear) {
       var acc = b.types[ty] || (b.types[ty] = newAcc_());
       acc.miss++;
       st.miss++;
+      st.tm[ty] = (st.tm[ty] || 0) + 1;
     });
 
     splitCellItems_(row[LOG_COL_.WRONG], typeSet).forEach(function (e) {
       if (e.indexOf('|') < 0) return;
       b.wrong[e] = (b.wrong[e] || 0) + 1;
+      // 誤答の値から誤概念を読める単元（UNIT.wrongLabel）は、児童ごとに数える（抜け一覧）
+      var wp = e.split('|');
+      if (typeof UNIT.wrongLabel === 'function' && wp.length >= 4) {
+        var lb = UNIT.wrongLabel(wp[0], wp[1], wp[2], wp[3]);
+        if (lb) { var lk = wp[0] + '|' + lb; st.wl[lk] = (st.wl[lk] || 0) + 1; }
+      }
     });
   }
 
@@ -3103,7 +3110,7 @@ function buildAnalysis_(fyear) {
     var bk = (perCls[ck] || { kids: {} }).kids, kids = [];
     Object.keys(roster).forEach(function (m) {
       if (roster[m].ck !== ck) return;
-      var st = bk[m] || { name: roster[m].name, no: roster[m].no, tries: 0, miss: 0, t: {} };
+      var st = bk[m] || { name: roster[m].name, no: roster[m].no, tries: 0, miss: 0, t: {}, tok: {}, tm: {}, wl: {} };
       var wMax = 0, wType = '', t = {};
       order.forEach(function (ty) {
         var o = recallOut_(st.t[ty]);
@@ -3113,7 +3120,8 @@ function buildAnalysis_(fyear) {
         if (o.n >= 5 && o.cv > wMax) { wMax = o.cv; wType = ty; }
       });
       kids.push({ no: st.no, name: st.name, tries: st.tries, miss: st.miss,
-                  wobble: wMax, wobbleType: wType ? (UNIT.types[wType] || wType) : '', t: t });
+                  wobble: wMax, wobbleType: wType ? (UNIT.types[wType] || wType) : '', t: t,
+                  _tok: st.tok, _tm: st.tm, _wl: st.wl });
     });
     kids.sort(function (a, z) { return a.no - z.no; });
     students[ck] = kids;
@@ -3138,6 +3146,8 @@ function buildAnalysis_(fyear) {
         }
       });
       markSelfSlow_(k.t);
+      k.gap = gapsOf_(k._tok, k._tm, k._wl, k.t, order);
+      delete k._tok; delete k._tm; delete k._wl;
     });
   });
   // クラス・全体の型平均も同じ分布に当てる。全体は学年が1つのときだけ（学年をまたぐ分布は無い）
@@ -3179,6 +3189,128 @@ function buildAnalysis_(fyear) {
     scopes: scopes,
     students: students
   };
+}
+
+/* ============================================================
+ *  用語モード（教師画面の「ようご」タブ）
+ *
+ *  毎時間の定例として教室モニターに映し、全員で声をそろえて読む。
+ *  ① 図だけを映す → ② 押すと名前が出る、の2段階。
+ *
+ *  台帳 TERMS_ は全単元共通で、並びは学習の順（学年→単元の順）。
+ *  単元は UNIT.terms で自分の用語を宣言する。台帳でその単元の最初の用語より前にある用語は既習とみなし、
+ *  毎回 TERM_PAST_N_ 個まで、しばらく出していないものから混ぜる（間隔をあけた復習）。
+ *  図は Core.gs の中で描く（単元のプロジェクトをまたいで既習の用語を描くため）。
+ * ============================================================ */
+var TERM_PAST_N_ = 2;       // 1回に混ぜる既習の用語の数。根拠なし（1〜2分に収める仮の値）
+var TERM_FIGS_ = 4;         // 1語あたりに用意する図の向きの数（毎回向きを変え、典型図への固着を避ける）
+var TERM_KEY_ = 'terms_seen';
+
+var TM_LINE_ = '#8C93AC';
+var TM_INK_ = '#FFFFFF';
+
+function tmSvg_(body) {
+  return '<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">' + body + '</svg>';
+}
+function tmAt_(cx, cy, r, th) { return [Math.round(cx + r * Math.cos(th)), Math.round(cy - r * Math.sin(th))]; }
+function tmCircle_(r, stroke, w) {
+  return '<circle cx="200" cy="150" r="' + r + '" fill="none" stroke="' + stroke + '" stroke-width="' + w + '"/>';
+}
+function tmDot_(p, c) { return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="9" fill="' + c + '"/>'; }
+function tmSeg_(p, q, c) {
+  return '<line x1="' + p[0] + '" y1="' + p[1] + '" x2="' + q[0] + '" y2="' + q[1] +
+         '" stroke="' + c + '" stroke-width="9" stroke-linecap="round"/>';
+}
+
+/**
+ * 用語の台帳（学習の順）。fig(rand, hi) は図の SVG。hi は名称が指すところの色（学年の色）。
+ * 指すところだけを hi で塗り、ほかは輪郭の灰にする（何を言う図なのかを1つに絞る）。
+ */
+var TERMS_ = [
+  { id: 'circle', grade: 3, unit: 'circle', name: '円', yomi: 'えん',
+    fig: function (rand, hi) { return tmSvg_(tmCircle_(110, hi, 9)); } },
+  { id: 'center', grade: 3, unit: 'circle', name: '中心', yomi: 'ちゅうしん',
+    fig: function (rand, hi) { return tmSvg_(tmCircle_(110, TM_LINE_, 5) + tmDot_([200, 150], hi)); } },
+  { id: 'radius', grade: 3, unit: 'circle', name: '半径', yomi: 'はんけい',
+    fig: function (rand, hi) {
+      var th = rand() * Math.PI * 2;
+      return tmSvg_(tmCircle_(110, TM_LINE_, 5) + tmSeg_([200, 150], tmAt_(200, 150, 110, th), hi) + tmDot_([200, 150], TM_INK_));
+    } },
+  { id: 'diameter', grade: 3, unit: 'circle', name: '直径', yomi: 'ちょっけい',
+    fig: function (rand, hi) {
+      var th = rand() * Math.PI;
+      return tmSvg_(tmCircle_(110, TM_LINE_, 5) + tmSeg_(tmAt_(200, 150, 110, th), tmAt_(200, 150, 110, th + Math.PI), hi) +
+                    tmDot_([200, 150], TM_INK_));
+    } },
+  { id: 'sphere', grade: 3, unit: 'circle', name: '球', yomi: 'きゅう',
+    fig: function (rand, hi) {
+      var ry = 22 + Math.round(rand() * 14);
+      return tmSvg_('<circle cx="200" cy="150" r="110" fill="' + hi + '" fill-opacity=".28" stroke="' + hi + '" stroke-width="7"/>' +
+        '<ellipse cx="200" cy="150" rx="110" ry="' + ry + '" fill="none" stroke="' + TM_LINE_ + '" stroke-width="4" stroke-dasharray="10 8"/>' +
+        '<ellipse cx="160" cy="105" rx="26" ry="16" fill="#FFFFFF" fill-opacity=".35"/>');
+    } }
+];
+
+function termById_(id) {
+  for (var i = 0; i < TERMS_.length; i++) if (TERMS_[i].id === id) return TERMS_[i];
+  return null;
+}
+
+/**
+ * 今日の用語の束（純粋。tests/terms.test.cjs が叩く）。
+ * cur: この単元の用語 id、seen: { id: { n: 出した回数, at: 最後に出した時刻 } }。
+ * 返り値 [{ id, name, yomi, cur, n, figs: [svg...] }]。この単元の用語が先、既習が後。
+ */
+function termDeck_(cur, seen, grade, rand) {
+  cur = (cur || []).filter(function (id) { return !!termById_(id); });
+  seen = seen || {};
+  var hi = GRADE_ACCENT_[grade] || GRADE_ACCENT_[3];
+  var first = TERMS_.length;
+  cur.forEach(function (id) { first = Math.min(first, TERMS_.indexOf(termById_(id))); });
+  if (!cur.length) {   // 用語を宣言していない単元：下の学年の用語だけを既習とする
+    first = 0;
+    while (first < TERMS_.length && TERMS_[first].grade < grade) first++;
+  }
+  var past = TERMS_.slice(0, first).filter(function (x) { return cur.indexOf(x.id) < 0 && x.grade <= grade; })
+    .sort(function (a, z) { return ((seen[a.id] || {}).at || 0) - ((seen[z.id] || {}).at || 0); })
+    .slice(0, TERM_PAST_N_);
+  function out(x, isCur) {
+    var figs = [];
+    for (var i = 0; i < TERM_FIGS_; i++) figs.push(x.fig(rand, hi));
+    var n = (seen[x.id] || {}).n || 0;
+    return { id: x.id, name: x.name, yomi: x.yomi, cur: isCur, n: n, figs: figs };
+  }
+  return cur.map(function (id) { return out(termById_(id), true); })
+    .concat(past.map(function (x) { return out(x, false); }));
+}
+
+function termSeen_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(TERM_KEY_) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+
+/** 教師画面：今日の用語の束 */
+function getTermDeck() {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var seed = Math.floor(Math.random() * 1e9);
+  return { deck: termDeck_(UNIT.terms || [], termSeen_(), UNIT.grade, rng_(seed)), declared: (UNIT.terms || []).length };
+}
+
+/** 教師画面：最後まで映し終えた用語を記録する（既習の用語の出す順に使う） */
+function termDone(ids) {
+  if (!isTeacher_(email_())) throw new Error('権限がありません');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return { ok: false };
+  try {
+    var seen = termSeen_(), now = Date.now();
+    (ids || []).forEach(function (id) {
+      if (!termById_(String(id))) return;
+      var o = seen[id] || (seen[id] = { n: 0, at: 0 });
+      o.n++; o.at = now;
+    });
+    PropertiesService.getScriptProperties().setProperty(TERM_KEY_, JSON.stringify(seen));
+    return { ok: true };
+  } finally { lock.releaseLock(); }
 }
 
 /* ============================================================
@@ -3286,6 +3418,11 @@ function validateUnit_() {
   Object.keys(UNIT.units || {}).forEach(function (k) { checkColor('units.' + k, UNIT.units[k]); });
   Object.keys(UNIT.slotColor || {}).forEach(function (k) { checkColor('slotColor.' + k, UNIT.slotColor[k]); });
   if (typeof UNIT.gen !== 'function') probs.push('UNIT.gen がありません');
+  if (UNIT.terms != null) {
+    if (!Array.isArray(UNIT.terms)) probs.push('UNIT.terms は用語 id の配列にしてください');
+    else UNIT.terms.forEach(function (id) { if (!termById_(id)) probs.push('UNIT.terms の ' + id + ' が用語の台帳（TERMS_）にありません'); });
+  }
+  if (UNIT.wrongLabel != null && typeof UNIT.wrongLabel !== 'function') probs.push('UNIT.wrongLabel は関数にしてください');
 
   // モードの宣言
   var modeIds = [];
