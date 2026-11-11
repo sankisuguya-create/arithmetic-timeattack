@@ -2728,6 +2728,8 @@ function toTimeSelect(){ $('ptimeLimitLabel').textContent = CFG.limitSec + 'び�
  * 型を絞る画面。むせいげん（記録しない）を選んだときだけ出る。
  * 「この子は◯◯が弱い」という診断は画面に出さない。児童が自分で選ぶだけにする
  * （名指しは、遅さを隠す行動を誘発する。README の weak_child の項を参照）。
+ * 例外：学習BASE で先生が指示ごとに「★ おすすめを見せる」を選んだ型だけ、カードに「★ おすすめ」と出す（既定は出さない。
+ * 理由・弱さの語は出さない）。見せるかどうかは、その子とその場を知る担任が決める。
  */
 function openTypeSelect(){
   var list = (TYPES_BY_MODE[pMode] || []).slice(0, 8);
