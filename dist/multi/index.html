@@ -709,7 +709,7 @@ var practice=false, pMode=1, pTimed=false, pRecorded=false;
 /* 絞って練習する問題型。'' なら絞らない（＝いろいろ混ぜる） */
 var pType='';
 /* 問題型のラベルと、モードごとに出る型。Unit.gs が決め、boot() が運んでくる */
-var TYPES={}, TYPES_BY_MODE={};
+var TYPES={}, TYPES_BY_MODE={}, RECO=[];   // RECO：先生が「★ おすすめを見せる」を選んだ型（学習BASE の指示）
 
 var $ = function(id){ return document.getElementById(id); };
 var eqEl=$('eq'), barEl=$('bar'), countEl=$('count');
@@ -2734,8 +2734,10 @@ function openTypeSelect(){
   var cards = ['<div class="card" data-ptype=""><div class="k">1</div>' +
                '<div><div class="t">ぜんぶ</div><div class="s">いろいろ まざる</div></div></div>'];
   list.forEach(function(t, i){
+    // 先生が見せると選んだ指示の型にだけ「★ おすすめ」（理由は出さない。並びは変えない）
     cards.push('<div class="card" data-ptype="'+esc(t)+'"><div class="k">'+(i+2)+'</div>' +
-               '<div><div class="t">'+esc(TYPES[t] || t)+'</div></div></div>');
+               '<div><div class="t">'+esc(TYPES[t] || t)+'</div>' +
+               (RECO.indexOf(t) >= 0 ? '<div class="s">★ おすすめ</div>' : '') + '</div></div>');
   });
   $('ptypeGrid').innerHTML = cards.join('');
   show('ptype');
@@ -4203,7 +4205,7 @@ function applyBoot(r, live){
   // 控えを描いただけでは「開いていない」と断定できない。
   // 断定してよいのはサーバーが答えた時だけ（live）
   if(live) BOOTED = true;
-  STARS = r.stars || {}; PBEST = r.practiceBest || {};
+  STARS = r.stars || {}; PBEST = r.practiceBest || {}; RECO = r.reco || [];
   MENUFIG_FREE = !!r.teacher;
   var tl = $('teacherLink');
   if(tl){
