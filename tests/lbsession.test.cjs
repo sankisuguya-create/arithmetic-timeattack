@@ -70,4 +70,37 @@ console.log('ok 代わりに取り組む');
   assert.equal(sk['math/kuku/x8'].n, 2); assert.equal(sk['math/kuku/x9'].n, 1); assert.equal(sk['math/kuku/x9'].ok, 0);
   console.log('ok 過去の記録を集計の形に');
 }
+// 学習BASE の指示：練習の「ぜんぶ」で指示した型を半分出す。見せる指示の型だけ画面に渡す。単体の GAS・読めない時は何もしない
+{
+  vm.runInContext("ACT_ = { lid: '', learner: null, by: '' };", ctx);
+  ctx.useUnit_('kuku');
+  const mode = ctx.modeIds_()[0], types = ctx.typesInMode_(mode), target = types[types.length - 1];
+  assert.equal(JSON.stringify(ctx.lbDirectives_('a@kyoiku.edu.nishi.or.jp')), '[]', '学習BASE が無ければ指示は無い');
+  Object.assign(ctx, { email_: () => 'a@kyoiku.edu.nishi.or.jp', child_: () => ({ email: 'a@kyoiku.edu.nishi.or.jp', grade: 3, cls: '1', name: 'あ' }),
+    modeAllowed_: () => true, openFor_: () => ({}), seqOffFor_: () => ({}), triesForGate_: () => ({}), nGateFor_: () => 0, typesByMode_: () => ({ [mode]: types }) });
+  let dirs = [{ id: 'D1', skill: 'math/kuku/' + target, show: false }, { id: 'D2', skill: 'math/divmod/x', show: true }];
+  ctx.Base = { hub: () => 'HUB', child: () => ({ lid: 'La' }) };
+  ctx.LbDirectives = { WEIGHT_SHARE: 0.5, forLearner: (hub, lid, app) => { assert.equal(lid, 'La'); assert.equal(app, 'tamath'); return dirs; } };
+  assert.equal(JSON.stringify(ctx.lbDirectives_('x')), JSON.stringify([{ id: 'D1', t: target, show: false }]), 'いまの単元の型だけ');
+  const share = () => { let hit = 0; for (let i = 0; i < 400; i++) if (ctx.nextPracticeItem(mode, '').t === target) hit++; return hit / 400; };
+  const base = (() => { const d = dirs; dirs = []; const r = share(); dirs = d; return r; })();
+  const withDir = share();
+  assert.ok(withDir > base + 0.3, '指示した型が増える（指示なし ' + base.toFixed(2) + ' → 指示あり ' + withDir.toFixed(2) + '）');
+  assert.ok(withDir < 0.8, 'ほかの型も出る（半分まぜる）：' + withDir.toFixed(2));
+  // 型を選んだ練習は、選んだ型のまま
+  const other = types[0];
+  for (let i = 0; i < 50; i++) assert.equal(ctx.nextPracticeItem(mode, other).t, other);
+  // 読めない時も練習は止めない
+  ctx.LbDirectives.forLearner = () => { throw new Error('ハブが開けない'); };
+  assert.ok(ctx.nextPracticeItem(mode, '').ok);
+  console.log('ok 指示：練習の「ぜんぶ」で指示した型を半分出す（' + base.toFixed(2) + ' → ' + withDir.toFixed(2) + '）');
+  // 画面に渡す「★ おすすめ」：見せると選んだ指示の型だけ
+  ctx.LbDirectives.forLearner = () => [{ id: 'D1', skill: 'math/kuku/' + target, show: false }, { id: 'D3', skill: 'math/kuku/' + other, show: true }];
+  Object.assign(ctx, { config_: () => ({ limit_sec: 60, miss_limit: 3 }), isTeacher_: () => false, bests_: () => ({ best: {}, practiceBest: {}, stars: {}, tries: {}, floor: { tcm: {} } }),
+    nUnlockFor_: () => 0, lockNotes_: () => ({}), medals_: () => ({}), coopForChild_: () => ({ active: false }), classKey_: () => '3-1', figCount_: () => 0 });
+  const b = ctx.boot();
+  assert.equal(JSON.stringify(b.reco), JSON.stringify([other]), '見せない指示の型は画面に渡さない');
+  console.log('ok 指示：おすすめは見せる指示の型だけ');
+  delete ctx.LbDirectives; delete ctx.Base;
+}
 console.log('lbsession ok');
