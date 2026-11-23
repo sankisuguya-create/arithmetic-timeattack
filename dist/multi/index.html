@@ -317,6 +317,12 @@ body.coopPast #coop:active{background:#E1E4E8}
 .eq.col .op{margin:0}
 .eq.col .slot{min-width:0;width:1.05ch;margin-top:.12em}
 .eq.col .line.rule{border-bottom:.07em solid var(--chalk);padding-bottom:.06em}
+.eq .frac,.ghost .frac{display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;
+  font-size:.82em;line-height:1.05;margin:0 .12em;align-self:center}
+.eq .frac>span:first-child,.ghost .frac>span:first-child{border-bottom:.07em solid currentColor;padding:0 .12em}
+/* 分数の欄は下線が横線と重なるので、四方の枠で示す（いまの欄は枠の色、正答表示は赤） */
+.eq .frac .slot{min-width:1.3ch;min-height:1.05em;line-height:1.05;border:.06em solid #3A4260;border-radius:.12em;margin:.1em 0}
+.eq .frac>span:first-child:has(.slot){border-bottom-width:.07em;padding-bottom:.08em}
 .eq .slot{color:var(--chalk);border-bottom:.08em solid #3A4260;min-width:2.2ch;
   display:inline-block;text-align:center;cursor:pointer}
 /* 目立たせる欄。色（--slotc）と下線の太さの2つで示す。
@@ -327,8 +333,10 @@ body.coopPast #coop:active{background:#E1E4E8}
   background:transparent;background:color-mix(in srgb, var(--slotc) 20%, transparent);
   border-radius:.1em .1em 0 0;padding:0 .06em}
 .eq .slot.cur{border-bottom-color:var(--acc)}
+.eq .frac .slot.cur{border-color:var(--acc);border-width:.08em}
 /* 正しい答えの表示（2回目のまちがいから）は赤。下の「こたえは ○」の文字と一緒に出す */
 .eq.reveal .slot{color:var(--alert);border-bottom-color:var(--alert)}
+.eq.reveal .frac .slot{border-color:var(--alert)}
 /* 覆い。前の段が通るまで、次の段を読ませない。
    中身は消さずに visibility で隠す。表示を消すと外れた瞬間に式の幅が変わり、
    児童は同じ式をもう一度読み直すことになる */
@@ -2966,6 +2974,29 @@ function glyph_(unit, sv){
 function isSlotTok_(tok){ return /^_\d$/.test(tok); }
 function slotIdx_(tok){ return +tok.slice(1); }
 
+/* 分数。'3/5' は分数の字、'_1/_0' は分子に f[1]、分母に f[0] の欄を置く（打つ順と上下を分ける）。
+   共通画面は分数の意味を知らない。字を上下に組むだけ */
+var FRAC_RE = /^(\d+)\/(\d+)$/, FRAC_SLOT_RE = /^_(\d)\/_(\d)$/, FRAC_ANY_RE = /^(\d+|_\d)\/(\d+|_\d)$/;
+function fracHtml_(top, bottom){ return '<span class="frac"><span>'+top+'</span><span>'+bottom+'</span></span>'; }
+/* 問いのトークン1つ（欄でないもの）。分数・単位・演算子・字 */
+function tokHtml_(tok){
+  var m = FRAC_RE.exec(tok);
+  if(m) return fracHtml_(m[1], m[2]);
+  if(UNITS.hasOwnProperty(tok)) return unitSpan(tok);
+  if(OPS.hasOwnProperty(tok)) return '<span class="op">'+OPS[tok]+'</span>';
+  return '<span>'+esc(tok)+'</span>';
+}
+/* 分数の欄を持つ問題なら [分子の欄番号, 分母の欄番号]。無ければ null */
+function fracSlots_(q){
+  if(!q.rows) return null;
+  for(var r=0;r<q.rows.length;r++) for(var c=0;c<q.rows[r].length;c++){
+    var m = /^_(\d)\/_(\d)$/.exec(q.rows[r][c]);   // FRAC_SLOT_RE と同じ（テストが関数だけを取り出すので中に書く）
+    if(m) return [+m[1], +m[2]];
+  }
+  return null;
+}
+function fracAns_(q, fs){ return q.ans[q.f[fs[0]]] + '/' + q.ans[q.f[fs[1]]]; }
+
 /* 筆算（col）の欄を画面の並び（左から）で返す */
 function colOrder_(q){
   var out = [];
@@ -2997,6 +3028,8 @@ function slotSpan_(q, i){
  */
 function ghostHtml_(q){
   if(q.col) return '<span>'+colNum_(q, q.ans)+'</span>';
+  var fs = fracSlots_(q);
+  if(fs) return fracHtml_(q.ans[q.f[fs[0]]], q.ans[q.f[fs[1]]]);
   return q.f.map(function(u){
     var v = glyph_(u, String(q.ans[u]));
     return '<span>'+v+'</span>' + (q.rows ? '' : unitSpan(u));
@@ -3204,6 +3237,18 @@ $('figTog').addEventListener('click', function(e){
 });   // 数字キーでモードを選ぶ操作に取られない
 window.addEventListener('resize', function(){ if(scr === 'start') menuFigDraw_(); });
 
+/* rows の1トークン。next() は '_' が消費する次の欄番号を返す */
+function rowTokHtml_(q, tok, next){
+  if(tok === SLOT) return slotSpan_(q, next());
+  if(isSlotTok_(tok)) return slotSpan_(q, slotIdx_(tok));
+  var m = FRAC_ANY_RE.exec(tok);
+  if(m && tok.indexOf('_') >= 0){
+    var part = function(x){ return x.charAt(0) === '_' ? slotSpan_(q, +x.slice(1)) : '<span>'+x+'</span>'; };
+    return fracHtml_(part(m[1]), part(m[2]));
+  }
+  return tokHtml_(tok);
+}
+
 function draw(){
   if(primeMode_()){ primeDraw_(); return; }
   var q = queue[qi];
@@ -3225,8 +3270,10 @@ function draw(){
      * 共通画面が単元を知ることになるため。問いには「＝」を付けない（式ではない）。
      */
     var ask = q.q.map(function(tok){
-      return UNITS.hasOwnProperty(tok) ? unitSpan(tok) : '<span>'+esc(tok)+'</span>';
+      return UNITS.hasOwnProperty(tok) ? unitSpan(tok) : FRAC_RE.test(tok) ? tokHtml_(tok) : '<span>'+esc(tok)+'</span>';
     }).join('');
+    // 欄の並べ方（分数の欄など）を問題が持つなら、1段目をそれで組む
+    if(q.rows) { var fsi = 0; ask = q.rows[0].map(function(tok){ return rowTokHtml_(q, tok, function(){ return fsi++; }); }).join(''); rhs = ''; }
     eqEl.className = 'eq';
     eqEl.innerHTML =
       '<span class="line ans">'+ask+rhs+'</span>'+
@@ -3273,23 +3320,15 @@ function draw(){
     eqEl.className = 'eq' + (q.col ? ' col' : '');
     eqEl.innerHTML = q.rows.map(function(row, ri){
       var inner = row.map(function(tok){
-        if(tok === SLOT) return slotSpan_(q, si++);
-        if(isSlotTok_(tok)) return slotSpan_(q, slotIdx_(tok));
         if(q.col && tok === '') return '<span></span>';
-        if(UNITS.hasOwnProperty(tok)) return unitSpan(tok);
-        if(OPS.hasOwnProperty(tok)) return '<span class="op">'+OPS[tok]+'</span>';
-        return '<span>'+esc(tok)+'</span>';
+        return rowTokHtml_(q, tok, function(){ return si++; });
       }).join('');
       return '<span class="line'+(rowVeiled_(q, ri) ? ' veiled' : '')+(ri === ruleRow ? ' rule' : '')+
              '" data-row="'+ri+'"'+(q.col ? ' style="--nc:'+ncol+'"' : '')+'>'+inner+'</span>';
     }).join('');
   }else{
     var lhs = '';
-    q.q.forEach(function(tok){
-      if(UNITS.hasOwnProperty(tok)) lhs += unitSpan(tok);
-      else if(OPS.hasOwnProperty(tok)) lhs += '<span class="op">'+OPS[tok]+'</span>';
-      else lhs += '<span>'+esc(tok)+'</span>';
-    });
+    q.q.forEach(function(tok){ lhs += tokHtml_(tok); });
     // 式が長いときは「＝」以下を2段目に落とす。
     var oneHtml = '<span class="line">'+lhs+'<span class="op">=</span>'+rhs+'</span>';
     var twoHtml = '<span class="line">'+lhs+'</span>'+
@@ -3451,7 +3490,7 @@ function submit(){
         fi = q.f.length - 1;
         paintSlots();
         eqEl.classList.add('reveal');
-        $('footnote').textContent = 'こたえは ' + (q.col ? colNum_(q, q.ans) :
+        $('footnote').textContent = 'こたえは ' + (q.col ? colNum_(q, q.ans) : fracSlots_(q) ? fracAns_(q, fracSlots_(q)) :
           q.f.map(function(u){ return glyph_(u, String(q.ans[u])) + u; }).join(' '));
       }
     }
