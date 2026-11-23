@@ -143,6 +143,17 @@ function unitIdsForTest() { return unitIds_(); }
 
 /** 単元のスプレッドシートの ID を置く場所（単元で分けない、プロジェクト共通のプロパティ） */
 function unitSheetKey_(id) { return 'unit_sheet:' + id; }
+/**
+ * 記録の台帳（学習BASE の中で動く時だけ）。学習BASE の BASEシートの app_sheets が「単元 → 記録のスプレッドシート」を持つ（learning-base gas/Stores.gs）。
+ * 単体の GAS（学習BASE の外）では今まで通りスクリプトのプロパティ unit_sheet:<id>
+ */
+function lbStores_() { return typeof LB_APP_COMMIT !== 'undefined' && typeof LbStores !== 'undefined' ? LbStores : null; }
+/** 単元の記録のスプレッドシートの ID（まだ無ければ ''。作らない）。前の形のプロパティにあれば台帳に写す */
+function unitSheetId_(id) {
+  var S = lbStores_();
+  if (S) return S.id('tamath', id, { legacyProp: unitSheetKey_(id) });
+  return String(PropertiesService.getScriptProperties().getProperty(unitSheetKey_(id)) || '');
+}
 
 var UNIT_SS_MEMO_ = {};
 /**
@@ -152,6 +163,10 @@ var UNIT_SS_MEMO_ = {};
 function unitSpreadsheet_() {
   var id = UNIT.id;
   if (UNIT_SS_MEMO_[id]) return UNIT_SS_MEMO_[id];
+  var S = lbStores_();
+  if (S) {   // 学習BASE の中：台帳から。無ければ学習BASE が作って BASEシートのフォルダに置き、台帳に足す
+    return (UNIT_SS_MEMO_[id] = SpreadsheetApp.openById(S.id('tamath', id, { legacyProp: unitSheetKey_(id), create: '算数TA ' + (UNIT.teacherTitle || UNIT.title || id) + '（' + id + '）' })));
+  }
   var gp = PropertiesService.getScriptProperties(), sid = gp.getProperty(unitSheetKey_(id));
   var ss;
   if (sid) {
@@ -184,7 +199,11 @@ function registerUnitSheet(id, urlOrId) {
   var s = String(urlOrId || '').trim(), m = s.match(/\/d\/([a-zA-Z0-9_-]{20,})/), sid = m ? m[1] : s;
   if (!/^[a-zA-Z0-9_-]{20,}$/.test(sid)) throw new Error('スプレッドシートのURLかIDを入れてください: ' + s);
   var ss = SpreadsheetApp.openById(sid);   // 開けなければここで止まる
-  PropertiesService.getScriptProperties().setProperty(unitSheetKey_(id), sid);
+  var S = lbStores_();
+  if (S) {
+    if (S.find('tamath', id)) throw new Error('台帳（BASEシートの app_sheets）に ' + id + ' の行があります。付け替える時は、その行のスプレッドシートの URL を書き換えてから lbReload');
+    S.add('tamath', id, sid, '登録');
+  } else PropertiesService.getScriptProperties().setProperty(unitSheetKey_(id), sid);
   delete UNIT_SS_MEMO_[id];
   clearUnitReady_(id);
   return id + ' → ' + ss.getName();
@@ -264,6 +283,7 @@ function hubLinks_() {
  */
 function forgetCreatedUnitSheets() {
   ownerOnly_();
+  if (lbStores_()) throw new Error('学習BASE の中では、台帳（BASEシートの app_sheets）の行を消すか、状態に「止める」と書いてください');
   var v = hubLinks_(), want = {}, gp = PropertiesService.getScriptProperties(), out = [];
   for (var i = 1; i < v.length; i++) {
     var m = String(v[i][8] || '').match(/\/d\/([a-zA-Z0-9_-]{20,})/), raw = String(v[i][8] || '').trim();
@@ -283,7 +303,7 @@ function listUnitSheets() {
   ownerOnly_();
   var gp = PropertiesService.getScriptProperties();
   var msg = unitIds_().map(function (id) {
-    var sid = gp.getProperty(unitSheetKey_(id));
+    var sid = unitSheetId_(id);
     if (!sid) return id + '\t（未登録：最初に開いた時に新しく作る）';
     var name = '';
     try { name = SpreadsheetApp.openById(sid).getName(); } catch (e) { name = '× 開けません'; }
@@ -408,8 +428,7 @@ function lbLegacySessions_(unit, before) {
 }
 /** 過去の記録を取り込める単元（登録済み）。{ key, unit } */
 function lbLegacySources_() {
-  var gp = PropertiesService.getScriptProperties();
-  return unitIds_().filter(function (id) { return !!gp.getProperty(unitSheetKey_(id)); }).map(function (id) { return { key: 'tamath:' + id, unit: id }; });
+  return unitIds_().filter(function (id) { return !!unitSheetId_(id); }).map(function (id) { return { key: 'tamath:' + id, unit: id }; });
 }
 
 /** 算数TA の技能の目録（全単元の型）。到達の基準の初期値は正答率90%・20問以上（単元ごとに Unit.gs の mastery で直せる） */
@@ -429,7 +448,7 @@ function tamathCatalog_() {
 function lbSessionSources_() {
   var gp = PropertiesService.getScriptProperties(), out = [];
   unitIds_().forEach(function (id) {
-    var sid = gp.getProperty(unitSheetKey_(id));
+    var sid = unitSheetId_(id);
     if (!sid) return;
     try { out.push({ app: 'tamath', key: 'tamath:' + id, ss: SpreadsheetApp.openById(sid) }); } catch (e) { console.error(id + ' を開けません: ' + e.message); }
   });
@@ -546,7 +565,7 @@ function runAll_(job, ids) {
     }
     var id = ids.shift();
     // スプレッドシートが未登録の単元（まだ誰も開いていない）は飛ばす。夜の処理で空のスプレッドシートを作らない
-    if (!gp.getProperty(unitSheetKey_(id))) continue;
+    if (!unitSheetId_(id)) continue;
     try { useUnit_(id); ALL_JOBS_[job](); }
     catch (e) { errs.push(id + ': ' + (e && e.message || e)); console.error(job + ' ' + id + ' 失敗: ' + (e && e.message || e)); }
   }
@@ -4416,7 +4435,7 @@ function setup() {
       catch (eC) { cat = '技能の目録：× ' + eC.message + '\n\n'; }
     }
     var msg = cat + unitIds_().map(function (id) {
-      if (!gp.getProperty(unitSheetKey_(id))) return '【' + id + '】未登録のため飛ばした';
+      if (!unitSheetId_(id)) return '【' + id + '】未登録のため飛ばした';
       useUnit_(id);
       try { return '【' + id + '】' + setupOne_(); } catch (e) { return '【' + id + '】× ' + e.message; }
     }).join('\n\n');
