@@ -283,7 +283,7 @@ function hubLinks_() {
  */
 function forgetCreatedUnitSheets() {
   ownerOnly_();
-  if (lbStores_()) throw new Error('学習BASE の中では、台帳（BASEシートの app_sheets）の行を消すか、状態に「止める」と書いてください');
+  if (lbStores_()) throw new Error('学習BASE の中では、台帳（BASEシートの app_sheets）で、その単元の状態に「止める」と書いてください（行を消すと、次に開いた時に新しいスプレッドシートを作ります）');
   var v = hubLinks_(), want = {}, gp = PropertiesService.getScriptProperties(), out = [];
   for (var i = 1; i < v.length; i++) {
     var m = String(v[i][8] || '').match(/\/d\/([a-zA-Z0-9_-]{20,})/), raw = String(v[i][8] || '').trim();
