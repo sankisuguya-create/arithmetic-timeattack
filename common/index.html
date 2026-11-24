@@ -6,6 +6,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
+/* 待ちの表示：点を0〜3個で回す（正本は - の skills/ui-layout/SKILL.md「待ちの表示」） */
+.ldots{display:inline-block;width:1.6em;text-align:left}
+.ldots::after{content:'';animation:ldots 1.2s steps(1,end) infinite}
+@keyframes ldots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+@media (prefers-reduced-motion:reduce){.ldots::after{animation:none;content:'...'}}
+
 :root{
   --paper:#F7F7F4; --ink:#101728; --chalk:#FFFFFF;
   /* --acc は学年の進みの色、--q は「？」の印の色。boot で Core.gs から上書きする（既定は3年） */
@@ -508,10 +514,10 @@ body.figoff #primeKeys button:active{background:#0B1A22;border-color:#5FE3FF;box
   </div>
   <canvas id="floorBase" class="floorcv" aria-hidden="true" hidden></canvas>
   <canvas id="floorGrow" class="floorcv" aria-hidden="true" hidden></canvas>
-  <div class="apptitle">よみこみ中…</div>
+  <div class="apptitle">よみこみ中<span class="ldots" aria-hidden="true"></span></div>
   <div class="timelede" id="timelede">1回 60びょう</div>
   <div class="grid" id="modeGrid"></div>
-  <div class="hint" id="startHint">よみこみ中…</div>
+  <div class="hint" id="startHint">よみこみ中<span class="ldots" aria-hidden="true"></span></div>
   <div class="prow">
     <button class="pbtn" id="toPractice">
       <span class="k">0</span>
@@ -720,6 +726,14 @@ var pType='';
 var TYPES={}, TYPES_BY_MODE={}, RECO=[];   // RECO：先生が「★ おすすめを見せる」を選んだ型（学習BASE の指示）
 
 var $ = function(id){ return document.getElementById(id); };
+/* 待ちの表示：文の終わりの「…」を、回る点（.ldots）に置き換えて出す。正本は - の skills/ui-layout/SKILL.md「待ちの表示」 */
+function setMsg(el, t){
+  if(!el) return;
+  t = String(t); var w = /…$/.test(t);
+  el.textContent = w ? t.slice(0, -1) : t;
+  if(w) el.insertAdjacentHTML('beforeend', '<span class="ldots" aria-hidden="true"></span>');
+}
+
 var eqEl=$('eq'), barEl=$('bar'), countEl=$('count');
 
 /* サーバーから届く文字（モード名・型名・閉じている理由・URL 等）を innerHTML に流す時は esc に通す。
@@ -911,7 +925,7 @@ function coopPeekApply_(r){
 var RV = { d: null, hi: false, tiles: null, W: 0, H: 0 };
 function coopRvOpen(){
   $('coopRv').hidden = false; RV.hi = false; RV.d = null; $('coopRvMine').classList.remove('on');
-  $('coopRvMsg').textContent = 'よみこみ中…'; $('coopRvTot').textContent = '';
+  setMsg($('coopRvMsg'), 'よみこみ中…'); $('coopRvTot').textContent = '';
   $('coopRvMine').style.visibility = 'hidden';
   var ctx = $('coopRvCv').getContext('2d'); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0, 0, $('coopRvCv').width, $('coopRvCv').height);
   google.script.run.withSuccessHandler(function(d){
@@ -2679,7 +2693,7 @@ function renderMenu(){
   var vis = visibleModes();
   if(!vis.length){
     $('modeGrid').innerHTML = BOOTED ? emptyBox() : '';
-    $('startHint').textContent = BOOTED ? '' : 'よみこみ中…';
+    setMsg($('startHint'), BOOTED ? '' : 'よみこみ中…');
     return;
   }
   $('modeGrid').innerHTML = vis.map(function(m, idx){
@@ -3876,7 +3890,7 @@ function finishPractice(){
   show('result');
 
   if(!SRV || !sent.token || !sent.items.length){ $('saving').textContent=''; return; }
-  $('saving').textContent = 'きろく中…';
+  setMsg($('saving'), 'きろく中…');
   pendSave(sent);
   google.script.run.withSuccessHandler(function(r){
     if(r.ok){
@@ -4024,7 +4038,7 @@ function finish(){
     $('saving').textContent = CFG.guest ? 'おためしモード：きろくされません' : '';
     return;
   }
-  $('saving').textContent = 'きろく中…';
+  setMsg($('saving'), 'きろく中…');
   pendSave(sent);
   google.script.run.withSuccessHandler(function(r){
     if(r.ok){
@@ -4194,7 +4208,7 @@ function setAppTitle(t, ruby){
   if(!el) return;
   // ふりがな（UNIT.titleRuby）は、つないだ文字が title と同じ時だけ使う（片方だけ直した時に別の題が出ないように）
   var plain = Array.isArray(ruby) ? ruby.map(function(x){ return Array.isArray(x) ? x[0] : x; }).join('') : '';
-  if(!plain || plain !== String(t).replace(/（プレビュー）$/, '')){ el.textContent = t; return; }
+  if(!plain || plain !== String(t).replace(/（プレビュー）$/, '')){ setMsg(el, t); return; }
   el.innerHTML = ruby.map(function(x){
     return Array.isArray(x) ? '<ruby>' + esc(x[0]) + '<rt>' + esc(x[1]) + '</rt></ruby>' : esc(x);
   }).join('') + esc(String(t).slice(plain.length));
@@ -4365,9 +4379,9 @@ function bootFetch(){
     bootTry++;
     // 遊べる控えがあるなら黙って取り直す。案内文を混雑の知らせで潰さない
     if(!visibleModes().length){
-      $('startHint').textContent = (bootTry >= 8)
+      setMsg($('startHint'), (bootTry >= 8)
         ? 'サーバーが こんでいます。ページを ひらきなおして ください。'
-        : 'サーバーが こんでいます。まっててね…';
+        : 'サーバーが こんでいます。まっててね…');
     }
     if(bootTry >= 8) return;
     setTimeout(bootFetch, Math.min(2000 * Math.pow(2, bootTry - 1), 30000)

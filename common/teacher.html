@@ -10,6 +10,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700&display=swap">
 
 <style>
+/* 待ちの表示：点を0〜3個で回す（正本は - の skills/ui-layout/SKILL.md「待ちの表示」） */
+.ldots{display:inline-block;width:1.6em;text-align:left}
+.ldots::after{content:'';animation:ldots 1.2s steps(1,end) infinite}
+@keyframes ldots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+@media (prefers-reduced-motion:reduce){.ldots::after{animation:none;content:'...'}}
+
 :root{--paper:#F7F7F4;--ink:#101728;--mint:#35D0A5;--mute:#9AA0B0;--line:#DFDFD8}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--paper);color:var(--ink);
@@ -542,7 +548,7 @@ details.cadv .pick{min-width:4.5rem}
     </p>
     <div class="clsWrap">
       <div class="hscroll">
-        <div class="stat" id="clsLoading">読み込み中…</div>
+        <div class="stat" id="clsLoading">読み込み中<span class="ldots" aria-hidden="true"></span></div>
         <table id="clsTable" style="display:none">
           <thead><tr id="clsHead"><th>クラス</th><th>人数</th></tr></thead>
           <tbody id="clsBody"></tbody>
@@ -624,7 +630,7 @@ details.cadv .pick{min-width:4.5rem}
   <div class="box">
     <h2>ようご（毎時間の読み上げ）</h2>
     <p class="lead">図を映し、<b>押すと名前が出て、もう一度押すと次の図</b>に進みます。</p>
-    <div class="stat" id="termStat">読み込み中…</div>
+    <div class="stat" id="termStat">読み込み中<span class="ldots" aria-hidden="true"></span></div>
     <table class="termT" id="termList"></table>
     <div class="bar">
             <button class="bview" id="termGo" type="button">モニターに投影して始める</button>
@@ -646,7 +652,7 @@ details.cadv .pick{min-width:4.5rem}
   <div class="box">
     <h2>分析</h2>
     <div class="chips" id="anaChips"></div>
-    <div class="stat" id="anaStat">読み込み中…</div>
+    <div class="stat" id="anaStat">読み込み中<span class="ldots" aria-hidden="true"></span></div>
     <div id="anaBody"></div>
     <div class="bar">
       <select id="anaYear" style="display:none" aria-label="年度"></select>
@@ -666,7 +672,7 @@ details.cadv .pick{min-width:4.5rem}
   <div class="box">
     <h2>過年度のまとめ</h2>
     <p class="lead">年度（4/1〜翌3/31）ごとに、<b>どの型・どの問題で誤答が多く、時間がかかったか</b>を出します。児童ごとの値は出しません。</p>
-    <div class="stat" id="pastStat">読み込み中…</div>
+    <div class="stat" id="pastStat">読み込み中<span class="ldots" aria-hidden="true"></span></div>
     <div id="pastYears"></div>
     <h3 class="pastH">型ごと（年度をならべて）</h3>
     <div class="hscroll"><table class="pastT" id="pastTypes"></table></div>
@@ -868,6 +874,14 @@ try{
  * ブロックをまたいで呼べるのは関数だけ。読み込み時に動く文は、使う関数より後のブロックに置く */
 /* 要素を id で取る（document.getElementById の短い書き方） */
 function $(id){ return document.getElementById(id); }
+/* 待ちの表示：文の終わりの「…」を、回る点（.ldots）に置き換えて出す。正本は - の skills/ui-layout/SKILL.md「待ちの表示」 */
+function setMsg(el, t){
+  if(!el) return;
+  t = String(t); var w = /…$/.test(t);
+  el.textContent = w ? t.slice(0, -1) : t;
+  if(w) el.insertAdjacentHTML('beforeend', '<span class="ldots" aria-hidden="true"></span>');
+}
+
 
 /* ===== 背景の床のプレビュー =====
  * 児童の画面の床（index.html の floorGen_ / floorDraw_）と同じ規則で、
@@ -1009,7 +1023,7 @@ function showWhere(w){
 
 function setStat(id, text, bad){
   var el = $(id);
-  el.textContent = text;
+  setMsg(el, text);   // 終わりが「…」なら点を回す
   el.classList.toggle('bad', !!bad);
 }
 
@@ -1440,7 +1454,7 @@ function renderPastItems(){
 }
 
 function loadAnalysis(fresh){
-  $('anaStat').textContent = '集計中…';
+  setMsg($('anaStat'), '集計中…');
   $('anaStat').classList.remove('bad');
   google.script.run.withSuccessHandler(function(r){
     ANA = r;
@@ -1750,7 +1764,7 @@ function gapSection(r, scope){
 /* ===== ようご ===== */
 var TERM = { asked: false, deck: [], seq: [], i: 0, ph: '' };
 function termLoad(){
-  $('termStat').textContent = '読み込み中…';
+  setMsg($('termStat'), '読み込み中…');
   google.script.run.withSuccessHandler(function(r){
     TERM.deck = r.deck || [];
     $('termStat').textContent = !TERM.deck.length ? 'この単元の用語はまだ登録されていません（Unit.gs の terms）。'
@@ -2705,7 +2719,7 @@ function planLoad(){
     planSetDirty(false); planRender();
     return;
   }
-  $('coopPlanBody').innerHTML = '<div class="note">読み込み中…</div>';
+  $('coopPlanBody').innerHTML = '<div class="note">読み込み中<span class="ldots" aria-hidden="true"></span></div>';
   var ver = ++PLAN.ver;
   google.script.run.withSuccessHandler(function(r){
     if(ver !== PLAN.ver) return;                       // 読み込み中にクラスやグループ数を変えた

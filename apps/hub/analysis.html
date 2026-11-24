@@ -9,6 +9,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700&display=swap">
 
 <style>
+/* 待ちの表示：点を0〜3個で回す（正本は - の skills/ui-layout/SKILL.md「待ちの表示」） */
+.ldots{display:inline-block;width:1.6em;text-align:left}
+.ldots::after{content:'';animation:ldots 1.2s steps(1,end) infinite}
+@keyframes ldots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+@media (prefers-reduced-motion:reduce){.ldots::after{animation:none;content:'...'}}
+
 :root{--paper:#F7F7F4;--ink:#101728;--mint:#12C48B;--mute:#6B7280;--line:#DFDFD8;--sel:#EEF0F3}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
@@ -139,7 +145,7 @@ details.guide .panel{position:absolute;right:0;top:2.2rem;z-index:5;width:min(56
     <div class="split">
       <div class="box">
         <div class="tool"><span class="chips" id="kfilt"></span></div>
-        <div class="scroll" id="klist">読み込み中…</div>
+        <div class="scroll" id="klist">読み込み中<span class="ldots" aria-hidden="true"></span></div>
       </div>
       <div class="box">
         <div class="scroll" id="kdetail"></div>
@@ -205,6 +211,14 @@ details.guide .panel{position:absolute;right:0;top:2.2rem;z-index:5;width:min(56
  *   → 出力・記録 → 学級の切り替え・今すぐ集計 → 読み込み */
 var BOOT = null, DATA = null, KEY = '', SEL_KID = '', KFILT = 'flag', CUNIT = '', SFILT = 'open', SEL_TYPES = {};
 function $(id){ return document.getElementById(id); }
+/* 待ちの表示：文の終わりの「…」を、回る点（.ldots）に置き換えて出す。正本は - の skills/ui-layout/SKILL.md「待ちの表示」 */
+function setMsg(el, t){
+  if(!el) return;
+  t = String(t); var w = /…$/.test(t);
+  el.textContent = w ? t.slice(0, -1) : t;
+  if(w) el.insertAdjacentHTML('beforeend', '<span class="ldots" aria-hidden="true"></span>');
+}
+
 /* 教師画面・ハブ設定・児童画面と同じ実装（どこか1箇所で直しても、ほかの画面の esc は置き換えないこと） */
 function esc(s){
   return String(s==null?'':s).replace(/[&<>"]/g, function(c){
@@ -380,7 +394,7 @@ function gotoSupport(target){
   $('sContent').focus();
 }
 $('sSave').onclick = function(){
-  var btn = this; btn.disabled = true; $('sStat').textContent = '記録中…';
+  var btn = this; btn.disabled = true; setMsg($('sStat'), '記録中…');
   google.script.run.withSuccessHandler(function(){
     btn.disabled = false; $('sStat').textContent = '記録しました';
     $('sContent').value = ''; SEL_TYPES = {}; SFILT = 'open'; loadClass();
@@ -424,7 +438,7 @@ $('sups').addEventListener('click', function(e){
 
 /* ---------- 出力・記録 ---------- */
 function loadExport(){
-  $('outText').value = '作成中…';
+  $('outText').value = '作成中…';   // 入力欄の値には点の部品を入れられないので「…」のまま（待ちの表示の例外）
   google.script.run.withSuccessHandler(function(t){ $('outText').value = t; })
     .withFailureHandler(function(e){ $('outText').value = 'エラー: ' + e.message; }).anExport(KEY);
 }
@@ -441,7 +455,7 @@ $('decSave').onclick = function(){
 
 /* ---------- 読み込み ---------- */
 function loadClass(){
-  $('klist').innerHTML = '読み込み中…';
+  $('klist').innerHTML = '読み込み中<span class="ldots" aria-hidden="true"></span>';
   google.script.run.withSuccessHandler(function(d){
     DATA = d;
     $('decN').textContent = d.decisions || 0;

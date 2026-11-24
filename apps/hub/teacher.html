@@ -9,6 +9,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700&display=swap">
 
 <style>
+/* 待ちの表示：点を0〜3個で回す（正本は - の skills/ui-layout/SKILL.md「待ちの表示」） */
+.ldots{display:inline-block;width:1.6em;text-align:left}
+.ldots::after{content:'';animation:ldots 1.2s steps(1,end) infinite}
+@keyframes ldots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+@media (prefers-reduced-motion:reduce){.ldots::after{animation:none;content:'...'}}
+
 :root{--paper:#F7F7F4;--ink:#101728;--mint:#12C48B;--mute:#6B7280;--line:#DFDFD8;--sel:#EEF0F3}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
@@ -240,7 +246,7 @@ table.rost td{padding:.25rem .4rem;border-bottom:1px solid var(--line)}
       <p class="lead">年度ごとに、<b>児童の氏名・メールアドレスが残っている人数</b>（全単元の記録の合計）を出します。
         「消去」を押すと、その年度の記録の氏名とメールを <b>児童001</b> などに置き換えます。<b>元に戻せません。</b>
         番号は年度の中で全単元共通です（同じ児童は、どの単元でも同じ番号）。学年・組・番号は残るので、単元の「過年度」「分析」タブの集団の統計はそのまま見られます。</p>
-      <div class="stat" id="arStat">読み込み中…</div>
+      <div class="stat" id="arStat">読み込み中<span class="ldots" aria-hidden="true"></span></div>
       <div class="scroll"><table class="arT" id="arYears"></table>
         <div id="arUnits" class="stat"></div>
         <h3 class="arH">実行の記録</h3>
@@ -318,6 +324,14 @@ function esc(s){
   });
 }
 function $(id){ return document.getElementById(id); }
+/* 待ちの表示：文の終わりの「…」を、回る点（.ldots）に置き換えて出す。正本は - の skills/ui-layout/SKILL.md「待ちの表示」 */
+function setMsg(el, t){
+  if(!el) return;
+  t = String(t); var w = /…$/.test(t);
+  el.textContent = w ? t.slice(0, -1) : t;
+  if(w) el.insertAdjacentHTML('beforeend', '<span class="ldots" aria-hidden="true"></span>');
+}
+
 /* 未保存の印はどの編集領域でも同じ型：枠を橙にし、保存ボタンの名前に「（未保存）」を足す。
    閉じる時の確認は DIRTY／TABDIRTY／CFGDIRTY のどれかが立っていれば出す */
 var TABDIRTY = false, CFGDIRTY = false;
@@ -330,7 +344,7 @@ function setTabsDirty(v){ TABDIRTY = v; markDirty_('tabsetBox', 'saveTabs', v); 
 function setCfgDirty(v){ CFGDIRTY = v; markDirty_('cfgBox', 'saveCfg', v); }
 /* 保存ボタンの共通の型：押している間は押せなくし、状態の欄に「保存中…」→ 結果を出す。done(r) は成功時の後始末 */
 function saveWith_(btn, statId, call, done){
-  btn.disabled = true; $(statId).textContent = '保存中…';
+  btn.disabled = true; setMsg($(statId), '保存中…');
   call(google.script.run.withSuccessHandler(function(r){
     btn.disabled = false; $(statId).textContent = done(r) || '保存しました';
   }).withFailureHandler(function(e){
@@ -378,7 +392,7 @@ $('cvTable').addEventListener('click', function(e){
   var cur = String(before).split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s && s !== ck; });
   if(!show) cur.push(ck);
   CFG['cls_hide_' + l.id] = cur.join(','); cvRender();      // 先に見た目を変える（押した結果がすぐ見える）
-  $('cvStat').textContent = '保存中…';
+  setMsg($('cvStat'), '保存中…');
   google.script.run.withSuccessHandler(function(r){
     CFG['cls_hide_' + l.id] = (r && r.hide) || ''; cvRender();
     $('cvStat').textContent = '「' + (l.title || '名前なし') + '」を ' + ck.replace('-', '年') + '組に' + (show ? '出します' : '出しません') + '（次に開いた児童から反映）';
@@ -571,7 +585,7 @@ function toggleVisible(i){
   var l = LINKS[i], next = !l.visible;
   l.visible = next; renderList();
   if(!l.id){ $('stat').textContent = '未保存の単元です。「保存して反映」を押してください。'; setDirty(true); return; }
-  $('stat').textContent = '切り替え中…';
+  setMsg($('stat'), '切り替え中…');
   google.script.run.withSuccessHandler(function(m){
     $('stat').textContent = m + '（次に開いた児童から反映）';
   }).withFailureHandler(function(e){
