@@ -342,7 +342,28 @@ function clearUnitReady_(id) {
  *  包んだ関数の中の LB_RESOLVE_ は、画面から呼ぶ関数を名前で探す（包むと関数が globalThis に載らないため）
  * ------------------------------------------------------------ */
 function lbFile_(name) {
+  // 画面のファイルは要る時だけ読む（児童の画面は jsDelivr から読むので、ふだんは読まない。学習BASE の Platform が lbFilesLazy_ を見て先に読まない）
+  if ((typeof LB_FILES === 'undefined' || !LB_FILES || LB_FILES['tamath/' + name] == null) && typeof LB_LOADER !== 'undefined' && LB_LOADER && typeof LB_LOADER.files === 'function') {
+    try { LB_LOADER.files('tamath'); } catch (e) { console.error('画面のファイルを読めません: ' + (e && e.message || e)); }
+  }
   return (typeof LB_FILES !== 'undefined' && LB_FILES && LB_FILES['tamath/' + name] != null) ? LB_FILES['tamath/' + name] : null;
+}
+/** 学習BASE に「画面のファイルは先に読まなくてよい」と伝える（apps.lock.json の exports の filesLazy） */
+function lbFilesLazy_() { return true; }
+/**
+ * 学習BASE の中の児童の画面：小さな枠だけを返し、プログラム（dist/multi/web/index.js）は jsDelivr から版（コミット）で固定して読む。
+ * 2回目からは端末に保存した分を使う。jsDelivr が読めない時は、今まで通りの画面（?full=1）へ切り替える
+ */
+function webShell_() {
+  var src = 'https://cdn.jsdelivr.net/gh/' + LB_APP_REPO + '@' + LB_APP_COMMIT + '/dist/multi/web/index.js';
+  var full = unitUrl_('full=1');
+  var fail = 'var m=document.getElementById("lbBootMsg");if(m)m.textContent="いま ひらけません。すこし まってから、ひらきなおしてね。";' +
+    (full ? 'try{window.open(' + JSON.stringify(full) + ',"_top");}catch(e){}' : '');
+  var html = '<!DOCTYPE html><html lang="ja"><head>' + multiShim_() + '<base target="_top"><meta charset="utf-8"></head><body>' +
+    '<script>window.LB_APP_ID=' + JSON.stringify(String(UNIT.id)) + ';<\/script>' +
+    '<div id="lbBootMsg" style="font:20px/1.7 \'BIZ UDPGothic\',sans-serif;padding:24px;color:#616870">よみこみ中…</div>' +
+    '<script src="' + src + '" onerror=\'' + fail.replace(/'/g, '&#39;') + '\'><\/script></body></html>';
+  return HtmlService.createHtmlOutput(html);
 }
 function tplFromFile_(name) {
   var src = lbFile_(name);
@@ -1104,7 +1125,8 @@ function doGet(e) {
       .setTitle(UNIT.teacherTitle)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
-  return tplFromFile_('index').evaluate()
+  var useShell = typeof LB_APP_COMMIT !== 'undefined' && typeof LB_APP_REPO !== 'undefined' && !(e && e.parameter && e.parameter.full);
+  return (useShell ? webShell_() : tplFromFile_('index').evaluate())
     .setTitle(UNIT.title)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
